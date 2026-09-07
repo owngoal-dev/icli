@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>
+<key>platform-application</key><true/>
+<key>com.apple.private.security.no-container</key><true/>
+<key>com.apple.private.security.no-sandbox</key><true/>
+<key>com.apple.private.security.container-required</key><false/>
+<key>application-identifier</key><string>dev.owngoal.icli.TestHost</string>
+</dict></plist>
