@@ -10,7 +10,7 @@ For app integration, add this repository as a Swift Package dependency and selec
 
 ## Install
 
-[Build a package from source](#build-from-source), then choose the package for your bootstrap:
+Download a DEB from [GitHub Releases](https://github.com/owngoal-dev/icli/releases), or [build from source](#build-from-source), then choose the package for your bootstrap:
 
 | Bootstrap | Package Architecture | Status |
 | --- | --- | --- |
@@ -182,6 +182,8 @@ Swift Package Manager resolves Argument Parser and the static [LibArchive packag
 | Package verification report | `.build/package-verification.json` |
 
 The version comes from `Resources/Info.plist`. `make deb` builds the rootless package. Every build checks for forbidden process-launch imports. Package checks repeat that check and verify architecture, deployment target, entitlements, system-only linked libraries, a firmware-only DEB dependency, ownership, and identical executable contents across the two layouts. Import checks detect direct linked calls; runtime acceptance also checks the environment report.
+
+The **DEB Release** GitHub Actions workflow builds both layouts and publishes DEBs, `SHA256SUMS`, and `package-verification.json`. It runs for version tags or can be dispatched with an existing tag. CI artifacts have their own hashes and package checks; device acceptance applies to the specific binary recorded in its report. Repository changes use ordinary incremental commits; published version tags remain fixed.
 
 `make` runs the SwiftPM iOS build, copies the executable to `.build/icli`, and signs it with `ldid` using the repository's entitlements. It does not require an Apple development certificate. To compile without signing, use `swift build -c release --triple arm64-apple-ios16.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" --scratch-path .build/swiftpm --product icli --force-resolved-versions`.
 

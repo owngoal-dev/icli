@@ -1,0 +1,110 @@
+name: DEB Release
+
+on:
+  push:
+    tags:
+      - '[0-9]*.[0-9]*.[0-9]*'
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example 0.3.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deb-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+
+      - name: Check version and toolchain
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, re
+          tag = os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'v?[0-9]+\.[0-9]+\.[0-9]+', tag), 'expected a release version tag'
+          with open('Resources/Info.plist', 'rb') as source:
+              version = plistlib.load(source)['CFBundleShortVersionString']
+          assert tag.removeprefix('v') == version, 'tag and Info.plist version differ'
+          PY
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          swift --version
+
+      - name: Install packaging tools
+        run: brew install ldid dpkg
+
+      - name: Build and sign the CLI
+        run: make all CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
+
+      - name: Build and verify both DEBs
+        run: ./scripts/check-packages.sh
+
+      - name: Prepare release assets and notes
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, subprocess
+          from pathlib import Path
+          build = Path('.build')
+          output = build / 'publish'
+          output.mkdir()
+          report = json.loads((build / 'package-verification.json').read_text())
+          for package in report['packages']:
+              shutil.copy2(build / package['file'], output / package['file'])
+          shutil.copy2(build / 'package-verification.json', output / 'package-verification.json')
+          files = sorted(output.iterdir())
+          (output / 'SHA256SUMS').write_text(''.join(
+              hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in files))
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          tag = os.environ['RELEASE_TAG']
+          notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
+
+          - Swift Package library product: **IcliKit**.
+          - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
+          - These are CI-built artifacts. The repository's device acceptance report describes its recorded local build; CI does not rerun device tests. RootHide runtime remains unverified.
+          - Native DEB operations do not execute maintainer scripts or triggers.
+          - Source commit: `{commit}`.
+          - Binary SHA-256: `{report['binary_sha256']}`.
+
+          [Swift Package integration](https://github.com/owngoal-dev/icli/blob/{tag}/docs/swift-package.md) · [All entitlements](https://github.com/owngoal-dev/icli/blob/{tag}/docs/entitlements.md)
+          '''
+          (build / 'release-notes.md').write_text(notes)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(notes + '\n```text\n' + (output / 'SHA256SUMS').read_text() + '```\n')
+          PY
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: icli-debs-${{ env.RELEASE_TAG }}
+          path: .build/publish/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" .build/publish/* --clobber
+            gh release edit "$RELEASE_TAG" --title "icli $RELEASE_TAG" --notes-file .build/release-notes.md
+          else
+            gh release create "$RELEASE_TAG" .build/publish/* --verify-tag \
+              --title "icli $RELEASE_TAG" --notes-file .build/release-notes.md
+          fi
