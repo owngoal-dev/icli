@@ -1117,7 +1117,25 @@ bool icli_unregister_app(const char *path) {
 /// (a bootstrap behind a symlinked /var/jb appears under its real location),
 /// so every existing component is resolved and /private/var becomes /var.
 static NSString *normalizedAppPath(NSString *path) {
-    path = path.stringByStandardizingPath.stringByResolvingSymlinksInPath;
+    path = [NSURL fileURLWithPath:path].path.stringByStandardizingPath;
+    // Foundation can leave /tmp or /var/jb unresolved when the final bundle
+    // has already been removed. Resolve the longest surviving ancestor so
+    // stale registrations still match LaunchServices' physical paths.
+    NSString *ancestor = path;
+    NSMutableArray *suffix = [NSMutableArray array];
+    while (ancestor.length) {
+        char *resolved = realpath(ancestor.fileSystemRepresentation, NULL);
+        if (resolved) {
+            path = @(resolved);
+            free(resolved);
+            for (NSString *component in suffix.reverseObjectEnumerator) path = [path stringByAppendingPathComponent:component];
+            break;
+        }
+        NSString *parent = ancestor.stringByDeletingLastPathComponent;
+        if ([parent isEqual:ancestor]) break;
+        [suffix addObject:ancestor.lastPathComponent];
+        ancestor = parent;
+    }
     if ([path hasPrefix:@"/private/var/"]) path = [path substringFromIndex:8];
     return path;
 }
@@ -1125,7 +1143,8 @@ static NSString *normalizedAppPath(NSString *path) {
 /// Registered application proxies keyed by normalized bundle path.
 static NSDictionary<NSString *, id> *registeredAppsByPath(void) {
     id ws = lsWorkspace();
-    NSArray *apps = [ws respondsToSelector:@selector(allInstalledApplications)] ? [ws performSelector:@selector(allInstalledApplications)] : @[];
+    NSArray *apps = [ws respondsToSelector:@selector(allInstalledApplications)] ? [ws performSelector:@selector(allInstalledApplications)] : nil;
+    if (!apps) return nil;
     NSMutableDictionary *byPath = [NSMutableDictionary dictionary];
     for (id proxy in apps) {
         NSString *path = stringFromValue(proxyValue(proxy, @"bundleURL"));
@@ -1137,48 +1156,82 @@ static NSDictionary<NSString *, id> *registeredAppsByPath(void) {
 char *icli_app_registration_json(const char *path) {
     icli_private_init();
     if (!path) return jsonDup(@{@"registered": @NO});
-    id proxy = registeredAppsByPath()[normalizedAppPath(@(path))];
+    NSDictionary *apps = registeredAppsByPath();
+    if (!apps) return jsonDup(@{@"error": @"LaunchServices application list unavailable"});
+    id proxy = apps[normalizedAppPath(@(path))];
     if (!proxy) return jsonDup(@{@"registered": @NO, @"path": @(path)});
     NSMutableDictionary *result = [appDictForProxy(proxy) mutableCopy];
     result[@"registered"] = @YES;
     return jsonDup(result);
 }
 
-static NSArray<NSString *> *appBundlesInDirectory(NSString *directory) {
+static NSArray<NSString *> *appBundlesInDirectory(NSString *directory, NSError **error) {
     NSMutableArray *paths = [NSMutableArray array];
-    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:directory error:nil]) {
+    NSArray *names = [NSFileManager.defaultManager contentsOfDirectoryAtPath:directory error:error];
+    if (!names) return nil;
+    for (NSString *name in names) {
         NSString *path = [directory stringByAppendingPathComponent:name];
         if ([name hasSuffix:@".app"] && [NSFileManager.defaultManager fileExistsAtPath:[path stringByAppendingPathComponent:@"Info.plist"]]) [paths addObject:path];
     }
     return [paths sortedArrayUsingSelector:@selector(compare:)];
 }
 
-/// Registers every bundle in `directory`, then unregisters entries that
-/// point below it but no longer exist. Both steps are verified against
-/// LaunchServices' own list afterwards.
+/// Reconcile by bundle ID and resolved path. Re-registering unchanged apps
+/// can terminate them (upstream uikittools-ng 627e1ee). A moved app must be
+/// registered before removing stale paths, since both records share an ID.
 char *icli_apps_refresh_json(const char *directory) {
     icli_private_init();
     if (!directory) return jsonDup(@{@"error": @"directory required"});
     NSString *root = normalizedAppPath(@(directory));
     BOOL isDirectory = NO;
     if (![NSFileManager.defaultManager fileExistsAtPath:root isDirectory:&isDirectory] || !isDirectory) return jsonDup(@{@"error": [@"not a directory: " stringByAppendingString:root]});
-    NSMutableArray *registered = [NSMutableArray array], *failed = [NSMutableArray array], *unregistered = [NSMutableArray array];
-    for (NSString *path in appBundlesInDirectory(root)) {
+    NSError *error = nil;
+    NSArray *paths = appBundlesInDirectory(root, &error);
+    if (!paths) return jsonDup(@{@"error": error.localizedDescription ?: @"could not list application directory"});
+    NSDictionary *before = registeredAppsByPath();
+    if (!before) return jsonDup(@{@"error": @"LaunchServices application list unavailable"});
+    NSMutableDictionary *installed = [NSMutableDictionary dictionary];
+    for (NSString *path in paths) {
+        NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
+        NSString *bundleID = info[@"CFBundleIdentifier"];
+        if (![bundleID isKindOfClass:NSString.class] || !bundleID.length) return jsonDup(@{@"error": [@"missing bundle identifier: " stringByAppendingString:path]});
+        if (installed[bundleID]) return jsonDup(@{@"error": [@"duplicate bundle identifier: " stringByAppendingString:bundleID]});
+        installed[bundleID] = path;
+    }
+    NSMutableArray *registered = [NSMutableArray array], *failed = [NSMutableArray array], *unregistered = [NSMutableArray array], *unchanged = [NSMutableArray array];
+    for (NSString *bundleID in [[installed allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
+        NSString *path = installed[bundleID];
+        id proxy = before[normalizedAppPath(path)];
+        NSString *registeredID = stringFromValue(proxyValue(proxy, @"applicationIdentifier")) ?: stringFromValue(proxyValue(proxy, @"bundleIdentifier"));
+        if ([registeredID isEqual:bundleID]) {
+            [unchanged addObject:path];
+            continue;
+        }
         if (registerAppAtPath(path)) [registered addObject:path];
         else [failed addObject:path];
     }
     NSString *prefix = [root stringByAppendingString:@"/"];
     NSDictionary *byPath = registeredAppsByPath();
-    for (NSString *path in byPath) {
-        if (![path hasPrefix:prefix] || [NSFileManager.defaultManager fileExistsAtPath:path]) continue;
+    if (!byPath) return jsonDup(@{@"error": @"LaunchServices application list unavailable after registration"});
+    for (NSString *path in [[byPath allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
+        if (![path hasPrefix:prefix] || [[path substringFromIndex:prefix.length] containsString:@"/"] || [NSFileManager.defaultManager fileExistsAtPath:path]) continue;
+        NSString *bundleID = stringFromValue(proxyValue(byPath[path], @"applicationIdentifier")) ?: stringFromValue(proxyValue(byPath[path], @"bundleIdentifier"));
+        // Do not unregister the same ID we just moved (or failed to move).
+        if (bundleID && installed[bundleID]) continue;
         if (icli_unregister_app(path.UTF8String)) [unregistered addObject:path];
         else [failed addObject:path];
     }
     NSDictionary *after = registeredAppsByPath();
+    if (!after) return jsonDup(@{@"error": @"LaunchServices application list unavailable during verification"});
     NSMutableArray *missing = [NSMutableArray array];
-    for (NSString *path in registered) if (!after[normalizedAppPath(path)]) [missing addObject:path];
+    for (NSString *bundleID in installed) {
+        NSString *path = installed[bundleID];
+        id proxy = after[normalizedAppPath(path)];
+        NSString *registeredID = stringFromValue(proxyValue(proxy, @"applicationIdentifier")) ?: stringFromValue(proxyValue(proxy, @"bundleIdentifier"));
+        if (![registeredID isEqual:bundleID]) [missing addObject:path];
+    }
     for (NSString *path in unregistered) if (after[path]) [missing addObject:path];
-    return jsonDup(@{@"directory": root, @"registered": registered, @"unregistered": unregistered, @"failed": failed, @"unverified": missing});
+    return jsonDup(@{@"directory": root, @"registered": registered, @"unchanged": unchanged, @"unregistered": unregistered, @"failed": failed, @"unverified": missing});
 }
 
 /// Unregisters every registered application whose bundle lives directly in `directory`.

@@ -639,9 +639,22 @@ def app_refresh(d):
         assert registered['registered'] and registered['bundle_id'] == bundle, registered
         assert d.cli('app', 'info', bundle)['bundle_path'].endswith('/IcliInstallFixture.app')
         d.cli('app', 'register', folder + '/missing.app', expected=1)
-        # APP-03: refresh re-registers the directory, then drops the entry once its bundle vanished.
+        d.cli('app', 'unregister', app, expected=1)
+        assert d.cli('app', 'unregister', app, '--force')['unregistered'] is True
+        assert d.run(['test', '-f', app + '/Info.plist']).returncode == 0, 'unregister deleted the app bundle'
+        d.cli('app', 'info', bundle, expected=1)
+        assert d.cli('app', 'unregister', app, '--force')['unregistered'] is False
+        d.cli('app', 'register', app)
+        # APP-03: unchanged apps are skipped; missing bundles are unregistered.
         refreshed = d.cli('app', 'refresh', '--directory', folder)
-        assert refreshed['registered'] == [app.replace('/tmp/', '/var/tmp/')] and not refreshed['failed'] and not refreshed['unverified'], refreshed
+        assert refreshed['registered'] == [] and refreshed['unchanged'] == [app.replace('/tmp/', '/var/tmp/')] and not refreshed['failed'] and not refreshed['unverified'], refreshed
+        d.run(['rm', '-rf', app])
+        # Missing bundles must retain LaunchServices' original directory URL.
+        assert d.cli('app', 'unregister', app, '--force')['unregistered'] is True
+        d.cli('app', 'info', bundle, expected=1)
+        assert d.cli('app', 'unregister', app, '--force')['unregistered'] is False
+        d.upload(ROOT / '.build/install-fixtures/Payload/IcliInstallFixture.app', app)
+        d.cli('app', 'register', app)
         d.run(['rm', '-rf', app])
         refreshed = d.cli('app', 'refresh', '--directory', folder)
         assert refreshed['registered'] == [] and len(refreshed['unregistered']) == 1 and not refreshed['unverified'], refreshed
@@ -914,12 +927,51 @@ def system_inspection(d):
     assert isinstance(d.cli('sec', 'ssl-killswitch')['present'], bool)
 
 
+@case('on_device_self_tests', 'runtime', ['tests'])
+def on_device_self_tests(d):
+    d.fixture()
+    # Verify capability results against an independent command invocation.
+    # Vision is unavailable on some vphone builds; self-tests must fail honestly.
+    ocr = d.cli('screen', 'ocr', expected=None)
+    expected_failures = {'ocr'} if ocr.get('error') else set()
+
+    def verify_report(report, skipped, additional_failures=()):
+        failures = expected_failures | set(additional_failures)
+        assert {row['name'] for row in report['tests'] if row['result'] == 'failed'} == failures, report
+        assert report['status'] == (1 if failures else 0), report
+        assert report['failed'] == len(failures) and report['skipped'] == skipped, report
+        assert report['passed'] + report['failed'] + report['skipped'] == len(report['tests']), report
+        assert report['complete'] == (not failures and skipped == 0), report
+
+    mismatch = d.cli('tests', '--expect-layout', 'roothide', expected=1)
+    assert 'no tests were run' in mismatch['message'], mismatch
+    invalid = d.run([d.binary, 'tests', '--expect-layout', 'invalid'])
+    assert invalid.returncode != 0 and 'Expected layout must be' in invalid.stderr, invalid.stderr
+    partial = d.cli('tests', '--expect-layout', 'rootless', timeout=120, expected=1 if expected_failures else 0)
+    verify_report(partial, skipped=1)
+    assert any(row['name'] == 'app_registration_refresh' and row['result'] == 'skipped' for row in partial['tests'])
+    fixture = '/tmp/icli-selftest-source-' + uuid.uuid4().hex + '.app'
+    d.upload(ROOT / '.build/install-fixtures/SelfTestFixture.app', fixture)
+    try:
+        result = d.cli('tests', '--expect-layout', 'rootless', '--registration-fixture', fixture, timeout=120, expected=1 if expected_failures else 0)
+        (ROOT / '.build/selftest-rootless.json').write_text(json.dumps(result, indent=2) + '\n')
+        verify_report(result, skipped=0)
+        failure = d.cli('tests', '--registration-fixture', fixture + '/missing.app', timeout=120, expected=1)
+        verify_report(failure, skipped=0, additional_failures={'app_registration_refresh'})
+        assert any(row['name'] == 'app_registration_refresh' and row['result'] == 'failed' for row in failure['tests'])
+    finally:
+        d.run(['rm', '-rf', fixture])
+
+
 @case('icon_cache', 'system', ['sb uicache'])
 def icon_cache(d):
+    d.fixture()
+    before = next(app['pid'] for app in d.cli('app', 'running')['apps'] if app['bundle_id'] == BUNDLE)
     refreshed = d.cli('sb', 'uicache', sudo=True, timeout=90)
     assert refreshed['directory'].endswith('/Applications') and not refreshed['failed'] and not refreshed['unverified'], refreshed
-    assert any(path.endswith('/IcliTestHost.app') for path in refreshed['registered'])
-    d.fixture()
+    assert any(path.endswith('/IcliTestHost.app') for path in refreshed['unchanged'])
+    after = next(app['pid'] for app in d.cli('app', 'running')['apps'] if app['bundle_id'] == BUNDLE)
+    assert before == after, 'refresh terminated or restarted an unchanged app'
     assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
 
 

@@ -15,7 +15,7 @@ struct App: ParsableCommand {
 
 extension App {
     struct Refresh: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Re-register every app in a directory and drop stale registrations")
+        static var configuration = CommandConfiguration(abstract: "Register new or moved apps, skip unchanged apps, and drop stale registrations")
         @OptionGroup var output: OutputOptions
         @Option(help: "Directory of .app bundles (default: the bootstrap's /Applications)") var directory: String?
         func run() { emit(allowWhenLocked: true, output) { try refreshApps(directory: directory) } }

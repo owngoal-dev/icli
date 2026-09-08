@@ -160,8 +160,8 @@ public func unregisterApp(_ path: String, force: Bool) throws -> [String: Any] {
     return ["unregistered": true, "path": path, "bundle_id": before["bundle_id"] ?? ""]
 }
 
-/// Re-registers every bundle in a directory (default: the bootstrap's
-/// /Applications) and drops registrations whose bundle disappeared.
+/// Registers new or moved bundles in a directory (default: the bootstrap's
+/// /Applications), skips unchanged apps, and drops missing bundles' registrations.
 public func refreshApps(directory: String?) throws -> [String: Any] {
     let root = directory ?? JailbreakRoot.current.jbrootPath("/Applications")
     let result = try decodeApps(takeCString(icli_apps_refresh_json(root)))

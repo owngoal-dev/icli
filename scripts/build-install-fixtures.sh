@@ -19,6 +19,24 @@ ent['application-identifier']=info['CFBundleIdentifier']
 plistlib.dump(ent,open(root/'entitlements.plist','wb'))
 PY
 ldid -S"$root/entitlements.plist" "$app"
+# A separate identity keeps on-device self-tests away from install acceptance.
+selftest="$root/SelfTestFixture.app"
+mkdir -p "$selftest"
+cp "$app/IcliTestHost" "$selftest/IcliTestHost"
+python3 - "$app" "$selftest" "$root" <<'PY'
+import plistlib, sys
+from pathlib import Path
+app, fixture, root = map(Path, sys.argv[1:])
+info = plistlib.loads((app / 'Info.plist').read_bytes())
+info['CFBundleIdentifier'] = 'dev.owngoal.icli.SelfTestFixture'
+info['CFBundleDisplayName'] = 'icli Self-Test Fixture'
+(fixture / 'Info.plist').write_bytes(plistlib.dumps(info))
+ent = plistlib.loads((root / 'entitlements.plist').read_bytes())
+ent['application-identifier'] = info['CFBundleIdentifier']
+(root / 'selftest-entitlements.plist').write_bytes(plistlib.dumps(ent))
+PY
+ldid -S"$root/selftest-entitlements.plist" "$selftest/IcliTestHost"
+ldid -S"$root/selftest-entitlements.plist" "$selftest"
 (cd "$root" && zip -qr icli-install-fixture.ipa Payload)
 cat > "$root/deb/DEBIAN/control" <<'CONTROL'
 Package: dev.owngoal.icli.installtest

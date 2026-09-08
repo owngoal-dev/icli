@@ -197,7 +197,7 @@ struct SB: ParsableCommand {
 
 extension SB {
     struct Uicache: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Re-register every app in the bootstrap's /Applications")
+        static var configuration = CommandConfiguration(abstract: "Refresh app registrations in the bootstrap's /Applications")
         @OptionGroup var output: OutputOptions
         func run() { emit(allowWhenLocked: true, output) { try refreshApps(directory: nil) } }
     }
