@@ -1062,27 +1062,67 @@ bool icli_uninstall_app(const char *bundle_id) {
     return [ws uninstallApplication:[NSString stringWithUTF8String:bundle_id] withOptions:nil];
 }
 
+static BOOL bundleHasSettingsBundle(NSString *path) {
+    return [NSFileManager.defaultManager fileExistsAtPath:[path stringByAppendingPathComponent:@"Settings.bundle/Root.plist"]];
+}
+
+/// Whether LaunchServices' record is of the build on disk; a build that is
+/// not a string, on either side, cannot be told apart and counts as current.
+/// The proxy's bundleVersion is the string as written; LSApplicationRecord's
+/// is not.
+static BOOL registeredBuildIsCurrent(id proxy, NSDictionary *info) {
+    id build = info[@"CFBundleVersion"];
+    NSString *registeredBuild = stringFromValue(proxyValue(proxy, @"bundleVersion"));
+    return ![build isKindOfClass:NSString.class] || !registeredBuild || [registeredBuild isEqual:build];
+}
+
+/// Whether a registration from the Info.plist can stand in for this record:
+/// it spells out no data container, group containers or plug-ins, so a
+/// record that has any is kept. No record is replaceable.
+static BOOL recordIsReplaceable(id proxy) {
+    return ![proxyValue(proxy, @"isContainerized") boolValue] && !proxyValue(proxy, @"dataContainerURL") &&
+        ![proxyValue(proxy, @"groupContainerURLs") count] && ![proxyValue(proxy, @"plugInKitPlugins") count];
+}
+
+static NSString *normalizedAppPath(NSString *path);
+static NSDictionary<NSString *, id> *registeredAppsByPath(void);
+
+/// On iOS 26, registerApplication: refused a new bundle (Saily's) and
+/// answered YES for one it already had without reading it again, and it never
+/// records HasSettingsBundle, without which the Settings app shows no page
+/// for the app. So the record is read back, and one that is missing, of
+/// another build or wrong about the settings bundle is registered from the
+/// Info.plist instead, unless it holds what that registration would drop. A
+/// registration whose record cannot be read back is left as it is, and one
+/// that leaves a record of another build has failed.
 static BOOL registerAppAtPath(NSString *path) {
     id ws = lsWorkspace();
     if (!ws || path.length == 0) {
         return NO;
     }
-    NSURL *url = [NSURL fileURLWithPath:path];
-    if ([ws respondsToSelector:@selector(registerApplication:)] && [ws registerApplication:url]) {
+    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
+    BOOL hasSettingsBundle = bundleHasSettingsBundle(path);
+    BOOL registered = [ws respondsToSelector:@selector(registerApplication:)] && [ws registerApplication:[NSURL fileURLWithPath:path]];
+    id proxy = registeredAppsByPath()[normalizedAppPath(path)];
+    if (proxy ? !recordIsReplaceable(proxy) : registered) {
+        return registered;
+    }
+    BOOL current = registered && registeredBuildIsCurrent(proxy, info);
+    if (current && [proxyValue(proxy, @"hasSettingsBundle") boolValue] == hasSettingsBundle) {
         return YES;
     }
-    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
-    if (info && [ws respondsToSelector:@selector(registerApplicationDictionary:)]) {
-        NSMutableDictionary *dict = [info mutableCopy];
-        dict[@"Path"] = path;
-        if (!dict[@"ApplicationType"]) {
-            dict[@"ApplicationType"] = @"System";
-        }
-        if ([ws registerApplicationDictionary:dict]) {
-            return YES;
-        }
+    if (!info || ![ws respondsToSelector:@selector(registerApplicationDictionary:)]) {
+        return current;
     }
-    return NO;
+    NSMutableDictionary *dict = [info mutableCopy];
+    dict[@"Path"] = path;
+    if (!dict[@"ApplicationType"]) {
+        dict[@"ApplicationType"] = @"System";
+    }
+    if (hasSettingsBundle) {
+        dict[@"HasSettingsBundle"] = @YES;
+    }
+    return [ws registerApplicationDictionary:dict] || current;
 }
 
 bool icli_register_app(const char *path) {
@@ -1092,9 +1132,6 @@ bool icli_register_app(const char *path) {
     }
     return registerAppAtPath([NSString stringWithUTF8String:path]);
 }
-
-static NSString *normalizedAppPath(NSString *path);
-static NSDictionary<NSString *, id> *registeredAppsByPath(void);
 
 bool icli_unregister_app(const char *path) {
     icli_private_init();
@@ -1176,8 +1213,10 @@ static NSArray<NSString *> *appBundlesInDirectory(NSString *directory, NSError *
     return [paths sortedArrayUsingSelector:@selector(compare:)];
 }
 
-/// Reconcile by bundle ID and resolved path. Re-registering unchanged apps
-/// can terminate them (upstream uikittools-ng 627e1ee). A moved app must be
+/// Reconcile by bundle ID, resolved path and build, so an app updated in
+/// place is registered again when registerAppAtPath can replace its record.
+/// Re-registering unchanged apps can terminate them (upstream uikittools-ng
+/// 627e1ee). A moved app must be
 /// registered before removing stale paths, since both records share an ID.
 char *icli_apps_refresh_json(const char *directory) {
     icli_private_init();
@@ -1191,19 +1230,21 @@ char *icli_apps_refresh_json(const char *directory) {
     NSDictionary *before = registeredAppsByPath();
     if (!before) return jsonDup(@{@"error": @"LaunchServices application list unavailable"});
     NSMutableDictionary *installed = [NSMutableDictionary dictionary];
+    NSMutableDictionary *infos = [NSMutableDictionary dictionary];
     for (NSString *path in paths) {
         NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
         NSString *bundleID = info[@"CFBundleIdentifier"];
         if (![bundleID isKindOfClass:NSString.class] || !bundleID.length) return jsonDup(@{@"error": [@"missing bundle identifier: " stringByAppendingString:path]});
         if (installed[bundleID]) return jsonDup(@{@"error": [@"duplicate bundle identifier: " stringByAppendingString:bundleID]});
         installed[bundleID] = path;
+        infos[bundleID] = info;
     }
     NSMutableArray *registered = [NSMutableArray array], *failed = [NSMutableArray array], *unregistered = [NSMutableArray array], *unchanged = [NSMutableArray array];
     for (NSString *bundleID in [[installed allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
         NSString *path = installed[bundleID];
         id proxy = before[normalizedAppPath(path)];
         NSString *registeredID = stringFromValue(proxyValue(proxy, @"applicationIdentifier")) ?: stringFromValue(proxyValue(proxy, @"bundleIdentifier"));
-        if ([registeredID isEqual:bundleID]) {
+        if ([registeredID isEqual:bundleID] && (registeredBuildIsCurrent(proxy, infos[bundleID]) || !recordIsReplaceable(proxy))) {
             [unchanged addObject:path];
             continue;
         }

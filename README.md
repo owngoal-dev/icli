@@ -145,7 +145,9 @@ icli app refresh
 icli sb system-apps get
 ```
 
-`app refresh` and `sb uicache` register new or moved bundles, skip unchanged registrations, and remove stale entries directly inside the selected Applications directory. The result separates `registered`, `unchanged`, and `unregistered` paths and verifies changes against LaunchServices. To explicitly re-register an updated app at the same path, use `icli app register /path/to/App.app`.
+`app refresh` and `sb uicache` register new, moved, or updated bundles, skip unchanged registrations, and remove stale entries directly inside the selected Applications directory. An app counts as updated when its `CFBundleVersion` differs from its LaunchServices record, unless that record has a data container, group containers or plug-ins (see below). The result separates `registered`, `unchanged`, and `unregistered` paths and verifies changes against LaunchServices. To re-register an app whose build did not change, use `icli app register /path/to/App.app`.
+
+Registration asks LaunchServices to read the bundle, then reads the record back. On iOS 26 LaunchServices refuses some new bundles and answers yes for a bundle it already has without reading it again, and it never marks an app as having a settings bundle (`HasSettingsBundle`), without which the Settings app shows no page for `Settings.bundle`. A record that is missing, of another build, or wrong about the settings bundle is therefore registered again from the app's Info.plist, with the mark. A registration that still leaves a record of another build fails. A record with a data container, group containers or plug-ins is kept as it is, since that registration would drop them. `uicache` from uikittools leaves the mark out, so the page disappears after `uicache -p` until the app is registered again.
 
 `svc load`, `svc unload`, and `svc status` also accept a directory for batch operations. `svc enable` and `svc disable` take a service label. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
 
