@@ -220,10 +220,30 @@ extension SB {
 }
 
 struct Svc: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "launchd system services", subcommands: [Load.self, Unload.self, Enable.self, Disable.self, Status.self])
+    static var configuration = CommandConfiguration(
+        abstract: "launchd system services",
+        subcommands: [
+            Bootstrap.self, Bootout.self, Load.self, Unload.self,
+            Enable.self, Disable.self, Kickstart.self, Start.self, Stop.self,
+            Kill.self, Remove.self, List.self, Print.self, PrintDisabled.self,
+            Getenv.self, Setenv.self, Unsetenv.self, Status.self,
+        ]
+    )
 }
 
 extension Svc {
+    struct Bootstrap: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Bootstrap plists or directories into the system launchd domain")
+        @OptionGroup var output: OutputOptions
+        @Argument var paths: [String]
+        func run() { emit(allowWhenLocked: true, output) { try loadServices(paths, load: true, override: false) } }
+    }
+    struct Bootout: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Remove plists or directories from the system launchd domain")
+        @OptionGroup var output: OutputOptions
+        @Argument var paths: [String]
+        func run() { emit(allowWhenLocked: true, output) { try loadServices(paths, load: false, override: false) } }
+    }
     struct Load: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Load plists or directories of plists into the system domain")
         @OptionGroup var output: OutputOptions
@@ -246,6 +266,69 @@ extension Svc {
         @OptionGroup var output: OutputOptions
         @Argument var label: String
         func run() { emit(allowWhenLocked: true, output) { try setServiceEnabled(label, enabled: false) } }
+    }
+    struct Kickstart: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Force an existing service to start")
+        @OptionGroup var output: OutputOptions
+        @Argument var label: String
+        @Flag(name: .customShort("k"), help: "Terminate a running instance before starting it") var kill = false
+        @Flag(name: .customShort("s"), help: "Start the service suspended") var suspended = false
+        func run() { emit(allowWhenLocked: true, output) { try kickstartService(label, kill: kill, suspended: suspended) } }
+    }
+    struct Start: ParsableCommand {
+        @OptionGroup var output: OutputOptions
+        @Argument var label: String
+        func run() { emit(allowWhenLocked: true, output) { try startService(label) } }
+    }
+    struct Stop: ParsableCommand {
+        @OptionGroup var output: OutputOptions
+        @Argument var label: String
+        func run() { emit(allowWhenLocked: true, output) { try stopService(label) } }
+    }
+    struct Kill: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Send a signal number or name to a service instance")
+        @OptionGroup var output: OutputOptions
+        @Argument var signal: String
+        @Argument var label: String
+        func run() { emit(allowWhenLocked: true, output) { try signalService(label, signal: signal) } }
+    }
+    struct Remove: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Remove a loaded service by label")
+        @OptionGroup var output: OutputOptions
+        @Argument var label: String
+        func run() { emit(allowWhenLocked: true, output) { try removeService(label) } }
+    }
+    struct List: ParsableCommand {
+        @OptionGroup var output: OutputOptions
+        @Argument var label: String?
+        func run() { emit(allowWhenLocked: true, output) { try label.map(serviceStatus) ?? listServices() } }
+    }
+    struct Print: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Print launchd's detailed description of a service")
+        @OptionGroup var output: OutputOptions
+        @Argument var label: String
+        func run() { emit(allowWhenLocked: true, output) { try printService(label) } }
+    }
+    struct PrintDisabled: ParsableCommand {
+        static var configuration = CommandConfiguration(commandName: "print-disabled", abstract: "Print persistent disabled-service overrides")
+        @OptionGroup var output: OutputOptions
+        func run() { emit(allowWhenLocked: true, output) { try disabledServiceOverrides() } }
+    }
+    struct Getenv: ParsableCommand {
+        @OptionGroup var output: OutputOptions
+        @Argument var key: String
+        func run() { emit(allowWhenLocked: true, output) { try launchdEnvironment(key) } }
+    }
+    struct Setenv: ParsableCommand {
+        @OptionGroup var output: OutputOptions
+        @Argument var key: String
+        @Argument var value: String
+        func run() { emit(allowWhenLocked: true, output) { try setLaunchdEnvironment(key, value: value) } }
+    }
+    struct Unsetenv: ParsableCommand {
+        @OptionGroup var output: OutputOptions
+        @Argument var key: String
+        func run() { emit(allowWhenLocked: true, output) { try setLaunchdEnvironment(key, value: nil) } }
     }
     struct Status: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "enabled / loaded / running for one label")

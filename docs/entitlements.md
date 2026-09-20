@@ -75,6 +75,7 @@ OCR uses Vision and the captured image; there is no separate OCR entitlement in 
 | Key | CLI value | Intended role |
 | --- | --- | --- |
 | `com.apple.private.xpc.launchd.per-user-lookup` | `true` | Query services in the foreground user's launchd domain. |
+| `com.apple.private.xpc.service-configure` | `true` | Configure and kickstart launchd services through the same private interface used by launchctl. Mutating commands remain subject to launchd ownership and root checks. |
 | `com.apple.private.xpc.launchd.userspace-reboot` | `true` | Userspace reboot request capability; root is also required. |
 | `com.apple.private.logging.stream` | `true` | Unified log streaming. |
 | `com.apple.diagnosticd.stream` | `true` | Diagnostic service log stream access. |
@@ -99,6 +100,6 @@ The shipped CLI's access-group entitlement lists only `icli.test`. The library a
 
 ## Verification and scope
 
-`make all` signs the CLI with the authoritative file. `scripts/check-packages.sh` extracts the signed entitlements using `ldid -e`, compares the entire plist with that file, and verifies both DEB layouts contain the same executable. [The acceptance report](rootless-acceptance.md) identifies the tested binary and device; RootHide runtime remains unverified.
+`make all` signs the CLI with the authoritative file. `scripts/check-packages.sh` extracts the signed entitlements using `ldid -e`, compares the entire plist with that file, and verifies both DEB layouts contain the same executable. [The acceptance report](rootless-acceptance.md) identifies the fully tested binary and device. RootHide service inspection has been checked on iOS 18.5; its full privileged acceptance suite remains pending.
 
 `scripts/check-entitlements.py` checks that this inventory includes every key and exact configured value, so additions or changes require a documentation update. A matching inventory is not proof that a platform will grant an entitlement or that an entry is individually required.

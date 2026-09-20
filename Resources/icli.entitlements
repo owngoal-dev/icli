@@ -72,6 +72,8 @@
 	<true/>
 	<key>com.apple.private.xpc.launchd.per-user-lookup</key>
 	<true/>
+	<key>com.apple.private.xpc.service-configure</key>
+	<true/>
 	<key>com.apple.backboard.client</key>
 	<true/>
 	<key>com.apple.springboard.orientationlock</key>

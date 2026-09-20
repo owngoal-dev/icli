@@ -3,16 +3,29 @@
 #import <xpc/xpc.h>
 #import <mach/mach.h>
 #import <errno.h>
+#import <string.h>
 
-// launchd's bootstrap pipe protocol, as used by launchctl(1). The routine
-// numbers are stable across iOS 15-26 (subsystem 2 = service, 3 = domain).
+// libxpc selects its launchctl client initialization path when this marker is
+// present in the main image, matching the system launchctl executable.
+__attribute__((used, section("__TEXT,__launchctl")))
+static const uint8_t launchctlImageMarker = 1;
+
+// launchd's bootstrap pipe protocol, as used by launchctl(1). iOS 15 and
+// later pass these flattened routine selectors directly to libxpc.
 enum {
+    RoutineKickstart = 702,
+    RoutinePrintService = 708,
     RoutineLoad = 800,
     RoutineUnload = 801,
     RoutineEnable = 808,
     RoutineDisable = 809,
+    RoutineKill = 812,
+    RoutineStart = 813,
     RoutineStop = 814,
     RoutineList = 815,
+    RoutineRemove = 816,
+    RoutineSetEnvironment = 819,
+    RoutineGetEnvironment = 820,
     RoutinePrint = 828,
 };
 
@@ -59,10 +72,8 @@ static int launchdRoutine(uint64_t routine, uint64_t domain, uint64_t handle, xp
     if (!global || !global->xpc_bootstrap_pipe) return ENXIO;
     xpc_dictionary_set_uint64(message, "type", domain);
     xpc_dictionary_set_uint64(message, "handle", handle);
-    xpc_dictionary_set_uint64(message, "subsystem", routine >> 8);
-    xpc_dictionary_set_uint64(message, "routine", routine);
     xpc_object_t response = NULL;
-    int status = _xpc_pipe_interface_routine(global->xpc_bootstrap_pipe, 0, message, &response, 0);
+    int status = _xpc_pipe_interface_routine(global->xpc_bootstrap_pipe, routine, message, &response, 0);
     if (status == 0 && response) status = (int)xpc_dictionary_get_int64(response, "error");
     if (reply) *reply = response;
     return status;
@@ -131,6 +142,24 @@ char *icli_launchd_service_json(const char *label) {
     return launchdJSON(result);
 }
 
+/// All services visible in the system and foreground-user domains. The raw
+/// records are retained so the Swift layer can merge proxy and process state.
+char *icli_launchd_services_json(void) {
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    uint64_t domains[2][2] = {{DomainSystem, 0}, {DomainUser, xpc_user_sessions_get_foreground_uid(0)}};
+    NSString *keys[2] = {@"system", @"user"};
+    for (int i = 0; i < 2; i++) {
+        xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_object_t reply = NULL;
+        int status = launchdRoutine(RoutineList, domains[i][0], domains[i][1], message, &reply);
+        xpc_object_t services = status == 0 && reply ? xpc_dictionary_get_value(reply, "services") : NULL;
+        NSMutableDictionary *record = [@{@"status": @(status), @"message": @(xpc_strerror(status))} mutableCopy];
+        if (services && xpc_get_type(services) == XPC_TYPE_DICTIONARY) record[@"services"] = objectFromXPC(services);
+        result[keys[i]] = record;
+    }
+    return launchdJSON(result);
+}
+
 /// The system domain's disabled-service overrides: {label: true when disabled}.
 char *icli_launchd_disabled_json(void) {
     xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
@@ -155,6 +184,111 @@ char *icli_launchd_disabled_json(void) {
     }
     vm_deallocate(mach_task_self(), address, size);
     return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"disabled": overrides});
+}
+
+static int launchdServiceRoutine(uint64_t routine, xpc_object_t message, xpc_object_t *reply, NSString **domainName) {
+    uint64_t domains[2][2] = {{DomainUser, xpc_user_sessions_get_foreground_uid(0)}, {DomainSystem, 0}};
+    NSString *domainNames[2] = {@"user", @"system"};
+    int status = 113;
+    for (int i = 0; i < 2 && status == 113; i++) {
+        status = launchdRoutine(routine, domains[i][0], domains[i][1], message, reply);
+        if (domainName) *domainName = domainNames[i];
+    }
+    return status;
+}
+
+static char *serviceActionJSON(const char *label, uint64_t routine) {
+    xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_string(message, "name", label);
+    xpc_object_t reply = NULL;
+    NSString *domain = nil;
+    int status = launchdServiceRoutine(routine, message, &reply, &domain);
+    return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"domain": domain ?: @""});
+}
+
+char *icli_launchd_start_json(const char *label) {
+    return serviceActionJSON(label, RoutineStart);
+}
+
+char *icli_launchd_stop_json(const char *label) {
+    return serviceActionJSON(label, RoutineStop);
+}
+
+char *icli_launchd_remove_json(const char *label) {
+    return serviceActionJSON(label, RoutineRemove);
+}
+
+char *icli_launchd_kickstart_json(const char *label, bool kill, bool suspended) {
+    xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_string(message, "name", label);
+    if (kill) xpc_dictionary_set_bool(message, "kill", true);
+    if (suspended) xpc_dictionary_set_bool(message, "suspended", true);
+    xpc_object_t reply = NULL;
+    NSString *domain = nil;
+    int status = launchdServiceRoutine(RoutineKickstart, message, &reply, &domain);
+    int64_t pid = reply ? xpc_dictionary_get_int64(reply, "pid") : 0;
+    return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"domain": domain ?: @"", @"pid": @(pid)});
+}
+
+char *icli_launchd_kill_json(const char *label, int signal) {
+    xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_string(message, "name", label);
+    xpc_dictionary_set_int64(message, "signal", signal);
+    xpc_object_t reply = NULL;
+    NSString *domain = nil;
+    int status = launchdServiceRoutine(RoutineKill, message, &reply, &domain);
+    return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"domain": domain ?: @""});
+}
+
+char *icli_launchd_print_json(const char *label) {
+    vm_size_t size = 0x100000;
+    vm_address_t address = 0;
+    if (vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE) != KERN_SUCCESS) {
+        return launchdJSON(@{@"status": @(ENOMEM), @"message": @(xpc_strerror(ENOMEM))});
+    }
+    uint64_t domains[2][2] = {{DomainUser, xpc_user_sessions_get_foreground_uid(0)}, {DomainSystem, 0}};
+    NSString *domainNames[2] = {@"user", @"system"};
+    int status = 113;
+    uint64_t written = 0;
+    NSString *domainName = @"system";
+    for (int i = 0; i < 2 && status == 113; i++) {
+        memset((void *)address, 0, size);
+        xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_string(message, "name", label);
+        xpc_dictionary_set_value(message, "shmem", xpc_shmem_create((void *)address, size));
+        xpc_object_t reply = NULL;
+        status = launchdRoutine(RoutinePrintService, domains[i][0], domains[i][1], message, &reply);
+        written = status == 0 && reply ? xpc_dictionary_get_uint64(reply, "bytes-written") : 0;
+        domainName = domainNames[i];
+    }
+    NSString *text = [[NSString alloc] initWithBytes:(void *)address length:MIN(written, size) encoding:NSUTF8StringEncoding] ?: @"";
+    vm_deallocate(mach_task_self(), address, size);
+    return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"domain": domainName, @"description": text});
+}
+
+char *icli_launchd_getenv_json(const char *key) {
+    xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_string(message, "envvar", key);
+    xpc_object_t reply = NULL;
+    int status = launchdRoutine(RoutineGetEnvironment, DomainCaller, 0, message, &reply);
+    const char *value = status == 0 && reply ? xpc_dictionary_get_string(reply, "value") : NULL;
+    NSMutableDictionary *result = [@{@"status": @(status), @"message": @(xpc_strerror(status)), @"exists": @(value != NULL)} mutableCopy];
+    if (value) result[@"value"] = @(value);
+    return launchdJSON(result);
+}
+
+char *icli_launchd_setenv_json(const char *key, const char *value, bool unset) {
+    xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_object_t environment = xpc_dictionary_create(NULL, NULL, 0);
+    if (unset) {
+        xpc_dictionary_set_value(environment, key, xpc_null_create());
+    } else {
+        xpc_dictionary_set_string(environment, key, value);
+    }
+    xpc_dictionary_set_value(message, "envvars", environment);
+    xpc_object_t reply = NULL;
+    int status = launchdRoutine(RoutineSetEnvironment, DomainCaller, 0, message, &reply);
+    return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status))});
 }
 
 /// `launchctl stop` for a system-domain label; launchd relaunches KeepAlive

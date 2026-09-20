@@ -580,7 +580,12 @@ def package_metadata(d):
     d.cli('pkg', 'compare', 'not a version', '1', expected=1)
 
 
-@case('launchd_services', 'system', ['svc load', 'svc unload', 'svc enable', 'svc disable', 'svc status'])
+@case('launchd_services', 'system', [
+    'svc bootstrap', 'svc bootout', 'svc load', 'svc unload', 'svc enable',
+    'svc disable', 'svc kickstart', 'svc start', 'svc stop', 'svc kill',
+    'svc remove', 'svc list', 'svc print', 'svc print-disabled', 'svc getenv',
+    'svc setenv', 'svc unsetenv', 'svc status',
+])
 def launchd_services(d):
     label = 'dev.owngoal.icli.testdaemon'
     plist = f'/var/jb/Library/LaunchDaemons/{label}.plist'
@@ -593,12 +598,35 @@ def launchd_services(d):
     d.cli('fs', 'write', '/tmp/icli-daemon.plist', body)
     assert d.run(['sh', '-c', f'cp /tmp/icli-daemon.plist {plist} && chown root:wheel {plist} && chmod 644 {plist} && mkdir -p {folder} && cp {plist} {folder}/'], sudo=True).returncode == 0
     try:
-        loaded = d.cli('svc', 'load', plist, sudo=True)
+        loaded = d.cli('svc', 'bootstrap', plist, sudo=True)
         assert loaded['verified'] and loaded['services'][0]['label'] == label, loaded
         time.sleep(1)
         status = d.cli('svc', 'status', label)
         assert status['loaded'] and status['running'] and status['pid'] > 0 and status['program'] == '/var/jb/usr/bin/sleep', status
         assert any(p['pid'] == status['pid'] for p in d.cli('proc', 'list', '--filter', 'sleep')['processes']), 'launchd pid is not a live process'
+        assert d.cli('svc', 'list', label)['pid'] == status['pid']
+        assert any(row['label'] == label for row in d.cli('svc', 'list')['services'])
+        printed = d.cli('svc', 'print', label)
+        assert printed['label'] == label and label in printed['description'], printed
+        assert isinstance(d.cli('svc', 'print-disabled')['disabled'], dict)
+        kicked = d.cli('svc', 'kickstart', '-k', label, sudo=True)
+        assert kicked['accepted'] is True
+        time.sleep(1)
+        kicked_status = d.cli('svc', 'status', label)
+        assert kicked_status['running'] and kicked_status['pid'] != status['pid'], kicked_status
+        d.cli('svc', 'kill', 'TERM', label, sudo=True)
+        time.sleep(1)
+        killed_status = d.cli('svc', 'status', label)
+        assert killed_status['running'] and killed_status['pid'] != kicked_status['pid'], killed_status
+        assert d.cli('svc', 'stop', label, sudo=True)['accepted'] is True
+        time.sleep(1)
+        assert d.cli('svc', 'start', label, sudo=True)['accepted'] is True
+        env_key = 'ICLI_ACCEPTANCE_' + uuid.uuid4().hex.upper()
+        assert d.cli('svc', 'getenv', env_key)['exists'] is False
+        assert d.cli('svc', 'setenv', env_key, 'launchd-value', sudo=True)['verified'] is True
+        assert d.cli('svc', 'getenv', env_key)['value'] == 'launchd-value'
+        assert d.cli('svc', 'unsetenv', env_key, sudo=True)['verified'] is True
+        assert d.cli('svc', 'getenv', env_key)['exists'] is False
         assert d.cli('svc', 'load', plist, sudo=True)['unchanged'] is True
         assert d.cli('svc', 'disable', label, sudo=True)['changed'] is True
         disabled = d.cli('svc', 'status', label)
@@ -607,12 +635,16 @@ def launchd_services(d):
         assert d.cli('svc', 'enable', label, sudo=True)['changed'] is True
         assert d.cli('svc', 'status', label)['enabled'] is True
         d.cli('svc', 'disable', label, expected=1)
-        unloaded = d.cli('svc', 'unload', plist, sudo=True)
-        assert unloaded['verified'] and unloaded['services'][0]['loaded'] is False, unloaded
+        removed = d.cli('svc', 'remove', label, sudo=True)
+        assert removed['accepted'] is True
         time.sleep(0.5)
         after = d.cli('svc', 'status', label)
         assert not after['loaded'] and not after['running'], after
         assert all(p['pid'] != status['pid'] for p in d.cli('proc', 'list', '--filter', 'sleep')['processes']), 'daemon process survived unload'
+        reloaded = d.cli('svc', 'bootstrap', plist, sudo=True)
+        assert reloaded['verified'] is True
+        unloaded = d.cli('svc', 'bootout', plist, sudo=True)
+        assert unloaded['verified'] and unloaded['services'][0]['loaded'] is False, unloaded
         assert d.cli('svc', 'unload', plist, sudo=True)['unchanged'] is True
         # SVC-03: a directory of daemons loads in one request.
         batch = d.cli('svc', 'load', folder, sudo=True)

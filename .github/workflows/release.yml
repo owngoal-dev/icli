@@ -76,9 +76,10 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
+          - Adds launchctl-compatible service discovery, detailed print output, bootstrap/bootout aliases, start/stop, kickstart, signals, removal, disabled overrides, and launchd environment operations.
           - Swift Package library product: **IcliKit**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
-          - These are CI-built artifacts. The repository's device acceptance report describes its recorded local build; CI does not rerun device tests. RootHide runtime remains unverified.
+          - These are CI-built artifacts. The repository's device acceptance report describes its recorded local build; CI does not rerun device tests. RootHide service inspection is verified on iOS 18.5; full privileged RootHide acceptance remains pending.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
           - Binary SHA-256: `{report['binary_sha256']}`.

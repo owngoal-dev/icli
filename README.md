@@ -15,7 +15,7 @@ Download a DEB from [GitHub Releases](https://github.com/owngoal-dev/icli/releas
 | Bootstrap | Package Architecture | Status |
 | --- | --- | --- |
 | Rootless (`/var/jb`) | `iphoneos-arm64` | Tested on the project's rootless vphone |
-| RootHide | `iphoneos-arm64e` | Experimental; package checks pass, runtime remains unverified |
+| RootHide | `iphoneos-arm64e` | Experimental; service inspection verified on iOS 18.5, full acceptance pending |
 
 Both packages contain the same arm64 executable. The architecture label identifies the bootstrap layout. iOS 16 is the minimum deployment target; the [acceptance report](docs/rootless-acceptance.md) records the environment actually tested.
 
@@ -139,7 +139,11 @@ Maintainer scripts and package triggers are not executed. Transactions report sk
 icli env info
 icli env basebin --bundled /tmp/basebin.tar
 icli svc status example.service
+icli svc list
+icli svc print example.service
 sudo icli svc load /var/jb/Library/LaunchDaemons/example.service.plist
+sudo icli svc kickstart -k example.service
+sudo icli svc kill TERM example.service
 sudo icli svc unload /var/jb/Library/LaunchDaemons/example.service.plist
 icli app refresh
 icli sb system-apps get
@@ -149,7 +153,7 @@ icli sb system-apps get
 
 Registration asks LaunchServices to read the bundle, then reads the record back. On iOS 26 LaunchServices refuses some new bundles and answers yes for a bundle it already has without reading it again, and it never marks an app as having a settings bundle (`HasSettingsBundle`), without which the Settings app shows no page for `Settings.bundle`. A record that is missing, of another build, or wrong about the settings bundle is therefore registered again from the app's Info.plist, with the mark. A registration that still leaves a record of another build fails. A record with a data container, group containers or plug-ins is kept as it is, since that registration would drop them. `uicache` from uikittools leaves the mark out, so the page disappears after `uicache -p` until the app is registered again.
 
-`svc load`, `svc unload`, and `svc status` also accept a directory for batch operations. `svc enable` and `svc disable` take a service label. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
+`svc bootstrap`/`svc bootout` expose the modern launchctl names; `svc load`/`svc unload` retain the legacy names and their persistent `--enable`/`--disable` overrides. Path commands accept multiple plists or directories. Label commands include `list`, `status`, `print`, `enable`, `disable`, `start`, `stop`, `kickstart`, `kill`, and `remove`; `print-disabled` reports persistent overrides. `getenv`, `setenv`, and `unsetenv` operate on launchd's domain environment. Mutating service and environment commands require launchd permission and normally root. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
 
 `sudo icli device reboot --force` requests a full reboot; add `--userspace` for a userspace restart. SSH may disconnect before a JSON response arrives; a disconnect alone does not prove success. Verify completion after reconnecting: a userspace restart replaces system and UI service processes while kernel boot time and boot session UUID remain unchanged; a full reboot changes the kernel boot time and session UUID. The acceptance runner records these before/after values.
 
@@ -208,7 +212,7 @@ The optional registration test uses the signed `.build/install-fixtures/SelfTest
 
 These checks establish compatibility for the operations listed in the report. The broader acceptance suite below covers touch/keyboard interaction, device settings, installation, services, and reboots. RootHide-specific container and plugin behavior still needs testing on RootHide.
 
-The [acceptance report](docs/rootless-acceptance.md) is generated from the recorded test run and lists every case and every command entry point with its result; failed or untested entries stay visible. Acceptance covers rotation, package repositories, network capture, and Keychain operations on dedicated `icli.test` entries. Keychain commands operate only within that access group and do not read other apps' items. RootHide runtime, other iOS versions, and physical hardware require separate testing.
+The [acceptance report](docs/rootless-acceptance.md) is generated from the recorded test run and lists every case and every command entry point with its result; failed or untested entries stay visible. Acceptance covers rotation, package repositories, network capture, and Keychain operations on dedicated `icli.test` entries. Keychain commands operate only within that access group and do not read other apps' items. RootHide service inspection has been checked on an iOS 18.5 iPad; the complete acceptance suite, privileged RootHide mutations, other iOS versions, and other physical hardware still require separate testing.
 
 Device acceptance uses a separate TestHost app and installation fixtures, which are excluded from release packages. After building icli, prepare them on your Mac:
 
