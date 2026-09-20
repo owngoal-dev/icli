@@ -89,7 +89,7 @@ extension App {
         @OptionGroup var output: OutputOptions
         @Argument var bundleID: String
         @Flag var force = false
-        @Flag(help: "Remove a DEB package identifier") var package = false
+        @Flag(help: "Treat <bundle-id> as an installed Debian package identifier and remove that package; requires --force.") var package = false
         func run() { emit(output) {
             if package {
                 guard force else { throw IcliError.forceRequired("uninstall package \(bundleID)") }
@@ -131,7 +131,7 @@ extension App {
 }
 
 struct Clipboard: ParsableCommand {
-    static var configuration = CommandConfiguration(subcommands: [Get.self, Set.self])
+    static var configuration = CommandConfiguration(abstract: "Read or replace clipboard text.", subcommands: [Get.self, Set.self])
 }
 
 extension Clipboard {
@@ -147,7 +147,7 @@ extension Clipboard {
 }
 
 struct URLCommand: ParsableCommand {
-    static var configuration = CommandConfiguration(commandName: "url", subcommands: [Open.self])
+    static var configuration = CommandConfiguration(commandName: "url", abstract: "Open a URL in its registered app.", subcommands: [Open.self])
 }
 
 extension URLCommand {

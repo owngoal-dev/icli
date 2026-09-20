@@ -7,7 +7,7 @@ Requires an iOS 16 or later arm64 device and a compatible bootstrap for privileg
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.4.0"),
+    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.4.1"),
 ],
 targets: [
     .target(
@@ -37,7 +37,7 @@ let completion = result["completion"] as? String
 let skippedScripts = result["scripts_not_run"] as? [String] ?? []
 ```
 
-Functions return Foundation dictionaries and throw `IcliError` or underlying Foundation errors. Handle `IcliError.code`, `.message`, or `.payload` in your own UI. Service APIs also include bootstrap/load, bootout/unload, enable/disable, start/stop, kickstart, signal, remove, disabled-override, and launchd environment operations. Treat `completion: "partial"`, skipped maintainer scripts, and registration failures as incomplete setup. DEB handling supports local archives and existing dependency checks, not repository downloads or script/trigger execution. The caller supplies passwords directly to `setAccountPassword(user:password:)`; stdin handling belongs to the CLI.
+Functions return Foundation dictionaries and throw `IcliError` or underlying Foundation errors. Handle `IcliError.code`, `.message`, or `.payload` in your own UI. Service APIs also include bootstrap/load, bootout/unload, enable/disable, start/stop, signal, remove, disabled-override, and launchd environment operations. Treat `completion: "partial"`, skipped maintainer scripts, and registration failures as incomplete setup. DEB handling supports local archives and existing dependency checks, not repository downloads or script/trigger execution. The caller supplies passwords directly to `setAccountPassword(user:password:)`; stdin handling belongs to the CLI.
 
 The API is synchronous and has not been audited for concurrent use. Serialize operations, especially package database mutations and UI interactions. Archive operations and waits can block; integrate them with your application's scheduling and lifecycle. Long-lived app hosts have only been checked for compilation through a separate consumer; the full behavior suite runs in the CLI process.
 

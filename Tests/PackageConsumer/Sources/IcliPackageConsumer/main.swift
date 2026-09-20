@@ -17,7 +17,6 @@ let launchdAPIs: [Any] = [
     startService as (String) throws -> [String: Any],
     stopService as (String) throws -> [String: Any],
     removeService as (String) throws -> [String: Any],
-    kickstartService as (String, Bool, Bool) throws -> [String: Any],
     signalService as (String, String) throws -> [String: Any],
     launchdEnvironment as (String) throws -> [String: Any],
     setLaunchdEnvironment as (String, String?) throws -> [String: Any],

@@ -582,7 +582,7 @@ def package_metadata(d):
 
 @case('launchd_services', 'system', [
     'svc bootstrap', 'svc bootout', 'svc load', 'svc unload', 'svc enable',
-    'svc disable', 'svc kickstart', 'svc start', 'svc stop', 'svc kill',
+    'svc disable', 'svc start', 'svc stop', 'svc kill',
     'svc remove', 'svc list', 'svc print', 'svc print-disabled', 'svc getenv',
     'svc setenv', 'svc unsetenv', 'svc status',
 ])
@@ -609,15 +609,10 @@ def launchd_services(d):
         printed = d.cli('svc', 'print', label)
         assert printed['label'] == label and label in printed['description'], printed
         assert isinstance(d.cli('svc', 'print-disabled')['disabled'], dict)
-        kicked = d.cli('svc', 'kickstart', '-k', label, sudo=True)
-        assert kicked['accepted'] is True
-        time.sleep(1)
-        kicked_status = d.cli('svc', 'status', label)
-        assert kicked_status['running'] and kicked_status['pid'] != status['pid'], kicked_status
         d.cli('svc', 'kill', 'TERM', label, sudo=True)
         time.sleep(1)
         killed_status = d.cli('svc', 'status', label)
-        assert killed_status['running'] and killed_status['pid'] != kicked_status['pid'], killed_status
+        assert killed_status['running'] and killed_status['pid'] != status['pid'], killed_status
         assert d.cli('svc', 'stop', label, sudo=True)['accepted'] is True
         time.sleep(1)
         assert d.cli('svc', 'start', label, sudo=True)['accepted'] is True

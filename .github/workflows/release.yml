@@ -76,7 +76,8 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - Adds launchctl-compatible service discovery, detailed print output, bootstrap/bootout aliases, start/stop, kickstart, signals, removal, disabled overrides, and launchd environment operations.
+          - Removes the unsupported kickstart command and IcliKit API. Service start and stop continue to use launchd directly.
+          - Expands CLI help with command descriptions, argument values, and usage guidance.
           - Swift Package library product: **IcliKit**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
           - These are CI-built artifacts. The repository's device acceptance report describes its recorded local build; CI does not rerun device tests. RootHide service inspection is verified on iOS 18.5; full privileged RootHide acceptance remains pending.

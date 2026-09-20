@@ -166,16 +166,6 @@ public func removeService(_ label: String) throws -> [String: Any] {
     )
 }
 
-public func kickstartService(_ label: String, kill: Bool, suspended: Bool) throws -> [String: Any] {
-    try validLabel(label)
-    return try serviceActionResult(
-        takeCString(icli_launchd_kickstart_json(label, kill, suspended)),
-        label: label,
-        action: "kickstart",
-        benignStatuses: [Int(EALREADY)]
-    )
-}
-
 public func signalService(_ label: String, signal: String) throws -> [String: Any] {
     try validLabel(label)
     let number = try parseSignal(signal)

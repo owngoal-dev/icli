@@ -51,7 +51,7 @@ extension Screen {
         @Option var fromY: Double?
         @Option var toX: Double?
         @Option var toY: Double?
-        @Option(help: "JSON array of {x,y} points") var points: String?
+        @Option(help: "Drag path as a JSON array of {x,y} points; use this option or all four endpoint options, not both.") var points: String?
         @Option var seconds: Double = 0.3
         @Option var hold: Double = 0.5
         @Option var steps: Int = 20
@@ -76,8 +76,8 @@ extension Screen {
 
     struct Shot: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        @Option(name: .customLong("output")) var path: String?
-        @Flag var base64 = false
+        @Option(name: .customLong("output"), help: "Destination JPEG path; defaults to a temporary file.") var path: String?
+        @Flag(help: "Include the JPEG as Base64 in the result; keep a file only when --output is supplied.") var base64 = false
         @Flag var nativeResolution = false
         func run() { emit(allowWhenLocked: true, output) { try takeScreenshot(path: path, base64: base64, nativeResolution: nativeResolution) } }
     }
@@ -171,11 +171,11 @@ struct UI: ParsableCommand {
 }
 
 struct ElementOptions: ParsableArguments {
-    @Argument var text: String?
-    @Option var identifier: String?
+    @Argument(help: "Text to match in an element's label, identifier, or value; required unless --identifier is supplied.") var text: String?
+    @Option(help: "Match an exact element identifier or label; takes precedence over the text argument.") var identifier: String?
     @Option var role: String?
-    @Option var match: String = "contains"
-    @Option var index: Int = 0
+    @Option(help: "Text matching mode: contains or exact; both ignore case.") var match: String = "contains"
+    @Option(help: "Zero-based index among matching elements; 0 selects the first match.") var index: Int = 0
     func selector() throws -> ElementSelector {
         try ElementSelector(text: text, identifier: identifier, role: role, match: match, index: index)
     }

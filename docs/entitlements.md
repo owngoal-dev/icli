@@ -75,7 +75,7 @@ OCR uses Vision and the captured image; there is no separate OCR entitlement in 
 | Key | CLI value | Intended role |
 | --- | --- | --- |
 | `com.apple.private.xpc.launchd.per-user-lookup` | `true` | Query services in the foreground user's launchd domain. |
-| `com.apple.private.xpc.service-configure` | `true` | Configure and kickstart launchd services through the same private interface used by launchctl. Mutating commands remain subject to launchd ownership and root checks. |
+| `com.apple.private.xpc.service-configure` | `true` | Required for service mutations such as start and stop. Declaring it does not grant every launchctl operation; launchd also checks the calling process and its privileges. |
 | `com.apple.private.xpc.launchd.userspace-reboot` | `true` | Userspace reboot request capability; root is also required. |
 | `com.apple.private.logging.stream` | `true` | Unified log streaming. |
 | `com.apple.diagnosticd.stream` | `true` | Diagnostic service log stream access. |

@@ -13,7 +13,6 @@ static const uint8_t launchctlImageMarker = 1;
 // launchd's bootstrap pipe protocol, as used by launchctl(1). iOS 15 and
 // later pass these flattened routine selectors directly to libxpc.
 enum {
-    RoutineKickstart = 702,
     RoutinePrintService = 708,
     RoutineLoad = 800,
     RoutineUnload = 801,
@@ -216,18 +215,6 @@ char *icli_launchd_stop_json(const char *label) {
 
 char *icli_launchd_remove_json(const char *label) {
     return serviceActionJSON(label, RoutineRemove);
-}
-
-char *icli_launchd_kickstart_json(const char *label, bool kill, bool suspended) {
-    xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
-    xpc_dictionary_set_string(message, "name", label);
-    if (kill) xpc_dictionary_set_bool(message, "kill", true);
-    if (suspended) xpc_dictionary_set_bool(message, "suspended", true);
-    xpc_object_t reply = NULL;
-    NSString *domain = nil;
-    int status = launchdServiceRoutine(RoutineKickstart, message, &reply, &domain);
-    int64_t pid = reply ? xpc_dictionary_get_int64(reply, "pid") : 0;
-    return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"domain": domain ?: @"", @"pid": @(pid)});
 }
 
 char *icli_launchd_kill_json(const char *label, int signal) {

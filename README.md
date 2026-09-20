@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.3.1_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.4.1_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 
@@ -142,7 +142,6 @@ icli svc status example.service
 icli svc list
 icli svc print example.service
 sudo icli svc load /var/jb/Library/LaunchDaemons/example.service.plist
-sudo icli svc kickstart -k example.service
 sudo icli svc kill TERM example.service
 sudo icli svc unload /var/jb/Library/LaunchDaemons/example.service.plist
 icli app refresh
@@ -153,7 +152,7 @@ icli sb system-apps get
 
 Registration asks LaunchServices to read the bundle, then reads the record back. On iOS 26 LaunchServices refuses some new bundles and answers yes for a bundle it already has without reading it again, and it never marks an app as having a settings bundle (`HasSettingsBundle`), without which the Settings app shows no page for `Settings.bundle`. A record that is missing, of another build, or wrong about the settings bundle is therefore registered again from the app's Info.plist, with the mark. A registration that still leaves a record of another build fails. A record with a data container, group containers or plug-ins is kept as it is, since that registration would drop them. `uicache` from uikittools leaves the mark out, so the page disappears after `uicache -p` until the app is registered again.
 
-`svc bootstrap`/`svc bootout` expose the modern launchctl names; `svc load`/`svc unload` retain the legacy names and their persistent `--enable`/`--disable` overrides. Path commands accept multiple plists or directories. Label commands include `list`, `status`, `print`, `enable`, `disable`, `start`, `stop`, `kickstart`, `kill`, and `remove`; `print-disabled` reports persistent overrides. `getenv`, `setenv`, and `unsetenv` operate on launchd's domain environment. Mutating service and environment commands require launchd permission and normally root. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
+`svc bootstrap`/`svc bootout` expose the modern launchctl names; `svc load`/`svc unload` retain the legacy names and their persistent `--enable`/`--disable` overrides. Path commands accept multiple plists or directories. Label commands include `list`, `status`, `print`, `enable`, `disable`, `start`, `stop`, `kill`, and `remove`; `print-disabled` reports persistent overrides. `getenv`, `setenv`, and `unsetenv` operate on launchd's domain environment. Mutating service and environment commands require launchd permission and normally root. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
 
 `sudo icli device reboot --force` requests a full reboot; add `--userspace` for a userspace restart. SSH may disconnect before a JSON response arrives; a disconnect alone does not prove success. Verify completion after reconnecting: a userspace restart replaces system and UI service processes while kernel boot time and boot session UUID remain unchanged; a full reboot changes the kernel boot time and session UUID. The acceptance runner records these before/after values.
 

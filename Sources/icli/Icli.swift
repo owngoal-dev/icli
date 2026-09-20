@@ -23,6 +23,7 @@ struct Icli: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "icli",
         abstract: "On-device iOS control CLI",
+        discussion: "Run 'icli <command> --help' to see its subcommands and 'icli <command> <subcommand> --help' for arguments and options.\n\nExamples:\n  icli device info\n  icli svc list --human\n  icli svc status com.example.service\n\nCommands return JSON by default. Add --human to an action command for readable text.",
         version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
         subcommands: [
             Device.self, Screen.self, Button.self, Input.self, App.self,
