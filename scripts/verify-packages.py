@@ -17,7 +17,10 @@ entitlements = plistlib.loads(subprocess.check_output(['ldid', '-e', str(binary)
 assert entitlements == plistlib.loads((root / 'Resources/icli.entitlements').read_bytes())
 assert subprocess.check_output(['lipo', '-archs', str(binary)], text=True).strip() == 'arm64'
 build = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(binary)], text=True)
-assert 'platform IOS' in build and 'minos 16.0' in build, build
+# The package floor is iOS 15 so IcliSystem can be linked there. SwiftPM 6.4
+# stamps the CLI from the Makefile's 16.0 triple, older ones from the package
+# floor; either runs on the iOS 16 the DEB's firmware dependency requires.
+assert 'platform IOS' in build and ('minos 16.0' in build or 'minos 15.0' in build), build
 loads = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
 for load in loads:
     name = load.strip().split(' (')[0]
