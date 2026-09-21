@@ -6,7 +6,7 @@ icli runs on the device itself. Use it in a device terminal or over SSH from you
 
 icli is a single, self-contained executable. It performs its work in-process using iOS frameworks and a statically linked archive library, without spawning subprocesses or invoking bootstrap tools. No additional runtime packages are required. `icli env` reports the detected environment, `spawns_processes: false`, and an empty `external_tools_used` object.
 
-For app integration, add this repository as a Swift Package dependency and select the **IcliKit** library product. See the [Swift Package integration guide](docs/swift-package.md) for usage and the [complete entitlement inventory](docs/entitlements.md) for host signing requirements.
+For app integration, add this repository as a Swift Package dependency and select the **IcliKit** library product, or **IcliSystem** for read-only system state alone: launchd services, app registrations, tweaks, processes, a device snapshot and jetsam configuration, with an iOS 15 floor and nothing linked but Foundation. See the [Swift Package integration guide](docs/swift-package.md) for usage and the [complete entitlement inventory](docs/entitlements.md) for host signing requirements.
 
 ## Install
 
@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.4.1_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.5.0_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 
@@ -55,6 +55,7 @@ The DEB installs a command-line executable and license notices. The executable i
 - **Files and logs**: Read, write, copy, move, link, and remove files; change permissions and ownership; read and edit property lists; capture live logs and read crash reports.
 - **Device controls**: Adjust brightness, volume, and rotation; use hardware button actions and the clipboard; request userspace or full reboots; render boot logos.
 - **System**: Manage launchd services, local DEB packages and repository source files, compare Debian and BaseBin versions, set account passwords through stdin, control system app visibility, restart SpringBoard, capture packets, and store test credentials in the `icli.test` Keychain access group.
+- **System state**: Dump every service with launchd's own description, and read the kernel's jetsam bands, jetsam property lists, and memory pressure levels.
 
 OCR uses Apple's Vision framework. If system text recognition is unavailable, the command returns an `unavailable` error. A successful scan with no recognized text returns an empty result.
 
@@ -141,6 +142,8 @@ icli env basebin --bundled /tmp/basebin.tar
 icli svc status example.service
 icli svc list
 icli svc print example.service
+icli svc dump
+icli device jetsam
 sudo icli svc load /var/jb/Library/LaunchDaemons/example.service.plist
 sudo icli svc kill TERM example.service
 sudo icli svc unload /var/jb/Library/LaunchDaemons/example.service.plist
@@ -152,7 +155,7 @@ icli sb system-apps get
 
 Registration asks LaunchServices to read the bundle, then reads the record back. On iOS 26 LaunchServices refuses some new bundles and answers yes for a bundle it already has without reading it again, and it never marks an app as having a settings bundle (`HasSettingsBundle`), without which the Settings app shows no page for `Settings.bundle`. A record that is missing, of another build, or wrong about the settings bundle is therefore registered again from the app's Info.plist, with the mark. A registration that still leaves a record of another build fails. A record with a data container, group containers or plug-ins is kept as it is, since that registration would drop them. `uicache` from uikittools leaves the mark out, so the page disappears after `uicache -p` until the app is registered again.
 
-`svc bootstrap`/`svc bootout` expose the modern launchctl names; `svc load`/`svc unload` retain the legacy names and their persistent `--enable`/`--disable` overrides. Path commands accept multiple plists or directories. Label commands include `list`, `status`, `print`, `enable`, `disable`, `start`, `stop`, `kill`, and `remove`; `print-disabled` reports persistent overrides. `getenv`, `setenv`, and `unsetenv` operate on launchd's domain environment. Mutating service and environment commands require launchd permission and normally root. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
+`svc bootstrap`/`svc bootout` expose the modern launchctl names; `svc load`/`svc unload` retain the legacy names and their persistent `--enable`/`--disable` overrides. Path commands accept multiple plists or directories. Label commands include `list`, `status`, `print`, `enable`, `disable`, `start`, `stop`, `kill`, and `remove`; `print-disabled` reports persistent overrides. `svc dump` returns every visible service with its status and launchd's description in one document and lists the labels launchd refused to describe under `errors`. `device jetsam` reports every process's jetsam band and memory limit, the OS's `com.apple.jetsamproperties.*` property lists, and the memory pressure sysctls; the band list needs root or `com.apple.private.memorystatus` and is replaced by `priorities_error` otherwise. `getenv`, `setenv`, and `unsetenv` operate on launchd's domain environment. Mutating service and environment commands require launchd permission and normally root. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
 
 `sudo icli device reboot --force` requests a full reboot; add `--userspace` for a userspace restart. SSH may disconnect before a JSON response arrives; a disconnect alone does not prove success. Verify completion after reconnecting: a userspace restart replaces system and UI service processes while kernel boot time and boot session UUID remain unchanged; a full reboot changes the kernel boot time and session UUID. The acceptance runner records these before/after values.
 

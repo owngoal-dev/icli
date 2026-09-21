@@ -18,7 +18,9 @@ snapshot = work / 'icli'
 consumer = work / 'consumer'
 version = plistlib.loads((root / 'Resources/Info.plist').read_bytes())['CFBundleShortVersionString']
 work.mkdir(parents=True, exist_ok=True)
-for folder in [snapshot, consumer]:
+# The snapshot keeps the repository version as its tag, so a rerun at the same
+# version must also drop the resolved checkout or SwiftPM reuses the old one.
+for folder in [snapshot, consumer, work / 'build']:
     if folder.exists():
         shutil.rmtree(folder)
 snapshot.mkdir()
@@ -40,9 +42,17 @@ manifest = consumer / 'Package.swift'
 manifest.write_text(manifest.read_text().replace('.package(path: "../..")',
                     f'.package(url: "{snapshot.as_uri()}", exact: "{version}")'))
 sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
-command = ['swift', 'build', '--package-path', str(consumer), '--scratch-path', str(work / 'build'),
-           '-c', 'release', '--triple', 'arm64-apple-ios16.0', '--sdk', sdk, '--product', 'IcliPackageConsumer']
-subprocess.run(command, check=True)
+
+def build(product, triple):
+    command = ['swift', 'build', '--package-path', str(consumer), '--scratch-path', str(work / 'build'),
+               '-c', 'release', '--triple', triple, '--sdk', sdk, '--product', product]
+    subprocess.run(command, check=True)
+    return command
+
+command = build('IcliPackageConsumer', 'arm64-apple-ios16.0')
+# The read-only product at the package's floor: an app that deploys to iOS 15
+# can link IcliSystem, which the library product is there to allow.
+system_command = build('IcliSystemConsumer', 'arm64-apple-ios15.0')
 sources = [root / 'Package.swift'] + sorted((root / 'Sources').rglob('*')) + sorted((root / 'Resources').rglob('*'))
 source_hashes = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
                  for path in sources if path.is_file()}
@@ -52,8 +62,13 @@ for path, digest in source_hashes.items():
 output = Path(subprocess.check_output(command + ['--show-bin-path'], text=True).strip()) / 'IcliPackageConsumer'
 binary = work / 'IcliPackageConsumer'
 shutil.copy2(output, binary)
+system_output = Path(subprocess.check_output(system_command + ['--show-bin-path'], text=True).strip()) / 'IcliSystemConsumer'
+system_binary = work / 'IcliSystemConsumer'
+shutil.copy2(system_output, system_binary)
 report = {'version': version, 'product': 'IcliKit', 'dependency_kind': 'source-control exact version',
           'unsigned_consumer_binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+          'system_product': 'IcliSystem', 'system_minimum_ios': '15.0',
+          'unsigned_system_consumer_binary_sha256': hashlib.sha256(system_binary.read_bytes()).hexdigest(),
           'source_sha256': source_hashes,
           'manifest_sha256': hashlib.sha256((root / 'Package.swift').read_bytes()).hexdigest()}
 if args.device:
@@ -78,3 +93,4 @@ if args.device:
     device.run(['rm', '-f', remote])
 (root / '.build/package-consumer-verification.json').write_text(json.dumps(report, indent=2) + '\n')
 print('PASS external versioned Swift Package consumer:', binary)
+print('PASS iOS 15 IcliSystem consumer:', system_binary)

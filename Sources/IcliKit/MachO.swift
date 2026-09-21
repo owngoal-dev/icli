@@ -1,3 +1,4 @@
+import IcliSystem
 import Foundation
 
 /// Read public Mach-O metadata without launching ldid or inspecting process memory.

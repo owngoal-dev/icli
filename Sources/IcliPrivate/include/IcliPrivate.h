@@ -3,6 +3,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// The read-only system half lives in IcliSystemPrivate and is re-exported here,
+// so this module still declares the whole private bridge.
+#include "IcliSystemPrivate.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -21,12 +25,6 @@ typedef struct {
 } IcliScreenMetrics;
 
 void icli_private_init(void);
-char *icli_bootstrap_json(void);
-char *icli_jbroot_path(const char *path);
-char *icli_rootfs_path(const char *path);
-char *icli_processes_json(void);
-char *icli_boot_info_json(void);
-char *icli_file_md5(const char *path);
 
 IcliLockStatus icli_lock_status(void);
 IcliScreenMetrics icli_screen_metrics(void);
@@ -83,21 +81,7 @@ char *icli_apps_refresh_json(const char *directory);
 char *icli_apps_unregister_directory_json(const char *directory);
 char *icli_app_registration_json(const char *path);
 
-char *icli_launchd_load_json(const char **paths, int count, bool load, bool override);
-char *icli_launchd_enable_json(const char *label, bool enable);
-char *icli_launchd_service_json(const char *label);
-char *icli_launchd_services_json(void);
-char *icli_launchd_disabled_json(void);
-char *icli_launchd_start_json(const char *label);
-char *icli_launchd_stop_json(const char *label);
-char *icli_launchd_remove_json(const char *label);
-char *icli_launchd_kill_json(const char *label, int signal);
-char *icli_launchd_print_json(const char *label);
-char *icli_launchd_getenv_json(const char *key);
-char *icli_launchd_setenv_json(const char *key, const char *value, bool unset);
-int icli_launchd_stop(const char *label);
 bool icli_springboard_relaunch(void);
-const char *icli_launchd_strerror(int error);
 
 char *icli_sha512_crypt(const char *key, const char *salt);
 char *icli_account_set_password_json(const char *etc_directory, const char *user, const char *password);
@@ -110,12 +94,8 @@ char *icli_bootlogo_render_json(const char *mark_path, const char *output_path, 
 char *icli_active_audio_json(void);
 char *icli_audio_button_json(const char *button);
 
-char *icli_apps_json(void);
-
 char *icli_syslog_json(double seconds, const char *process, const char *level, int max_lines);
 char *icli_ioreg_json(const char *plane);
-
-void icli_string_free(char *s);
 
 #ifdef __cplusplus
 }

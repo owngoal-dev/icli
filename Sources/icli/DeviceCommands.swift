@@ -4,7 +4,7 @@ import IcliKit
 struct Device: ParsableCommand {
     static var configuration = CommandConfiguration(
         abstract: "Device info and settings",
-        subcommands: [Info.self, Brightness.self, Volume.self, Rotation.self, Network.self, Ioreg.self, Reboot.self, Bootlogo.self]
+        subcommands: [Info.self, Jetsam.self, Brightness.self, Volume.self, Rotation.self, Network.self, Ioreg.self, Reboot.self, Bootlogo.self]
     )
 }
 
@@ -31,6 +31,12 @@ extension Device {
         static var configuration = CommandConfiguration(abstract: "Model, iOS, battery, storage, jailbreak")
         @OptionGroup var output: OutputOptions
         func run() { emit(allowWhenLocked: true, output) { try collectDeviceSnapshot() } }
+    }
+
+    struct Jetsam: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Jetsam bands, jetsam property lists and memory pressure", discussion: "The priority list needs root or com.apple.private.memorystatus; without it the result carries 'priorities_error' and the rest still comes back.")
+        @OptionGroup var output: OutputOptions
+        func run() { emit(allowWhenLocked: true, output) { try jetsamSnapshot() } }
     }
 
     struct Brightness: ParsableCommand {

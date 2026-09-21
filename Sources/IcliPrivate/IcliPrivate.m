@@ -67,7 +67,6 @@ static void (*pSBSUndimScreen)(void);
 static UIImage *(*p_UICreateScreenUIImage)(void);
 
 static IOHIDEventSystemClientRef sHIDClient;
-static id lsWorkspace(void);
 
 // Built-in digitizer sender used by witchan/ios-mcp HIDManager.m
 static const uint64_t kBuiltInDigitizerSenderID = 0x8000000817319372ULL;
@@ -736,7 +735,7 @@ bool icli_launch_app(const char *bundle_id) {
             return true;
         }
     }
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     if (ws && [ws respondsToSelector:@selector(openApplicationWithBundleID:)]) {
         [ws performSelector:@selector(openApplicationWithBundleID:) withObject:bid];
         return true;
@@ -756,7 +755,7 @@ bool icli_open_url(const char *url) {
     if (pSBSOpenSensitiveURLAndUnlock) {
         return pSBSOpenSensitiveURLAndUnlock((__bridge CFURLRef)u, 1);
     }
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     if (ws && [ws respondsToSelector:@selector(openSensitiveURL:withOptions:)]) {
         return [ws openSensitiveURL:u withOptions:nil];
     }
@@ -892,103 +891,6 @@ bool icli_volume_set(double value, const char *category) {
     return true;
 }
 
-static id lsWorkspace(void) {
-    Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
-    if (![wsClass respondsToSelector:@selector(defaultWorkspace)]) {
-        return nil;
-    }
-    return [wsClass performSelector:@selector(defaultWorkspace)];
-}
-
-static id proxyValue(id proxy, NSString *key) {
-    if (!proxy) {
-        return nil;
-    }
-    @try {
-        return [proxy valueForKey:key];
-    } @catch (NSException *ex) {
-        (void)ex;
-        return nil;
-    }
-}
-
-static NSString *stringFromValue(id value) {
-    if (!value || value == [NSNull null]) {
-        return nil;
-    }
-    if ([value isKindOfClass:[NSString class]]) {
-        NSString *text = value;
-        return text.length ? text : nil;
-    }
-    if ([value isKindOfClass:[NSURL class]]) {
-        return [(NSURL *)value path];
-    }
-    if ([value isKindOfClass:[NSNumber class]]) {
-        return [value stringValue];
-    }
-    NSString *text = [value description];
-    return text.length ? text : nil;
-}
-
-static NSDictionary *appDictForProxy(id proxy) {
-    NSMutableDictionary *d = [NSMutableDictionary dictionary];
-    NSString *bundleID = stringFromValue(proxyValue(proxy, @"applicationIdentifier")) ?: stringFromValue(proxyValue(proxy, @"bundleIdentifier"));
-    NSString *name = stringFromValue(proxyValue(proxy, @"localizedName"));
-    NSString *bundlePath = stringFromValue(proxyValue(proxy, @"bundleURL"));
-    NSString *dataPath = stringFromValue(proxyValue(proxy, @"dataContainerURL"));
-    NSString *version = stringFromValue(proxyValue(proxy, @"shortVersionString"));
-    NSString *build = stringFromValue(proxyValue(proxy, @"bundleVersion"));
-    NSString *type = stringFromValue(proxyValue(proxy, @"applicationType"));
-    NSString *signer = stringFromValue(proxyValue(proxy, @"signerIdentity")) ?: stringFromValue(proxyValue(proxy, @"teamID"));
-    if (bundleID) d[@"bundle_id"] = bundleID;
-    if (name) d[@"name"] = name;
-    if (bundlePath) d[@"bundle_path"] = bundlePath;
-    if (dataPath) d[@"data_path"] = dataPath;
-    id groups = proxyValue(proxy, @"groupContainerURLs");
-    NSMutableDictionary *groupPaths = [NSMutableDictionary dictionary];
-    if ([groups isKindOfClass:NSDictionary.class]) {
-        for (NSString *key in groups) {
-            NSString *path = stringFromValue(groups[key]);
-            if (path) groupPaths[key] = path;
-        }
-    }
-    d[@"group_containers"] = groupPaths;
-    if (version) d[@"version"] = version;
-    if (build) d[@"build"] = build;
-    if (type) d[@"type"] = type;
-    if (signer) d[@"signer"] = signer;
-    id running = proxyValue(proxy, @"isRunning");
-    if ([running respondsToSelector:@selector(boolValue)]) {
-        d[@"running"] = @([running boolValue]);
-    }
-    id schemes = proxyValue(proxy, @"claimedURLSchemes");
-    if ([schemes isKindOfClass:[NSArray class]] && [schemes count] > 0) {
-        d[@"schemes"] = schemes;
-    }
-    return d;
-}
-
-char *icli_apps_json(void) {
-    icli_private_init();
-    id ws = lsWorkspace();
-    NSArray *apps = nil;
-    if ([ws respondsToSelector:@selector(allInstalledApplications)]) {
-        apps = [ws performSelector:@selector(allInstalledApplications)];
-    }
-    NSMutableArray *out = [NSMutableArray array];
-    for (id proxy in apps) {
-        [out addObject:appDictForProxy(proxy)];
-    }
-    NSData *json = [NSJSONSerialization dataWithJSONObject:out options:0 error:nil];
-    if (!json) {
-        return strdup("[]");
-    }
-    char *copy = malloc(json.length + 1);
-    memcpy(copy, json.bytes, json.length);
-    copy[json.length] = 0;
-    return copy;
-}
-
 static void icliWalkRegistry(io_registry_entry_t entry, const char *planeName, int depth, NSMutableArray *entries) {
     if (depth > 5 || entries.count >= 300) {
         return;
@@ -1038,10 +940,6 @@ char *icli_ioreg_json(const char *plane) {
     return strndup((const char *)json.bytes, json.length);
 }
 
-void icli_string_free(char *s) {
-    free(s);
-}
-
 static char *jsonDup(NSDictionary *payload) {
     NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
     if (!json) {
@@ -1055,7 +953,7 @@ bool icli_uninstall_app(const char *bundle_id) {
     if (!bundle_id || !bundle_id[0]) {
         return false;
     }
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     if (![ws respondsToSelector:@selector(uninstallApplication:withOptions:)]) {
         return false;
     }
@@ -1072,7 +970,7 @@ static BOOL bundleHasSettingsBundle(NSString *path) {
 /// is not.
 static BOOL registeredBuildIsCurrent(id proxy, NSDictionary *info) {
     id build = info[@"CFBundleVersion"];
-    NSString *registeredBuild = stringFromValue(proxyValue(proxy, @"bundleVersion"));
+    NSString *registeredBuild = icli_ls_string(icli_ls_value(proxy, @"bundleVersion"));
     return ![build isKindOfClass:NSString.class] || !registeredBuild || [registeredBuild isEqual:build];
 }
 
@@ -1080,8 +978,8 @@ static BOOL registeredBuildIsCurrent(id proxy, NSDictionary *info) {
 /// it spells out no data container, group containers or plug-ins, so a
 /// record that has any is kept. No record is replaceable.
 static BOOL recordIsReplaceable(id proxy) {
-    return ![proxyValue(proxy, @"isContainerized") boolValue] && !proxyValue(proxy, @"dataContainerURL") &&
-        ![proxyValue(proxy, @"groupContainerURLs") count] && ![proxyValue(proxy, @"plugInKitPlugins") count];
+    return ![icli_ls_value(proxy, @"isContainerized") boolValue] && !icli_ls_value(proxy, @"dataContainerURL") &&
+        ![icli_ls_value(proxy, @"groupContainerURLs") count] && ![icli_ls_value(proxy, @"plugInKitPlugins") count];
 }
 
 static NSString *normalizedAppPath(NSString *path);
@@ -1096,7 +994,7 @@ static NSDictionary<NSString *, id> *registeredAppsByPath(void);
 /// registration whose record cannot be read back is left as it is, and one
 /// that leaves a record of another build has failed.
 static BOOL registerAppAtPath(NSString *path) {
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     if (!ws || path.length == 0) {
         return NO;
     }
@@ -1108,7 +1006,7 @@ static BOOL registerAppAtPath(NSString *path) {
         return registered;
     }
     BOOL current = registered && registeredBuildIsCurrent(proxy, info);
-    if (current && [proxyValue(proxy, @"hasSettingsBundle") boolValue] == hasSettingsBundle) {
+    if (current && [icli_ls_value(proxy, @"hasSettingsBundle") boolValue] == hasSettingsBundle) {
         return YES;
     }
     if (!info || ![ws respondsToSelector:@selector(registerApplicationDictionary:)]) {
@@ -1138,14 +1036,14 @@ bool icli_unregister_app(const char *path) {
     if (!path) {
         return false;
     }
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     if (![ws respondsToSelector:@selector(unregisterApplication:)]) {
         return false;
     }
     // Keep LaunchServices' exact directory URL, including after the bundle
     // disappears. Rebuilding it from a missing path produces a file URL.
     id proxy = registeredAppsByPath()[normalizedAppPath(@(path))];
-    NSURL *url = proxyValue(proxy, @"bundleURL");
+    NSURL *url = icli_ls_value(proxy, @"bundleURL");
     if (!url) url = [[NSURL fileURLWithPath:@(path) isDirectory:YES] URLByResolvingSymlinksInPath];
     return [ws unregisterApplication:url];
 }
@@ -1179,12 +1077,12 @@ static NSString *normalizedAppPath(NSString *path) {
 
 /// Registered application proxies keyed by normalized bundle path.
 static NSDictionary<NSString *, id> *registeredAppsByPath(void) {
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     NSArray *apps = [ws respondsToSelector:@selector(allInstalledApplications)] ? [ws performSelector:@selector(allInstalledApplications)] : nil;
     if (!apps) return nil;
     NSMutableDictionary *byPath = [NSMutableDictionary dictionary];
     for (id proxy in apps) {
-        NSString *path = stringFromValue(proxyValue(proxy, @"bundleURL"));
+        NSString *path = icli_ls_string(icli_ls_value(proxy, @"bundleURL"));
         if (path) byPath[normalizedAppPath(path)] = proxy;
     }
     return byPath;
@@ -1197,7 +1095,7 @@ char *icli_app_registration_json(const char *path) {
     if (!apps) return jsonDup(@{@"error": @"LaunchServices application list unavailable"});
     id proxy = apps[normalizedAppPath(@(path))];
     if (!proxy) return jsonDup(@{@"registered": @NO, @"path": @(path)});
-    NSMutableDictionary *result = [appDictForProxy(proxy) mutableCopy];
+    NSMutableDictionary *result = [icli_ls_app_dictionary(proxy) mutableCopy];
     result[@"registered"] = @YES;
     return jsonDup(result);
 }
@@ -1243,7 +1141,7 @@ char *icli_apps_refresh_json(const char *directory) {
     for (NSString *bundleID in [[installed allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
         NSString *path = installed[bundleID];
         id proxy = before[normalizedAppPath(path)];
-        NSString *registeredID = stringFromValue(proxyValue(proxy, @"applicationIdentifier")) ?: stringFromValue(proxyValue(proxy, @"bundleIdentifier"));
+        NSString *registeredID = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
         if ([registeredID isEqual:bundleID] && (registeredBuildIsCurrent(proxy, infos[bundleID]) || !recordIsReplaceable(proxy))) {
             [unchanged addObject:path];
             continue;
@@ -1256,7 +1154,7 @@ char *icli_apps_refresh_json(const char *directory) {
     if (!byPath) return jsonDup(@{@"error": @"LaunchServices application list unavailable after registration"});
     for (NSString *path in [[byPath allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
         if (![path hasPrefix:prefix] || [[path substringFromIndex:prefix.length] containsString:@"/"] || [NSFileManager.defaultManager fileExistsAtPath:path]) continue;
-        NSString *bundleID = stringFromValue(proxyValue(byPath[path], @"applicationIdentifier")) ?: stringFromValue(proxyValue(byPath[path], @"bundleIdentifier"));
+        NSString *bundleID = icli_ls_string(icli_ls_value(byPath[path], @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(byPath[path], @"bundleIdentifier"));
         // Do not unregister the same ID we just moved (or failed to move).
         if (bundleID && installed[bundleID]) continue;
         if (icli_unregister_app(path.UTF8String)) [unregistered addObject:path];
@@ -1268,7 +1166,7 @@ char *icli_apps_refresh_json(const char *directory) {
     for (NSString *bundleID in installed) {
         NSString *path = installed[bundleID];
         id proxy = after[normalizedAppPath(path)];
-        NSString *registeredID = stringFromValue(proxyValue(proxy, @"applicationIdentifier")) ?: stringFromValue(proxyValue(proxy, @"bundleIdentifier"));
+        NSString *registeredID = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
         if (![registeredID isEqual:bundleID]) [missing addObject:path];
     }
     for (NSString *path in unregistered) if (after[path]) [missing addObject:path];
@@ -1299,7 +1197,7 @@ char *icli_app_handlers_json(const char *url_or_scheme) {
         return jsonDup(@{@"error": @"missing url"});
     }
     NSString *arg = [NSString stringWithUTF8String:url_or_scheme];
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     NSArray *proxies = nil;
     NSString *scheme = arg;
     if ([arg containsString:@"://"]) {
@@ -1314,7 +1212,7 @@ char *icli_app_handlers_json(const char *url_or_scheme) {
     }
     NSMutableArray *apps = [NSMutableArray array];
     for (id proxy in proxies) {
-        [apps addObject:appDictForProxy(proxy)];
+        [apps addObject:icli_ls_app_dictionary(proxy)];
     }
     return jsonDup(@{
         @"url": arg,
@@ -1337,7 +1235,7 @@ bool icli_open_url_in_app(const char *url, const char *bundle_id) {
     if (!u || !bid.length) {
         return false;
     }
-    id ws = lsWorkspace();
+    id ws = icli_ls_workspace();
     SEL opSel = @selector(operationToOpenResource:usingApplication:userInfo:);
     if ([ws respondsToSelector:opSel]) {
         NSMethodSignature *sig = [ws methodSignatureForSelector:opSel];

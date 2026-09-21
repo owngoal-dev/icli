@@ -1,19 +1,8 @@
 import IcliPrivate
+import IcliSystem
 import Foundation
 import Darwin
 import Security
-
-public func listProcesses(filter: String?) throws -> [String: Any] {
-    guard let raw = takeCString(icli_processes_json()),
-          let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
-    else { throw IcliError.failed("could not read process list") }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
-    var rows = result["processes"] as? [[String: Any]] ?? []
-    if let filter {
-        rows = rows.filter { ($0["name"] as? String ?? "").localizedCaseInsensitiveContains(filter) }
-    }
-    return ["processes": rows, "count": rows.count]
-}
 
 public func listRepos() throws -> [String: Any] {
     let dir = JailbreakRoot.current.jbrootPath("/etc/apt/sources.list.d")
@@ -44,21 +33,6 @@ public func addRepo(_ url: String) throws -> [String: Any] {
     let separator = existing.isEmpty || existing.hasSuffix("\n") ? "" : "\n"
     try (existing + separator + line + "\n").write(toFile: file, atomically: true, encoding: .utf8)
     return ["added": true, "url": url]
-}
-
-public func listTweaks() throws -> [String: Any] {
-    let root = JailbreakRoot.current
-    let dirs = [
-        root.jbrootPath("/Library/MobileSubstrate/DynamicLibraries"),
-        root.jbrootPath("/usr/lib/TweakInject"),
-        "/usr/lib/TweakInject",
-    ]
-    var dylibs: [String] = []
-    for dir in dirs {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-        dylibs.append(contentsOf: names.filter { $0.hasSuffix(".dylib") }.map { (dir as NSString).appendingPathComponent($0) })
-    }
-    return ["tweaks": dylibs]
 }
 
 public func crashLogs(bundleID: String?) throws -> [String: Any] {

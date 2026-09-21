@@ -1,50 +1,24 @@
 import IcliPrivate
+import IcliSystem
 import Foundation
 import Darwin
 
+/// IcliSystem's device snapshot plus the battery and lock state that only the
+/// UIKit/SpringBoard bridge can answer.
 public func collectDeviceSnapshot() throws -> [String: Any] {
     icli_private_init()
-    let root = JailbreakRoot.current
     let lock = icli_lock_status()
-    var uts = utsname()
-    uname(&uts)
-    let machine = cStringField(&uts.machine)
-    let release = cStringField(&uts.release)
-    let sysname = cStringField(&uts.sysname)
-
-    let info = ProcessInfo.processInfo
-    let version = info.operatingSystemVersion
-    let disk = try diskUsage("/")
-    let battery = [
+    var snapshot = try deviceSnapshot()
+    snapshot["battery"] = [
         "fraction": icli_battery_fraction(),
         "state": icli_battery_state(),
     ] as [String: Any]
-
-    let boot = takeCString(icli_boot_info_json()).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] } ?? [:]
-    return [
-        "model": machine,
-        "sysname": sysname,
-        "kernel": release,
-        "boot_time": boot["boot_time"] ?? 0,
-        "boot_session_uuid": boot["boot_session_uuid"] ?? "",
-        "uptime_seconds": boot["uptime_seconds"] ?? 0,
-        "ios_version": "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)",
-        "host": info.hostName,
-        "memory_bytes": info.physicalMemory,
-        "processor_count": info.processorCount,
-        "battery": battery,
-        "storage": disk,
-        "jailbreak": [
-            "layout": root.layout.rawValue,
-            "jbroot": root.jbroot,
-            "source": root.source,
-        ],
-        "lock": [
-            "locked": lock.locked,
-            "screen_off": lock.screen_off,
-            "passcode_enabled": lock.passcode_enabled,
-        ],
+    snapshot["lock"] = [
+        "locked": lock.locked,
+        "screen_off": lock.screen_off,
+        "passcode_enabled": lock.passcode_enabled,
     ]
+    return snapshot
 }
 
 public func screenInfo() -> [String: Any] {
@@ -187,20 +161,4 @@ public func ioregistry(plane: String) throws -> [String: Any] {
         throw IcliError.failed("ioreg dump failed")
     }
     return obj
-}
-
-private func diskUsage(_ path: String) throws -> [String: Any] {
-    let values = try URL(fileURLWithPath: path).resourceValues(forKeys: [
-        .volumeTotalCapacityKey, .volumeAvailableCapacityKey,
-    ])
-    return [
-        "total_bytes": values.volumeTotalCapacity ?? 0,
-        "available_bytes": values.volumeAvailableCapacity ?? 0,
-    ]
-}
-
-private func cStringField<T>(_ value: inout T) -> String {
-    withUnsafeBytes(of: &value) { raw in
-        String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
-    }
 }

@@ -2,7 +2,8 @@ import Foundation
 import IcliKit
 
 // This consumer imports only the public library product. No CLI entry point,
-// ArgumentParser dependency, or private bridge import is needed.
+// ArgumentParser dependency, or private bridge import is needed. The launchd
+// read APIs below come from IcliSystem, which IcliKit re-exports.
 let comparison = try compareDebianVersions("1.0~beta", "1.0")
 precondition(comparison["relation"] as? String == "lt")
 let packages = try packageStatus("com.icli.icli")
@@ -21,7 +22,7 @@ let launchdAPIs: [Any] = [
     launchdEnvironment as (String) throws -> [String: Any],
     setLaunchdEnvironment as (String, String?) throws -> [String: Any],
 ]
-precondition(launchdAPIs.count == 11)
+precondition(launchdAPIs.count == 10)
 let report: [String: Any] = [
     "library": "IcliKit",
     "comparison": comparison,

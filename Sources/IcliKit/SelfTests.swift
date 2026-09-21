@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import IcliPrivate
+import IcliSystem
 
 /// Exercises actual on-device APIs. Passing this suite only covers the listed
 /// checks; the separate acceptance runner covers interaction and system changes.

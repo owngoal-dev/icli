@@ -228,7 +228,7 @@ struct Svc: ParsableCommand {
             Bootstrap.self, Bootout.self, Load.self, Unload.self,
             Enable.self, Disable.self, Start.self, Stop.self,
             Kill.self, Remove.self, List.self, Print.self, PrintDisabled.self,
-            Getenv.self, Setenv.self, Unsetenv.self, Status.self,
+            Dump.self, Getenv.self, Setenv.self, Unsetenv.self, Status.self,
         ]
     )
 }
@@ -313,6 +313,11 @@ extension Svc {
         static var configuration = CommandConfiguration(commandName: "print-disabled", abstract: "Print persistent disabled-service overrides")
         @OptionGroup var output: OutputOptions
         func run() { emit(allowWhenLocked: true, output) { try disabledServiceOverrides() } }
+    }
+    struct Dump: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Every visible service with launchd's description, in one document.", discussion: "A label launchd refuses to describe is listed in 'errors'; the rest of the document is still returned.")
+        @OptionGroup var output: OutputOptions
+        func run() { emit(allowWhenLocked: true, output) { try servicesDump() } }
     }
     struct Getenv: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Read a launchd environment variable.")

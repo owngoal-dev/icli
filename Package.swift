@@ -6,9 +6,10 @@ let repositoryDirectory = URL(fileURLWithPath: #filePath).deletingLastPathCompon
 
 let package = Package(
     name: "icli",
-    platforms: [.iOS(.v16)],
+    platforms: [.iOS(.v15)],
     products: [
         .library(name: "IcliKit", targets: ["IcliKit"]),
+        .library(name: "IcliSystem", targets: ["IcliSystem"]),
         .executable(name: "icli", targets: ["icli"]),
     ],
     dependencies: [
@@ -16,9 +17,24 @@ let package = Package(
         .package(url: "https://github.com/Lakr233/libarchive.xcframework.git", exact: "0.1.1"),
     ],
     targets: [
+        // Read-only system state: Foundation, CoreFoundation and the launchd,
+        // LaunchServices and memorystatus private symbols it resolves itself.
+        .target(
+            name: "IcliSystemPrivate",
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedFramework("Foundation"),
+                .linkedFramework("CoreFoundation"),
+            ]
+        ),
+        .target(
+            name: "IcliSystem",
+            dependencies: ["IcliSystemPrivate"]
+        ),
         .target(
             name: "IcliPrivate",
             dependencies: [
+                "IcliSystemPrivate",
                 .product(name: "LibArchive", package: "libarchive.xcframework"),
             ],
             publicHeadersPath: "include",
@@ -36,7 +52,7 @@ let package = Package(
         ),
         .target(
             name: "IcliKit",
-            dependencies: ["IcliPrivate"]
+            dependencies: ["IcliPrivate", "IcliSystem"]
         ),
         .executableTarget(
             name: "icli",
