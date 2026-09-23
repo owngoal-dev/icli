@@ -4,7 +4,7 @@ import IcliKit
 struct Screen: ParsableCommand {
     static var configuration = CommandConfiguration(
         abstract: "Touch, screenshot, OCR",
-        subcommands: [Tap.self, Swipe.self, LongPress.self, DoubleTap.self, Drag.self, Shot.self, Info.self, OCR.self, Describe.self]
+        subcommands: [Tap.self, Swipe.self, LongPress.self, DoubleTap.self, Drag.self, Touch.self, TouchSequence.self, Shot.self, Info.self, OCR.self, Describe.self]
     )
 }
 
@@ -74,6 +74,29 @@ extension Screen {
         }
     }
 
+    struct Touch: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Send one raw digitizer event: down, move or up.")
+        @OptionGroup var output: OutputOptions
+        @Argument(help: "down, move or up.") var phase: String
+        @Argument var x: Double
+        @Argument var y: Double
+        @Flag(help: "x and y are 0–1 in the fixed portrait digitizer space instead of UI points.") var normalized = false
+        func run() {
+            emit(output) {
+                guard let phase = TouchPhase(rawValue: phase) else { throw IcliError.failed("phase must be down, move or up") }
+                return try touch(phase, x: x, y: y, normalized: normalized)
+            }
+        }
+    }
+
+    struct TouchSequence: ParsableCommand {
+        static var configuration = CommandConfiguration(commandName: "touch-sequence", abstract: "Send several digitizer events from one process.")
+        @OptionGroup var output: OutputOptions
+        @Option(help: "JSON array of {phase,x,y,delay_ms}; delay_ms is the pause after that event.") var events: String
+        @Flag(help: "x and y are 0–1 in the fixed portrait digitizer space instead of UI points.") var normalized = false
+        func run() { emit(output) { try touchSequence(TouchEvent.list(fromJSON: events), normalized: normalized) } }
+    }
+
     struct Shot: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @Option(name: .customLong("output"), help: "Destination JPEG path; defaults to a temporary file.") var path: String?
@@ -138,8 +161,8 @@ extension Button {
 
 struct Input: ParsableCommand {
     static var configuration = CommandConfiguration(
-        abstract: "Text input",
-        subcommands: [Paste.self, TypeText.self, Key.self]
+        abstract: "Text and raw key input",
+        subcommands: [Paste.self, TypeText.self, Key.self, HID.self]
     )
 }
 
@@ -160,6 +183,22 @@ extension Input {
         @OptionGroup var output: OutputOptions
         @Argument var name: String
         func run() { emit(output) { try pressKey(name) } }
+    }
+    struct HID: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Send a raw HID usage: a press, or only the key going down or up.")
+        @OptionGroup var output: OutputOptions
+        @Argument(help: "Usage page, decimal or 0x hex: 7 keyboard, 12 (0x0C) consumer.") var page: String
+        @Argument(help: "Usage, decimal or 0x hex.") var usage: String
+        @Flag(help: "Only press the key down.") var down = false
+        @Flag(help: "Only release the key.") var up = false
+        func run() {
+            emit(output) {
+                guard !(down && up) else { throw IcliError.failed("use --down or --up, not both") }
+                let page = try parseHIDNumber(page), usage = try parseHIDNumber(usage)
+                if down || up { return try hidEvent(page: page, usage: usage, down: down) }
+                return try hidPress(page: page, usage: usage)
+            }
+        }
     }
 }
 
@@ -216,4 +255,11 @@ extension UI {
         @Option var interval: Double = 0.3
         func run() { emit(output) { try waitForElement(selection.selector(), appear: false, timeout: timeout, interval: interval) } }
     }
+}
+
+private func parseHIDNumber(_ text: String) throws -> Int {
+    let lower = text.lowercased()
+    let value = lower.hasPrefix("0x") ? Int(lower.dropFirst(2), radix: 16) : Int(lower)
+    guard let value else { throw IcliError.failed("\(text) is not a decimal or 0x hex number") }
+    return value
 }

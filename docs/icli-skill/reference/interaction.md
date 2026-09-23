@@ -12,10 +12,13 @@ Coordinates are UI points in the orientation shown on screen (see `icli screen i
 | `screen long-press <x> <y>` | Press and hold | `--seconds 0.6` | no | unlocked |
 | `screen swipe` | Straight swipe | `--from-x --from-y --to-x --to-y` (all required), `--seconds 0.25`, `--steps 20` | no | unlocked |
 | `screen drag` | Press, hold, then move along a path | four endpoint options **or** `--points '<JSON [{x,y},…]>'`, `--hold 0.5`, `--seconds 0.3`, `--steps 20` | no | unlocked |
+| `screen touch <down\|move\|up> <x> <y>` | One raw finger event; a gesture can span several calls | `--normalized` | no | unlocked |
+| `screen touch-sequence` | Several finger events from one process, with exact timing | `--events '<JSON [{phase,x,y,delay_ms},…]>'` (required), `--normalized` | no | unlocked |
 | `screen shot` | JPEG screenshot, upright | `--output <path>` (default: temporary file), `--base64`, `--native-resolution` | no | any |
 | `screen ocr` | Vision text recognition of the current screen | `--lang <code>` (repeatable; default zh-Hans and en-US), `--min-confidence 0.3` | no | unlocked |
 | `screen describe` | Screenshot (base64), OCR and accessibility elements from one call | | no | unlocked |
 
+- `screen touch` and `touch-sequence` take UI points like `screen tap`. With `--normalized`, x and y are 0–1 in the fixed portrait digitizer space, which differs from the UI in landscape; `screen touch` reports the converted point as `digitizer_x`/`digitizer_y`. The touch state is kept by the system, so `touch down` in one call and `touch up` in a later call make one tap, drag or long press. Always finish with `up`. In `touch-sequence`, `delay_ms` (0–60000, default 0) is the pause after that event; `finger_down` in the result is true when the sequence did not end with `up`.
 - `screen shot` has one image pixel per point by default. With `--native-resolution` the result includes `coordinate_scale`, which converts pixels to points.
 - In `screen ocr`, `blocks` holds each recognized text with its confidence and point frame. On a device without text recognition the command fails with `unavailable`.
 - `screen describe` returns `frontmost`, `screen`, `screenshot`, `ocr` and `elements`. Each component can carry its own `error`. If `context_changed` is true, the foreground app changed during the call, so do not combine its parts.
@@ -39,6 +42,9 @@ Selectors: `<text>` matches an element's label, identifier or value. Matching ig
 | `input paste <text>` | Send the whole string as Unicode key events. Does not touch the clipboard | | no | unlocked |
 | `input type <text>` | Send one grapheme at a time | `--delay-ms 30` | no | unlocked |
 | `input key <name>` | One key or chord | | no | unlocked |
+| `input hid <page> <usage>` | Raw HID usage: press (down, 100 ms, up), or only one edge | `--down`, `--up` | no | unlocked |
+
+`input hid` takes decimal or `0x` hex, both 1–0xFFFF. Page 7 is the keyboard (`7 4` is `a`, `7 0xE1` is left shift) and page 12 (`0x0C`) is consumer controls (`0x0C 0xE9` volume up, `0x0C 0xEA` volume down). A key sent with `--down` stays down across calls until the matching `--up`, so `input hid 7 0xE1 --down`, `input hid 7 5`, `input hid 7 0xE1 --up` types `B`.
 
 Key names: `return`/`enter`, `delete`/`backspace`, `tab`, `escape`, `space`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown`, and the letters `a`–`z`. Modifiers are joined with `+`: `cmd`/`command`, `ctrl`/`control`, `shift`, `alt`/`option`. Examples: `cmd+a`, `cmd+v`, `shift+tab`.
 

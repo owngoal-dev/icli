@@ -259,6 +259,74 @@ def touch_drag(d):
     assert state.get('drag_events', 0) > 3 and state['drag_x'] > 180
 
 
+def in_testhost(d, body):
+    """Runs body with a reset TestHost in front. On a shared device another client can
+    take the foreground or reset TestHost mid-run, so a failure is retried once."""
+    for attempt in range(2):
+        d.fixture()
+        try:
+            assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE, 'TestHost is not frontmost'
+            return body()
+        except AssertionError:
+            if attempt == 1:
+                raise
+
+
+def digitizer_point(screen, x, y):
+    """Independent oracle: an upright UI point as 0-1 coordinates of the portrait digitizer."""
+    width, height = screen['width'], screen['height']
+    fixed_width, fixed_height = min(width, height), max(width, height)
+    fx, fy = {0: (x, y), 90: (y, fixed_height - x), 180: (fixed_width - x, fixed_height - y),
+              270: (fixed_width - y, x)}[screen['orientation']]
+    return fx / fixed_width, fy / fixed_height
+
+
+@case('raw_touch_events', 'gestures', ['screen touch', 'screen touch-sequence'])
+def raw_touch_events(d):
+    def body():
+        try:
+            # Touch state lives in backboardd, so a gesture can span several icli processes.
+            down = d.cli('screen', 'touch', 'down', '100', '245')
+            time.sleep(0.4)
+            d.cli('screen', 'touch', 'up', '100', '245')
+            time.sleep(0.2)
+            assert d.state()['counter'] == 1
+            expected = digitizer_point(d.cli('screen', 'info'), 100, 245)
+            assert abs(down['digitizer_x'] - expected[0]) < 1e-6 and abs(down['digitizer_y'] - expected[1]) < 1e-6, down
+            d.cli('screen', 'touch', 'down', str(expected[0]), str(expected[1]), '--normalized')
+            d.cli('screen', 'touch', 'up', str(expected[0]), str(expected[1]), '--normalized')
+            time.sleep(0.2)
+            assert d.state()['counter'] == 2
+            d.cli('screen', 'touch', 'down', '150', '390')
+            time.sleep(0.8)
+            assert d.state().get('long_presses') == 1, 'long press did not begin while the finger was held'
+            d.cli('screen', 'touch', 'up', '150', '390')
+            d.cli('screen', 'touch', 'down', '54', '500')
+            time.sleep(0.3)
+            for x in range(70, 250, 20):
+                d.cli('screen', 'touch', 'move', str(x), '500')
+            d.cli('screen', 'touch', 'up', '240', '500')
+            time.sleep(0.3)
+            state = d.state()
+            assert state.get('drag_events', 0) > 3 and state['drag_x'] > 180, state
+            back = [{'phase': 'down', 'x': state['drag_x'], 'y': 500, 'delay_ms': 300}]
+            back += [{'phase': 'move', 'x': x, 'y': 500, 'delay_ms': 16} for x in range(int(state['drag_x']) - 10, 50, -10)]
+            back += [{'phase': 'up', 'x': 60, 'y': 500}]
+            result = d.cli('screen', 'touch-sequence', '--events', json.dumps(back))
+            assert result['events'] == len(back) and result['finger_down'] is False, result
+            time.sleep(0.3)
+            assert d.state()['drag_x'] < 100, d.state()
+        finally:
+            d.cli('screen', 'touch', 'up', '0.5', '0.5', '--normalized', expected=None)
+    in_testhost(d, body)
+    d.cli('screen', 'touch', 'hover', '10', '10', expected=1)
+    d.cli('screen', 'touch', 'down', '1.5', '0.5', '--normalized', expected=1)
+    d.cli('screen', 'touch', 'down', '99999', '10', expected=1)
+    d.cli('screen', 'touch-sequence', '--events', '[]', expected=1)
+    d.cli('screen', 'touch-sequence', '--events', '[{"phase":"down","x":10}]', expected=1)
+    d.cli('screen', 'touch-sequence', '--events', '[{"phase":"up","x":10,"y":10,"delay_ms":-1}]', expected=1)
+
+
 @case('unicode_input', 'input', ['input paste', 'input type', 'input key'])
 def unicode_input(d):
     d.fixture('reset')
@@ -279,6 +347,39 @@ def unicode_input(d):
     time.sleep(0.2)
     assert d.state()['text'].endswith('\n')
     d.cli('url', 'open', 'icli-test://blur')
+
+
+@case('raw_hid_events', 'input', ['input hid'])
+def raw_hid_events(d):
+    def body():
+        d.cli('url', 'open', 'icli-test://focus')
+        time.sleep(0.4)
+        try:
+            d.cli('input', 'hid', '7', '4')
+            d.cli('input', 'hid', '0x07', '0xE1', '--down')
+            d.cli('input', 'hid', '7', '5')
+            d.cli('input', 'hid', '7', '0xe1', '--up')
+            d.cli('input', 'hid', '7', '6', '--down')
+            d.cli('input', 'hid', '7', '6', '--up')
+            time.sleep(0.3)
+            assert d.state()['text'] == 'aBc', d.state()
+        finally:
+            d.cli('input', 'hid', '7', '0xE1', '--up', expected=None)
+            d.cli('url', 'open', 'icli-test://blur', expected=None)
+    in_testhost(d, body)
+    before = d.cli('device', 'volume', 'get')['volume']
+    first, second = ('0xEA', '0xE9') if before >= 1 else ('0xE9', '0xEA')
+    try:
+        d.cli('input', 'hid', '0x0C', first)
+        time.sleep(0.4)
+        assert d.cli('device', 'volume', 'get')['volume'] != before, f'volume stayed at {before}'
+        d.cli('input', 'hid', '12', second)
+        time.sleep(0.4)
+        assert abs(d.cli('device', 'volume', 'get')['volume'] - before) < 0.01
+    finally:
+        d.cli('device', 'volume', 'set', str(before), expected=None)
+    for arguments in [['0', '4'], ['7', '0x10000'], ['7', 'zz'], ['7', '4', '--down', '--up']]:
+        d.cli('input', 'hid', *arguments, expected=1)
 
 
 @case('clipboard_roundtrip', 'input', ['clipboard get', 'clipboard set'])

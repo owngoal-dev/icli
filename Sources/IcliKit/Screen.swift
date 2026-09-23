@@ -258,7 +258,7 @@ public func waitForElement(_ selector: ElementSelector, appear: Bool, timeout: T
     throw IcliError.failed("element wait timed out")
 }
 
-private func validatePoint(_ x: Double, _ y: Double) throws {
+func validatePoint(_ x: Double, _ y: Double) throws {
     let metrics = icli_screen_metrics()
     guard x.isFinite, y.isFinite, x >= 0, y >= 0, x < metrics.width, y < metrics.height else {
         throw IcliError.failed("coordinates must be finite points inside the screen")
