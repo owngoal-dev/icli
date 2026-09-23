@@ -103,6 +103,13 @@ char *icli_bootlogo_render_json(const char *mark_path, const char *output_path, 
 char *icli_active_audio_json(void);
 char *icli_audio_button_json(const char *button);
 
+/// amfid's Developer Mode reply ({success, status, armed, writable}); arm
+/// asks amfid to turn Developer Mode on after the next restart.
+char *icli_amfi_developer_mode_json(bool arm);
+/// powerd's Low Power Mode: 1 on, 0 off, -1 when the service is unavailable.
+int icli_low_power_mode_get(void);
+bool icli_low_power_mode_set(bool enabled);
+
 char *icli_syslog_json(double seconds, const char *process, const char *level, int max_lines);
 char *icli_ioreg_json(const char *plane);
 

@@ -4,7 +4,7 @@ import IcliKit
 struct Device: ParsableCommand {
     static var configuration = CommandConfiguration(
         abstract: "Device info and settings",
-        subcommands: [Info.self, Jetsam.self, Brightness.self, Volume.self, Rotation.self, Network.self, Ioreg.self, Reboot.self, Bootlogo.self]
+        subcommands: [Info.self, Jetsam.self, Brightness.self, Volume.self, Rotation.self, Network.self, Ioreg.self, Devmode.self, LowPower.self, Reboot.self, Bootlogo.self]
     )
 }
 
@@ -102,6 +102,43 @@ extension Device {
                 @Argument(help: "Set orientation lock to on or off.") var value: String
                 func run() { emit(output) { try setRotationLock(try parseOnOff(value)) } }
             }
+        }
+    }
+
+    struct Devmode: ParsableCommand {
+        static var configuration = CommandConfiguration(
+            abstract: "Developer Mode status, and arming it when it is off",
+            subcommands: [Get.self, Enable.self]
+        )
+        struct Get: ParsableCommand {
+            static var configuration = CommandConfiguration(abstract: "Whether Developer Mode is on, armed for the next restart, and changeable")
+            @OptionGroup var output: OutputOptions
+            func run() { emit(allowWhenLocked: true, output) { try developerModeStatus() } }
+        }
+        struct Enable: ParsableCommand {
+            static var configuration = CommandConfiguration(
+                abstract: "Arm Developer Mode so it turns on after the next restart",
+                discussion: "Does nothing when Developer Mode is already on or armed. It does not restart the device; after the restart the user confirms the prompt on the device."
+            )
+            @OptionGroup var output: OutputOptions
+            func run() { emit(allowWhenLocked: true, output) { try enableDeveloperMode() } }
+        }
+    }
+
+    struct LowPower: ParsableCommand {
+        static var configuration = CommandConfiguration(
+            commandName: "low-power",
+            abstract: "Low Power Mode",
+            subcommands: [Get.self, Set.self]
+        )
+        struct Get: ParsableCommand {
+            @OptionGroup var output: OutputOptions
+            func run() { emit(allowWhenLocked: true, output) { try lowPowerMode() } }
+        }
+        struct Set: ParsableCommand {
+            @OptionGroup var output: OutputOptions
+            @Argument(help: "Turn Low Power Mode on or off.") var value: String
+            func run() { emit(allowWhenLocked: true, output) { try setLowPowerMode(try parseOnOff(value)) } }
         }
     }
 
