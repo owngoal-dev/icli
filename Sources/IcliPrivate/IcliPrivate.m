@@ -1,4 +1,5 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -17,21 +18,12 @@ OBJC_EXTERN UIImage *_UICreateScreenUIImage(void);
 #import <IOKit/IOKitLib.h>
 
 @interface NSObject (IcliLS)
-- (NSString *)applicationIdentifier;
-- (NSString *)bundleIdentifier;
-- (NSString *)localizedName;
-- (NSURL *)bundleURL;
-- (NSURL *)dataContainerURL;
 - (BOOL)openSensitiveURL:(NSURL *)url withOptions:(id)options;
 - (BOOL)openURL:(NSURL *)url withOptions:(id)options;
 - (void)openApplicationWithBundleID:(NSString *)bundleID;
-+ (id)defaultWorkspace;
-+ (id)applicationProxyForIdentifier:(NSString *)bundleID;
 - (NSArray *)allInstalledApplications;
 - (NSArray *)applicationsAvailableForOpeningURL:(NSURL *)url;
 - (NSArray *)applicationsAvailableForHandlingURLScheme:(NSString *)scheme;
-- (BOOL)installApplication:(NSURL *)url withOptions:(id)options error:(NSError **)error;
-- (BOOL)installApplication:(NSURL *)url withOptions:(id)options;
 - (BOOL)uninstallApplication:(NSString *)bundleID withOptions:(id)options;
 - (BOOL)registerApplication:(NSURL *)url;
 - (BOOL)unregisterApplication:(NSURL *)url;
@@ -45,8 +37,6 @@ typedef uint32_t IOOptionBits;
 typedef double IOHIDFloat;
 
 static void *sIOKit;
-static void *sSBS;
-static void *sUIKit;
 
 static IOHIDEventRef (*pIOHIDEventCreateDigitizerEvent)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, Boolean, Boolean, IOOptionBits);
 static IOHIDEventRef (*pIOHIDEventCreateDigitizerFingerEvent)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, Boolean, Boolean, IOOptionBits);
@@ -64,7 +54,6 @@ static NSString *(*pSBSCopyFrontmostApplicationDisplayIdentifier)(void);
 static int (*pSBSLaunchApplicationWithIdentifierAndLaunchOptions)(NSString *, NSDictionary *, NSDictionary *, BOOL);
 static bool (*pSBSOpenSensitiveURLAndUnlock)(CFURLRef, char);
 static void (*pSBSUndimScreen)(void);
-static UIImage *(*p_UICreateScreenUIImage)(void);
 
 static IOHIDEventSystemClientRef sHIDClient;
 
@@ -77,10 +66,8 @@ enum {
     kIOHIDDigitizerEventRange = 1 << 0,
     kIOHIDDigitizerEventTouch = 1 << 1,
     kIOHIDDigitizerEventPosition = 1 << 2,
-    kIOHIDDigitizerTransducerTypeFinger = 2,
     kIOHIDDigitizerTransducerTypeHand = 3,
     kIOHIDEventOptionNone = 0,
-    kHIDPage_KeyboardOrKeypad = 0x07,
     kHIDPage_Consumer = 0x0C,
     kHIDUsage_Csmr_Power = 0x30,
     kHIDUsage_Csmr_Menu = 0x40,
@@ -98,21 +85,11 @@ typedef enum {
     IcliTouchEnded,
 } IcliTouchPhase;
 
-static uint64_t hidNow(void) {
-    return mach_absolute_time();
-}
-
-static void *load(const char *path) {
-    void *h = dlopen(path, RTLD_NOW);
-    return h;
-}
-
 void icli_private_init(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        sIOKit = load("/System/Library/Frameworks/IOKit.framework/IOKit");
-        sSBS = load("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices");
-        sUIKit = load("/System/Library/Frameworks/UIKit.framework/UIKit");
+        sIOKit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+        void *sbs = dlopen("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices", RTLD_NOW);
 
 #define SYM(h, p, name) p = (typeof(p))dlsym(h, name)
         if (sIOKit) {
@@ -126,16 +103,13 @@ void icli_private_init(void) {
             SYM(sIOKit, pIOHIDEventSystemClient, "IOHIDEventSystemClient");
             SYM(sIOKit, pIOHIDEventSystemClientDispatchEvent, "IOHIDEventSystemClientDispatchEvent");
         }
-        if (sSBS) {
-            SYM(sSBS, pSBSSpringBoardServerPort, "SBSSpringBoardServerPort");
-            SYM(sSBS, pSBGetScreenLockStatus, "SBGetScreenLockStatus");
-            SYM(sSBS, pSBSCopyFrontmostApplicationDisplayIdentifier, "SBSCopyFrontmostApplicationDisplayIdentifier");
-            SYM(sSBS, pSBSLaunchApplicationWithIdentifierAndLaunchOptions, "SBSLaunchApplicationWithIdentifierAndLaunchOptions");
-            SYM(sSBS, pSBSOpenSensitiveURLAndUnlock, "SBSOpenSensitiveURLAndUnlock");
-            SYM(sSBS, pSBSUndimScreen, "SBSUndimScreen");
-        }
-        if (sUIKit) {
-            SYM(sUIKit, p_UICreateScreenUIImage, "_UICreateScreenUIImage");
+        if (sbs) {
+            SYM(sbs, pSBSSpringBoardServerPort, "SBSSpringBoardServerPort");
+            SYM(sbs, pSBGetScreenLockStatus, "SBGetScreenLockStatus");
+            SYM(sbs, pSBSCopyFrontmostApplicationDisplayIdentifier, "SBSCopyFrontmostApplicationDisplayIdentifier");
+            SYM(sbs, pSBSLaunchApplicationWithIdentifierAndLaunchOptions, "SBSLaunchApplicationWithIdentifierAndLaunchOptions");
+            SYM(sbs, pSBSOpenSensitiveURLAndUnlock, "SBSOpenSensitiveURLAndUnlock");
+            SYM(sbs, pSBSUndimScreen, "SBSUndimScreen");
         }
 #undef SYM
         if (pIOHIDEventSystemClientCreate) {
@@ -206,6 +180,25 @@ static int parseRotationDegrees(id value) {
     return 0;
 }
 
+static id mainDisplay(void) {
+    dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", RTLD_NOW);
+    Class displayClass = NSClassFromString(@"CADisplay");
+    if (![displayClass respondsToSelector:@selector(mainDisplay)]) {
+        return nil;
+    }
+    return [displayClass performSelector:@selector(mainDisplay)];
+}
+
+/// The display's rotation under `key`, or `fallback` when it cannot be read.
+static int displayRotation(id display, NSString *key, int fallback) {
+    @try {
+        return parseRotationDegrees([display valueForKey:key]);
+    } @catch (NSException *ex) {
+        (void)ex;
+        return fallback;
+    }
+}
+
 // CADisplay reports the panel's pixel size and native/current rotation. On an
 // iPad the panel is landscape (nativeOrientation rot270) whatever the UI does.
 static IcliScreenMetrics panelMetrics(void) {
@@ -217,12 +210,7 @@ static IcliScreenMetrics panelMetrics(void) {
         m.scale = screen.scale > 0 ? screen.scale : 1;
         m.orientation = (int)[[UIDevice currentDevice] orientation];
     }
-    dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", RTLD_NOW);
-    Class displayClass = NSClassFromString(@"CADisplay");
-    if (![displayClass respondsToSelector:@selector(mainDisplay)]) {
-        return m;
-    }
-    id display = [displayClass performSelector:@selector(mainDisplay)];
+    id display = mainDisplay();
     if (!display) {
         return m;
     }
@@ -244,36 +232,17 @@ static IcliScreenMetrics panelMetrics(void) {
     } @catch (NSException *ex) {
         (void)ex;
     }
-    @try {
-        m.orientation = parseRotationDegrees([display valueForKey:@"currentOrientation"]);
-    } @catch (NSException *ex) {
-        (void)ex;
-    }
+    m.orientation = displayRotation(display, @"currentOrientation", m.orientation);
     return m;
 }
 
 static int nativeToCurrentRotation(void) {
-    dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", RTLD_NOW);
-    Class displayClass = NSClassFromString(@"CADisplay");
-    if (![displayClass respondsToSelector:@selector(mainDisplay)]) {
-        return 0;
-    }
-    id display = [displayClass performSelector:@selector(mainDisplay)];
+    id display = mainDisplay();
     if (!display) {
         return 0;
     }
-    int native = 0;
-    int current = 0;
-    @try {
-        native = parseRotationDegrees([display valueForKey:@"nativeOrientation"]);
-    } @catch (NSException *ex) {
-        (void)ex;
-    }
-    @try {
-        current = parseRotationDegrees([display valueForKey:@"currentOrientation"]);
-    } @catch (NSException *ex) {
-        (void)ex;
-    }
+    int native = displayRotation(display, @"nativeOrientation", 0);
+    int current = displayRotation(display, @"currentOrientation", 0);
     int delta = native - current;
     while (delta < 0) {
         delta += 360;
@@ -282,14 +251,6 @@ static int nativeToCurrentRotation(void) {
         delta -= 360;
     }
     return delta;
-}
-
-static UIImage *uikitScreenImage(void) {
-    UIImage *image = _UICreateScreenUIImage();
-    if (!image && p_UICreateScreenUIImage) {
-        image = p_UICreateScreenUIImage();
-    }
-    return image;
 }
 
 // UIKit's screen image holds the frame buffer in the fixed (portrait)
@@ -365,7 +326,7 @@ static IcliInterfaceGeometry interfaceGeometry(void) {
     if (geometryStale || !cachedGeometry.valid || now - geometryCapturedAt > 1) {
         IcliInterfaceGeometry geometry = {false, 0, 0, 1, 0};
         @autoreleasepool {
-            UIImage *image = uikitScreenImage();
+            UIImage *image = _UICreateScreenUIImage();
             CGImageRef cg = image.CGImage;
             double scale = image.scale > 0 ? image.scale : 1;
             if (cg && CGImageGetWidth(cg) > 1 && CGImageGetHeight(cg) > 1) {
@@ -672,7 +633,7 @@ static UIImage *rotateCGImage(CGImageRef src, int degrees) {
 }
 
 static UIImage *orientedScreenImage(void) {
-    UIImage *raw = uikitScreenImage();
+    UIImage *raw = _UICreateScreenUIImage();
     if (!raw) {
         // The render server draws in the panel's orientation, not the UI's.
         raw = screenshotViaRenderServer();
@@ -780,7 +741,8 @@ void icli_screen_point_to_digitizer(double x, double y, double *nx, double *ny) 
 }
 
 // nx and ny are 0…1 in the fixed digitizer space.
-static IOHIDEventRef createDigitizerEvent(double nx, double ny, IcliTouchPhase phase, uint64_t timestamp) {
+static IOHIDEventRef createDigitizerEvent(double nx, double ny, IcliTouchPhase phase) {
+    uint64_t timestamp = mach_absolute_time();
     if (!pIOHIDEventCreateDigitizerEvent) {
         return NULL;
     }
@@ -834,18 +796,20 @@ static bool hidTouch(double x, double y, IcliTouchPhase phase) {
     icli_private_init();
     double nx, ny;
     icli_screen_point_to_digitizer(x, y, &nx, &ny);
-    return dispatchHID(createDigitizerEvent(nx, ny, phase, hidNow()));
+    return dispatchHID(createDigitizerEvent(nx, ny, phase));
 }
 
 bool icli_hid_touch(int phase, double nx, double ny) {
     icli_private_init();
     // UITouchPhase numbering, which vphoned's host protocol also uses.
+    IcliTouchPhase touchPhase;
     switch (phase) {
-    case 0: return dispatchHID(createDigitizerEvent(nx, ny, IcliTouchBegan, hidNow()));
-    case 1: return dispatchHID(createDigitizerEvent(nx, ny, IcliTouchMoved, hidNow()));
-    case 3: return dispatchHID(createDigitizerEvent(nx, ny, IcliTouchEnded, hidNow()));
+    case 0: touchPhase = IcliTouchBegan; break;
+    case 1: touchPhase = IcliTouchMoved; break;
+    case 3: touchPhase = IcliTouchEnded; break;
     default: return false;
     }
+    return dispatchHID(createDigitizerEvent(nx, ny, touchPhase));
 }
 
 bool icli_hid_tap(double x, double y) {
@@ -891,7 +855,7 @@ bool icli_hid_swipe(double x1, double y1, double x2, double y2, double seconds, 
 bool icli_hid_key(uint16_t usage_page, uint16_t usage, bool down) {
     icli_private_init();
     if (!pIOHIDEventCreateKeyboardEvent) return false;
-    IOHIDEventRef event = pIOHIDEventCreateKeyboardEvent(kCFAllocatorDefault, hidNow(), usage_page, usage, down, 0);
+    IOHIDEventRef event = pIOHIDEventCreateKeyboardEvent(kCFAllocatorDefault, mach_absolute_time(), usage_page, usage, down, 0);
     if (event && pIOHIDEventSetIntegerValue) pIOHIDEventSetIntegerValue(event, 4, 1);
     return dispatchHID(event);
 }
@@ -903,7 +867,7 @@ bool icli_hid_text(const char *text) {
     if (!createUnicode) return false;
     NSData *payload = [@(text) dataUsingEncoding:NSUTF16LittleEndianStringEncoding];
     if (!payload.length || payload.length > UINT32_MAX) return false;
-    IOHIDEventRef event = createUnicode(kCFAllocatorDefault, hidNow(), payload.bytes, (uint32_t)payload.length, 1, 0);
+    IOHIDEventRef event = createUnicode(kCFAllocatorDefault, mach_absolute_time(), payload.bytes, (uint32_t)payload.length, 1, 0);
     if (event && pIOHIDEventSetIntegerValue) pIOHIDEventSetIntegerValue(event, 4, 1);
     return dispatchHID(event);
 }
@@ -1230,23 +1194,12 @@ char *icli_ioreg_json(const char *plane) {
 #endif
     io_registry_entry_t root = IORegistryGetRootEntry(master);
     if (!root) {
-        NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"entries": @[], @"error": @"no io registry"} options:0 error:nil];
-        return strndup((const char *)json.bytes, json.length);
+        return icli_json_or_empty(@{@"entries": @[], @"error": @"no io registry"});
     }
     NSMutableArray *entries = [NSMutableArray array];
     icliWalkRegistry(root, planeName, 0, entries);
     IOObjectRelease(root);
-    NSDictionary *payload = @{@"plane": @(planeName), @"entries": entries, @"count": @(entries.count)};
-    NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
-    return strndup((const char *)json.bytes, json.length);
-}
-
-static char *jsonDup(NSDictionary *payload) {
-    NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
-    if (!json) {
-        return strdup("{}");
-    }
-    return strndup((const char *)json.bytes, json.length);
+    return icli_json_or_empty(@{@"plane": @(planeName), @"entries": entries, @"count": @(entries.count)});
 }
 
 bool icli_uninstall_app(const char *bundle_id) {
@@ -1391,14 +1344,14 @@ static NSDictionary<NSString *, id> *registeredAppsByPath(void) {
 
 char *icli_app_registration_json(const char *path) {
     icli_private_init();
-    if (!path) return jsonDup(@{@"registered": @NO});
+    if (!path) return icli_json_or_empty(@{@"registered": @NO});
     NSDictionary *apps = registeredAppsByPath();
-    if (!apps) return jsonDup(@{@"error": @"LaunchServices application list unavailable"});
+    if (!apps) return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable"});
     id proxy = apps[normalizedAppPath(@(path))];
-    if (!proxy) return jsonDup(@{@"registered": @NO, @"path": @(path)});
+    if (!proxy) return icli_json_or_empty(@{@"registered": @NO, @"path": @(path)});
     NSMutableDictionary *result = [icli_ls_app_dictionary(proxy) mutableCopy];
     result[@"registered"] = @YES;
-    return jsonDup(result);
+    return icli_json_or_empty(result);
 }
 
 static NSArray<NSString *> *appBundlesInDirectory(NSString *directory, NSError **error) {
@@ -1412,6 +1365,15 @@ static NSArray<NSString *> *appBundlesInDirectory(NSString *directory, NSError *
     return [paths sortedArrayUsingSelector:@selector(compare:)];
 }
 
+static NSString *proxyBundleID(id proxy) {
+    return icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
+}
+
+/// Whether `path` is directly inside the directory that `prefix` (ending in "/") names.
+static BOOL isDirectChild(NSString *path, NSString *prefix) {
+    return [path hasPrefix:prefix] && ![[path substringFromIndex:prefix.length] containsString:@"/"];
+}
+
 /// Reconcile by bundle ID, resolved path and build, so an app updated in
 /// place is registered again when registerAppAtPath can replace its record.
 /// Re-registering unchanged apps can terminate them (upstream uikittools-ng
@@ -1419,22 +1381,22 @@ static NSArray<NSString *> *appBundlesInDirectory(NSString *directory, NSError *
 /// registered before removing stale paths, since both records share an ID.
 char *icli_apps_refresh_json(const char *directory) {
     icli_private_init();
-    if (!directory) return jsonDup(@{@"error": @"directory required"});
+    if (!directory) return icli_json_or_empty(@{@"error": @"directory required"});
     NSString *root = normalizedAppPath(@(directory));
     BOOL isDirectory = NO;
-    if (![NSFileManager.defaultManager fileExistsAtPath:root isDirectory:&isDirectory] || !isDirectory) return jsonDup(@{@"error": [@"not a directory: " stringByAppendingString:root]});
+    if (![NSFileManager.defaultManager fileExistsAtPath:root isDirectory:&isDirectory] || !isDirectory) return icli_json_or_empty(@{@"error": [@"not a directory: " stringByAppendingString:root]});
     NSError *error = nil;
     NSArray *paths = appBundlesInDirectory(root, &error);
-    if (!paths) return jsonDup(@{@"error": error.localizedDescription ?: @"could not list application directory"});
+    if (!paths) return icli_json_or_empty(@{@"error": error.localizedDescription ?: @"could not list application directory"});
     NSDictionary *before = registeredAppsByPath();
-    if (!before) return jsonDup(@{@"error": @"LaunchServices application list unavailable"});
+    if (!before) return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable"});
     NSMutableDictionary *installed = [NSMutableDictionary dictionary];
     NSMutableDictionary *infos = [NSMutableDictionary dictionary];
     for (NSString *path in paths) {
         NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
         NSString *bundleID = info[@"CFBundleIdentifier"];
-        if (![bundleID isKindOfClass:NSString.class] || !bundleID.length) return jsonDup(@{@"error": [@"missing bundle identifier: " stringByAppendingString:path]});
-        if (installed[bundleID]) return jsonDup(@{@"error": [@"duplicate bundle identifier: " stringByAppendingString:bundleID]});
+        if (![bundleID isKindOfClass:NSString.class] || !bundleID.length) return icli_json_or_empty(@{@"error": [@"missing bundle identifier: " stringByAppendingString:path]});
+        if (installed[bundleID]) return icli_json_or_empty(@{@"error": [@"duplicate bundle identifier: " stringByAppendingString:bundleID]});
         installed[bundleID] = path;
         infos[bundleID] = info;
     }
@@ -1442,7 +1404,7 @@ char *icli_apps_refresh_json(const char *directory) {
     for (NSString *bundleID in [[installed allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
         NSString *path = installed[bundleID];
         id proxy = before[normalizedAppPath(path)];
-        NSString *registeredID = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
+        NSString *registeredID = proxyBundleID(proxy);
         if ([registeredID isEqual:bundleID] && (registeredBuildIsCurrent(proxy, infos[bundleID]) || !recordIsReplaceable(proxy))) {
             [unchanged addObject:path];
             continue;
@@ -1452,50 +1414,50 @@ char *icli_apps_refresh_json(const char *directory) {
     }
     NSString *prefix = [root stringByAppendingString:@"/"];
     NSDictionary *byPath = registeredAppsByPath();
-    if (!byPath) return jsonDup(@{@"error": @"LaunchServices application list unavailable after registration"});
+    if (!byPath) return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable after registration"});
     for (NSString *path in [[byPath allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
-        if (![path hasPrefix:prefix] || [[path substringFromIndex:prefix.length] containsString:@"/"] || [NSFileManager.defaultManager fileExistsAtPath:path]) continue;
-        NSString *bundleID = icli_ls_string(icli_ls_value(byPath[path], @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(byPath[path], @"bundleIdentifier"));
+        if (!isDirectChild(path, prefix) || [NSFileManager.defaultManager fileExistsAtPath:path]) continue;
+        NSString *bundleID = proxyBundleID(byPath[path]);
         // Do not unregister the same ID we just moved (or failed to move).
         if (bundleID && installed[bundleID]) continue;
         if (icli_unregister_app(path.UTF8String)) [unregistered addObject:path];
         else [failed addObject:path];
     }
     NSDictionary *after = registeredAppsByPath();
-    if (!after) return jsonDup(@{@"error": @"LaunchServices application list unavailable during verification"});
+    if (!after) return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable during verification"});
     NSMutableArray *missing = [NSMutableArray array];
     for (NSString *bundleID in installed) {
         NSString *path = installed[bundleID];
         id proxy = after[normalizedAppPath(path)];
-        NSString *registeredID = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
+        NSString *registeredID = proxyBundleID(proxy);
         if (![registeredID isEqual:bundleID]) [missing addObject:path];
     }
     for (NSString *path in unregistered) if (after[path]) [missing addObject:path];
-    return jsonDup(@{@"directory": root, @"registered": registered, @"unchanged": unchanged, @"unregistered": unregistered, @"failed": failed, @"unverified": missing});
+    return icli_json_or_empty(@{@"directory": root, @"registered": registered, @"unchanged": unchanged, @"unregistered": unregistered, @"failed": failed, @"unverified": missing});
 }
 
 /// Unregisters every registered application whose bundle lives directly in `directory`.
 char *icli_apps_unregister_directory_json(const char *directory) {
     icli_private_init();
-    if (!directory) return jsonDup(@{@"error": @"directory required"});
+    if (!directory) return icli_json_or_empty(@{@"error": @"directory required"});
     NSString *root = normalizedAppPath(@(directory));
     NSString *prefix = [root stringByAppendingString:@"/"];
     NSMutableArray *unregistered = [NSMutableArray array], *failed = [NSMutableArray array];
     for (NSString *path in registeredAppsByPath()) {
-        if (![path hasPrefix:prefix] || [[path substringFromIndex:prefix.length] containsString:@"/"]) continue;
+        if (!isDirectChild(path, prefix)) continue;
         if (icli_unregister_app(path.UTF8String)) [unregistered addObject:path];
         else [failed addObject:path];
     }
     NSDictionary *after = registeredAppsByPath();
     NSMutableArray *remaining = [NSMutableArray array];
     for (NSString *path in unregistered) if (after[path]) [remaining addObject:path];
-    return jsonDup(@{@"directory": root, @"unregistered": unregistered, @"failed": failed, @"unverified": remaining});
+    return icli_json_or_empty(@{@"directory": root, @"unregistered": unregistered, @"failed": failed, @"unverified": remaining});
 }
 
 char *icli_app_handlers_json(const char *url_or_scheme) {
     icli_private_init();
     if (!url_or_scheme) {
-        return jsonDup(@{@"error": @"missing url"});
+        return icli_json_or_empty(@{@"error": @"missing url"});
     }
     NSString *arg = [NSString stringWithUTF8String:url_or_scheme];
     id ws = icli_ls_workspace();
@@ -1515,7 +1477,7 @@ char *icli_app_handlers_json(const char *url_or_scheme) {
     for (id proxy in proxies) {
         [apps addObject:icli_ls_app_dictionary(proxy)];
     }
-    return jsonDup(@{
+    return icli_json_or_empty(@{
         @"url": arg,
         @"scheme": scheme,
         @"apps": apps,

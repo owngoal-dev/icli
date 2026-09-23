@@ -73,13 +73,14 @@ public func writeFile(_ path: String, content: String, encoding: String) throws 
 
 public func makeDirectory(_ path: String, mode: String?) throws -> [String: Any] {
     let existed = FileManager.default.fileExists(atPath: path)
+    let permissions = try mode.map(parseMode)
     var attributes: [FileAttributeKey: Any] = [:]
-    if let mode {
-        attributes[.posixPermissions] = try parseMode(mode)
+    if let permissions {
+        attributes[.posixPermissions] = permissions
     }
     try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true, attributes: attributes)
-    if existed, let mode {
-        try FileManager.default.setAttributes([.posixPermissions: parseMode(mode)], ofItemAtPath: path)
+    if existed, let permissions {
+        try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: path)
     }
     return ["path": path, "created": !existed]
 }

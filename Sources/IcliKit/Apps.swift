@@ -145,17 +145,9 @@ public func uninstallApp(_ bundleID: String, force: Bool) throws -> [String: Any
     return ["uninstalled": bundleID]
 }
 
-private func decodeApps(_ raw: String?) throws -> [String: Any] {
-    guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid application response") }
-    if let error = result["error"] as? String {
-        throw IcliError.failed(error)
-    }
-    return result
-}
-
 /// LaunchServices' record for a bundle path, or registered=false.
 public func appRegistration(_ path: String) throws -> [String: Any] {
-    try decodeApps(takeCString(icli_app_registration_json(path)))
+    try decodeBridgeJSON(takeCString(icli_app_registration_json(path)), "application response")
 }
 
 public func registerApp(_ path: String) throws -> [String: Any] {
@@ -184,7 +176,7 @@ public func unregisterApp(_ path: String, force: Bool) throws -> [String: Any] {
 /// matches its LaunchServices record.
 public func refreshApps(directory: String?) throws -> [String: Any] {
     let root = directory ?? JailbreakRoot.current.jbrootPath("/Applications")
-    let result = try decodeApps(takeCString(icli_apps_refresh_json(root)))
+    let result = try decodeBridgeJSON(takeCString(icli_apps_refresh_json(root)), "application response")
     let failed = result["failed"] as? [String] ?? []
     let unverified = result["unverified"] as? [String] ?? []
     guard failed.isEmpty, unverified.isEmpty else { throw IcliError.commandFailed(result.merging(["error": "refresh_incomplete", "message": "\(failed.count) failed, \(unverified.count) unverified"]) { $1 }) }
@@ -195,7 +187,7 @@ public func unregisterAppsInDirectory(_ directory: String, force: Bool) throws -
     if !force {
         throw IcliError.forceRequired("unregister every app in \(directory)")
     }
-    let result = try decodeApps(takeCString(icli_apps_unregister_directory_json(directory)))
+    let result = try decodeBridgeJSON(takeCString(icli_apps_unregister_directory_json(directory)), "application response")
     let failed = result["failed"] as? [String] ?? []
     let unverified = result["unverified"] as? [String] ?? []
     guard failed.isEmpty, unverified.isEmpty else { throw IcliError.commandFailed(result.merging(["error": "unregister_incomplete", "message": "\(failed.count) failed, \(unverified.count) unverified"]) { $1 }) }

@@ -42,7 +42,6 @@ let package = Package(
                 .linkedFramework("Foundation"),
                 .linkedFramework("UIKit"),
                 .linkedFramework("IOKit"),
-                .linkedFramework("Vision"),
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("Security"),
                 .linkedFramework("ImageIO"),

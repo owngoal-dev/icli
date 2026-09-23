@@ -13,7 +13,7 @@ public func launchdStatusError(_ result: [String: Any], _ action: String) -> Icl
         return .failed("\(action) requires root (launchd status \(status))")
     }
     if status == 144 {
-        return .failed("\(action) requires launchctl service-configure privilege (launchd status 144)")
+        return .failed("\(action) requires launchctl service-configure privilege (launchd status \(status))")
     }
     if status != 0 {
         return .failed("\(action) failed: launchd status \(status) (\(result["message"] as? String ?? ""))")
@@ -39,30 +39,14 @@ public func validateEnvironmentKey(_ key: String) throws {
 public func listServices() throws -> [String: Any] {
     let result = try decodeBridgeJSON(takeCString(icli_launchd_services_json()), "launchd response")
     var rows: [String: [String: Any]] = [:]
-    for domain in ["system", "user"] {
-        let record = result[domain] as? [String: Any] ?? [:]
-        let status = record["status"] as? Int ?? 0
-        if status == 113 {
-            continue
-        }
-        if status != 0 {
-            throw IcliError.failed("launchd list failed in the \(domain) domain: status \(status)")
-        }
+    try forEachLaunchdDomain(in: result) { domain, record in
         let services = record["services"] as? [String: [String: Any]] ?? [:]
         for (label, service) in services {
             var row = rows[label] ?? ["label": label, "domains": [String](), "running": false]
             var domains = row["domains"] as? [String] ?? []
             domains.append(domain)
             row["domains"] = domains
-            let pid = service["PID"] as? Int ?? 0
-            if pid > 0 || row["pid"] == nil {
-                row["pid"] = pid
-                row["running"] = pid > 0
-                row["last_exit_status"] = service["LastExitStatus"] ?? 0
-            }
-            if let program = service["Program"] {
-                row["program"] = program
-            }
+            mergeLaunchdService(service, into: &row)
             rows[label] = row
         }
     }
@@ -96,37 +80,54 @@ public func printService(_ label: String) throws -> [String: Any] {
 public func serviceStatus(_ label: String) throws -> [String: Any] {
     try validateServiceLabel(label)
     let disabled = try decodeBridgeJSON(takeCString(icli_launchd_disabled_json()), "launchd response")
-    let overrides = disabled["disabled"] as? [String: Bool] ?? [:]
     if disabled["status"] as? Int != 0 {
         throw IcliError.failed("launchd did not report disabled services: status \(disabled["status"] ?? 0)")
     }
+    let overrides = disabled["disabled"] as? [String: Bool] ?? [:]
     let listed = try decodeBridgeJSON(takeCString(icli_launchd_service_json(label)), "launchd response")
     var payload: [String: Any] = ["label": label, "enabled": !(overrides[label] ?? false), "override": overrides[label] != nil, "loaded": false, "running": false]
     var domains: [String] = []
-    for domain in ["system", "user"] {
-        let record = listed[domain] as? [String: Any] ?? [:]
-        let status = record["status"] as? Int ?? 0
-        if status == 113 {
-            continue
-        } // ENOSERVICE
-        if status != 0 {
-            throw IcliError.failed("launchd list failed in the \(domain) domain: status \(status)")
-        }
+    try forEachLaunchdDomain(in: listed) { domain, record in
         let service = record["service"] as? [String: Any] ?? [:]
-        let pid = service["PID"] as? Int ?? 0
         domains.append(domain)
         payload["loaded"] = true
-        if pid > 0 || payload["pid"] == nil {
-            payload["running"] = pid > 0
-            payload["pid"] = pid
-            payload["last_exit_status"] = service["LastExitStatus"] ?? 0
-        }
-        if let program = service["Program"] {
-            payload["program"] = program
-        }
+        mergeLaunchdService(service, into: &payload)
     }
     payload["domains"] = domains
     return payload
+}
+
+/// launchd's ENOSERVICE: nothing with that label is loaded in the domain.
+private let launchdNoService = 113
+
+/// Walks the system domain, then the user domain, of a launchd list response,
+/// skipping a domain that reports ENOSERVICE.
+private func forEachLaunchdDomain(in result: [String: Any], _ body: (String, [String: Any]) -> Void) throws {
+    for domain in ["system", "user"] {
+        let record = result[domain] as? [String: Any] ?? [:]
+        let status = record["status"] as? Int ?? 0
+        if status == launchdNoService {
+            continue
+        }
+        if status != 0 {
+            throw IcliError.failed("launchd list failed in the \(domain) domain: status \(status)")
+        }
+        body(domain, record)
+    }
+}
+
+/// Folds one domain's launchd record into `row`: a running instance's pid wins,
+/// otherwise the first domain's values stand.
+private func mergeLaunchdService(_ service: [String: Any], into row: inout [String: Any]) {
+    let pid = service["PID"] as? Int ?? 0
+    if pid > 0 || row["pid"] == nil {
+        row["pid"] = pid
+        row["running"] = pid > 0
+        row["last_exit_status"] = service["LastExitStatus"] ?? 0
+    }
+    if let program = service["Program"] {
+        row["program"] = program
+    }
 }
 
 /// Every visible service with its status and launchd's own description, for a

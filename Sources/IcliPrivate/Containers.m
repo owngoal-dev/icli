@@ -1,4 +1,5 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #import <dlfcn.h>
 
@@ -15,11 +16,6 @@
 - (BOOL)registerApplicationDictionary:(NSDictionary *)dict;
 - (BOOL)registerContainerizedApplicationWithInfoDictionaries:(NSArray *)infos operationUUID:(NSUUID *)uuid requestContext:(id)context saveObserver:(id)observer registrationError:(NSError **)error;
 @end
-
-static char *containerJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : strdup("{}");
-}
 
 static Class containerClass(const char *kind) {
     static dispatch_once_t once;
@@ -47,27 +43,27 @@ static id lookupContainer(Class cls, NSString *identifier, BOOL create, BOOL *ex
 
 char *icli_container_json(const char *kind, const char *identifier, bool create) {
     Class cls = containerClass(kind);
-    if (!cls) return containerJSON(@{@"error": @"MobileContainerManager is unavailable"});
-    if (!identifier || !identifier[0]) return containerJSON(@{@"error": @"container identifier required"});
+    if (!cls) return icli_json_or_empty(@{@"error": @"MobileContainerManager is unavailable"});
+    if (!identifier || !identifier[0]) return icli_json_or_empty(@{@"error": @"container identifier required"});
     BOOL existed = NO;
     NSError *error = nil;
     id container = lookupContainer(cls, @(identifier), create, &existed, &error);
     NSString *path = [container url].path;
-    if (error) return containerJSON(@{@"error": error.localizedDescription ?: @"container lookup failed"});
-    if (!container) return containerJSON(@{@"missing": @YES});
-    if (!path.length) return containerJSON(@{@"error": @"container has no path"});
-    return containerJSON(@{@"path": path, @"existed": @(create ? existed : YES)});
+    if (error) return icli_json_or_empty(@{@"error": error.localizedDescription ?: @"container lookup failed"});
+    if (!container) return icli_json_or_empty(@{@"missing": @YES});
+    if (!path.length) return icli_json_or_empty(@{@"error": @"container has no path"});
+    return icli_json_or_empty(@{@"path": path, @"existed": @(create ? existed : YES)});
 }
 
 char *icli_container_destroy_json(const char *kind, const char *identifier) {
     Class cls = containerClass(kind);
-    if (!cls) return containerJSON(@{@"error": @"MobileContainerManager is unavailable"});
-    if (!identifier || !identifier[0]) return containerJSON(@{@"error": @"container identifier required"});
+    if (!cls) return icli_json_or_empty(@{@"error": @"MobileContainerManager is unavailable"});
+    if (!identifier || !identifier[0]) return icli_json_or_empty(@{@"error": @"container identifier required"});
     NSError *error = nil;
     id container = lookupContainer(cls, @(identifier), NO, NULL, &error);
-    if (error) return containerJSON(@{@"error": error.localizedDescription ?: @"container lookup failed"});
-    if (!container) return containerJSON(@{@"missing": @YES});
-    if (![container respondsToSelector:@selector(destroyContainerWithCompletion:)]) return containerJSON(@{@"error": @"container deletion is unavailable"});
+    if (error) return icli_json_or_empty(@{@"error": error.localizedDescription ?: @"container lookup failed"});
+    if (!container) return icli_json_or_empty(@{@"missing": @YES});
+    if (![container respondsToSelector:@selector(destroyContainerWithCompletion:)]) return icli_json_or_empty(@{@"error": @"container deletion is unavailable"});
     NSString *path = [container url].path ?: @"";
     // The completion's arguments are not relied on: the result is read back.
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
@@ -75,10 +71,10 @@ char *icli_container_destroy_json(const char *kind, const char *identifier) {
         (void)ignored;
         dispatch_semaphore_signal(done);
     }];
-    if ([failure isKindOfClass:NSError.class]) return containerJSON(@{@"error": [failure localizedDescription] ?: @"container deletion failed"});
+    if ([failure isKindOfClass:NSError.class]) return icli_json_or_empty(@{@"error": [failure localizedDescription] ?: @"container deletion failed"});
     dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC));
-    if (lookupContainer(cls, @(identifier), NO, NULL, &error)) return containerJSON(@{@"error": @"container still exists after deletion", @"path": path});
-    return containerJSON(@{@"destroyed": @YES, @"path": path});
+    if (lookupContainer(cls, @(identifier), NO, NULL, &error)) return icli_json_or_empty(@{@"error": @"container still exists after deletion", @"path": path});
+    return icli_json_or_empty(@{@"destroyed": @YES, @"path": path});
 }
 
 bool icli_register_app_dictionary(const char *plist_xml) {

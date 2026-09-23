@@ -59,11 +59,7 @@ public func volume(_ category: String = "Audio/Video") -> Double {
 }
 
 public func audioState() throws -> [String: Any] {
-    guard let raw = takeCString(icli_active_audio_json()), let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid audio state") }
-    if let error = result["error"] as? String {
-        throw IcliError.failed(error)
-    }
-    return result
+    try decodeBridgeJSON(takeCString(icli_active_audio_json()), "audio state")
 }
 
 public func setVolume(_ value: Double, category: String = "Audio/Video") throws -> [String: Any] {

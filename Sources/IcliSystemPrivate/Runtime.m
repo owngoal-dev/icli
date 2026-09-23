@@ -10,7 +10,6 @@
 // This process uses physical paths. Bootstrap tools may use vroot paths.
 // Resolve APIs at runtime so both package layouts contain the same Mach-O.
 static NSString *bootstrapPrefix;
-static NSString *bootstrapLayout;
 static NSString *rootfsPrefix;
 static NSString *bootstrapSource;
 static char *(*convertJB)(const char *, char *);
@@ -75,13 +74,13 @@ static void resolveBootstrap(void) {
             bootstrapSource = @"filesystem fallback";
         }
         while (bootstrapPrefix.length > 1 && [bootstrapPrefix hasSuffix:@"/"]) bootstrapPrefix = [bootstrapPrefix substringToIndex:bootstrapPrefix.length - 1];
-        bootstrapLayout = [rootfsPrefix isEqual:@"/rootfs"] || [bootstrapPrefix containsString:@".jbroot-"] ? @"roothide" : ([bootstrapPrefix isEqual:@"/"] ? @"rootful" : @"rootless");
     });
 }
 
 char *icli_bootstrap_json(void) {
     resolveBootstrap();
-    return runtimeJSON(@{@"jbroot": bootstrapPrefix, @"rootfs": rootfsPrefix, @"layout": bootstrapLayout, @"source": bootstrapSource});
+    NSString *layout = [rootfsPrefix isEqual:@"/rootfs"] || [bootstrapPrefix containsString:@".jbroot-"] ? @"roothide" : ([bootstrapPrefix isEqual:@"/"] ? @"rootful" : @"rootless");
+    return runtimeJSON(@{@"jbroot": bootstrapPrefix, @"rootfs": rootfsPrefix, @"layout": layout, @"source": bootstrapSource});
 }
 
 char *icli_jbroot_path(const char *path) {
@@ -126,7 +125,7 @@ char *icli_processes_json(void) {
         [rows addObject:@{@"pid": @(pid), @"name": name ?: @"", @"executable": @(path)}];
     }
     free(processes);
-    return runtimeJSON(@{@"processes": rows, @"count": @(rows.count)});
+    return runtimeJSON(@{@"processes": rows});
 }
 
 /// Kernel boot facts for proving a reboot happened: kern.boottime and the

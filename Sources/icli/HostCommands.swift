@@ -20,7 +20,7 @@ extension FS {
         func run() {
             emit(allowWhenLocked: true, output) {
                 guard remove != (value != nil) else { throw IcliError.failed("pass a JSON value or --remove") }
-                return try setPlistValue(path, key: key, json: remove ? nil : value)
+                return try setPlistValue(path, key: key, json: value)
             }
         }
     }
@@ -320,11 +320,14 @@ struct Svc: ParsableCommand {
     )
 }
 
+private let servicePathsHelp: ArgumentHelp = "One or more existing service plist files or directories containing service plists."
+private let serviceLabelHelp: ArgumentHelp = "Service label from its plist's Label key, without a domain prefix; for example, com.example.service."
+
 extension Svc {
     struct Bootstrap: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Load services from plist files or directories.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "One or more existing service plist files or directories containing service plists.") var paths: [String]
+        @Argument(help: servicePathsHelp) var paths: [String]
         func run() {
             emit(allowWhenLocked: true, output) { try loadServices(paths, load: true, override: false) }
         }
@@ -333,7 +336,7 @@ extension Svc {
     struct Bootout: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Unload services from plist files or directories.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "One or more existing service plist files or directories containing service plists.") var paths: [String]
+        @Argument(help: servicePathsHelp) var paths: [String]
         func run() {
             emit(allowWhenLocked: true, output) { try loadServices(paths, load: false, override: false) }
         }
@@ -342,7 +345,7 @@ extension Svc {
     struct Load: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Load services from plist files or directories.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "One or more existing service plist files or directories containing service plists.") var paths: [String]
+        @Argument(help: servicePathsHelp) var paths: [String]
         @Flag(help: "Also clear a persistent disabled override (launchctl load -w)") var enable = false
         func run() {
             emit(allowWhenLocked: true, output) { try loadServices(paths, load: true, override: enable) }
@@ -352,7 +355,7 @@ extension Svc {
     struct Unload: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Unload services from plist files or directories.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "One or more existing service plist files or directories containing service plists.") var paths: [String]
+        @Argument(help: servicePathsHelp) var paths: [String]
         @Flag(help: "Also set a persistent disabled override (launchctl unload -w)") var disable = false
         func run() {
             emit(allowWhenLocked: true, output) { try loadServices(paths, load: false, override: disable) }
@@ -362,7 +365,7 @@ extension Svc {
     struct Enable: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Persistently enable a service by label.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try setServiceEnabled(label, enabled: true) }
         }
@@ -371,7 +374,7 @@ extension Svc {
     struct Disable: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Persistently disable a service by label.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try setServiceEnabled(label, enabled: false) }
         }
@@ -380,7 +383,7 @@ extension Svc {
     struct Start: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Request that a loaded service start.", discussion: "The service must already be loaded. An accepted request does not guarantee that the process stays running. Use 'icli svc status <label>' to check its state.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try startService(label) }
         }
@@ -389,7 +392,7 @@ extension Svc {
     struct Stop: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Request that a running service stop.", discussion: "Stopping does not unload or disable the service. launchd may restart it if its KeepAlive conditions apply. Use 'icli svc status <label>' to check its state.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try stopService(label) }
         }
@@ -399,7 +402,7 @@ extension Svc {
         static var configuration = CommandConfiguration(abstract: "Send a signal number or name to a service instance")
         @OptionGroup var output: OutputOptions
         @Argument(help: "Signal number from 1 to 31, or a name such as TERM or SIGTERM.") var signal: String
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try signalService(label, signal: signal) }
         }
@@ -408,7 +411,7 @@ extension Svc {
     struct Remove: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Remove a loaded service by label")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try removeService(label) }
         }
@@ -426,7 +429,7 @@ extension Svc {
     struct Print: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Print launchd's detailed description of a service")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try printService(label) }
         }
@@ -479,7 +482,7 @@ extension Svc {
     struct Status: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Show whether a service is enabled, loaded, and running.")
         @OptionGroup var output: OutputOptions
-        @Argument(help: "Service label from its plist's Label key, without a domain prefix; for example, com.example.service.") var label: String
+        @Argument(help: serviceLabelHelp) var label: String
         func run() {
             emit(allowWhenLocked: true, output) { try serviceStatus(label) }
         }
@@ -544,6 +547,8 @@ struct Sec: ParsableCommand {
     static var configuration = CommandConfiguration(abstract: "Manage keychain items and check for SSL Kill Switch files.", subcommands: [Keychain.self, SSLKillswitch.self])
 }
 
+private let defaultKeychainGroup = "icli.test"
+
 extension Sec {
     struct Keychain: ParsableCommand {
         static var configuration = CommandConfiguration(
@@ -594,7 +599,7 @@ extension Sec {
             @Option var account: String
             @Option var server: String?
             @Option var label: String?
-            @Option var group: String = "icli.test"
+            @Option var group: String = defaultKeychainGroup
             @Option var data: String
             func run() {
                 emit(output) {
@@ -617,7 +622,7 @@ extension Sec {
             @Option var service: String?
             @Option var account: String
             @Option var server: String?
-            @Option var group: String = "icli.test"
+            @Option var group: String = defaultKeychainGroup
             @Option var data: String
             func run() {
                 emit(output) {
@@ -639,13 +644,11 @@ extension Sec {
             @Option var service: String?
             @Option var account: String?
             @Option var server: String?
-            @Option var group: String = "icli.test"
+            @Option var group: String = defaultKeychainGroup
             @Flag var force = false
             func run() {
                 emit(output) {
-                    if !force {
-                        throw IcliError.forceRequired("delete keychain item")
-                    }
+                    guard force else { throw IcliError.forceRequired("delete keychain item") }
                     return try deleteKeychain(
                         className: `class`,
                         service: service,

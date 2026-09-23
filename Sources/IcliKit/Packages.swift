@@ -10,14 +10,6 @@ import IcliSystem
 // result names the ones that were skipped and reports app bundles that were
 // registered natively instead.
 
-private func decodePackage(_ raw: String?) throws -> [String: Any] {
-    guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid package response") }
-    if let error = result["error"] as? String {
-        throw IcliError.failed(error)
-    }
-    return result
-}
-
 private func validPackageName(_ name: String) throws {
     guard name.range(of: "^[a-z0-9][a-z0-9+.-]+$", options: .regularExpression) != nil else { throw IcliError.failed("invalid package identifier") }
 }
@@ -25,7 +17,7 @@ private func validPackageName(_ name: String) throws {
 /// Control metadata, maintainer scripts and the file list of a .deb, read without dpkg.
 public func readDeb(_ path: String) throws -> [String: Any] {
     guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package file not found: \(path)") }
-    var result = try decodePackage(takeCString(icli_deb_read_json(path, nil)))
+    var result = try decodeBridgeJSON(takeCString(icli_deb_read_json(path, nil)), "package response")
     result.removeValue(forKey: "control_texts")
     return result
 }
@@ -36,7 +28,7 @@ public func extractDeb(_ path: String, to destination: String) throws -> [String
     let existing = (try? FileManager.default.contentsOfDirectory(atPath: destination)) ?? []
     guard existing.isEmpty else { throw IcliError.failed("destination must be empty or absent: \(destination)") }
     try FileManager.default.createDirectory(atPath: destination, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
-    var result = try decodePackage(takeCString(icli_deb_read_json(path, destination)))
+    var result = try decodeBridgeJSON(takeCString(icli_deb_read_json(path, destination)), "package response")
     result.removeValue(forKey: "control_texts")
     return result
 }
@@ -212,17 +204,16 @@ private func unmetDependencies(_ control: [String: String], database: DpkgDataba
     return unmet
 }
 
-private func md5Hex(_ path: String) -> String? {
-    guard let raw = takeCString(icli_file_md5(path)) else { return nil }
-    return raw
-}
-
 private func infoPath(_ database: DpkgDatabase, _ name: String, _ suffix: String) -> String {
     database.directory + "/info/" + name + "." + suffix
 }
 
 private func fileList(_ database: DpkgDatabase, _ name: String) -> [String] {
     ((try? String(contentsOfFile: infoPath(database, name, "list"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+}
+
+private func conffileList(_ text: String) -> [String] {
+    text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
 }
 
 private enum Deletion { case removed, skipped, failed }
@@ -299,7 +290,7 @@ public func packageStatus(_ name: String) throws -> [String: Any] {
 /// bundles registered. Maintainer scripts are recorded, not run.
 public func installDebFile(_ path: String, ignoreDependencies: Bool = false) throws -> [String: Any] {
     guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package file not found: \(path)") }
-    let metadata = try decodePackage(takeCString(icli_deb_read_json(path, nil)))
+    let metadata = try decodeBridgeJSON(takeCString(icli_deb_read_json(path, nil)), "package response")
     let control = metadata["control"] as? [String: String] ?? [:]
     var texts = metadata["control_texts"] as? [String: String] ?? [:]
     guard let name = control["Package"], let version = control["Version"] else { throw IcliError.failed("deb control lacks Package or Version") }
@@ -316,11 +307,11 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     let previous = database.stanza(name)
     let previousVersion = previous?.installed == true ? previous?.fields["Version"] : nil
     let previousFiles = fileList(database, name)
-    let conffiles = (texts["conffiles"] ?? "").split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    let conffiles = conffileList(texts["conffiles"] ?? "")
     let keep = conffiles.filter { FileManager.default.fileExists(atPath: installPrefix + $0) }
     var keepPointers = keep.map { UnsafePointer<CChar>(strdup($0)) }
     defer { keepPointers.forEach { free(UnsafeMutablePointer(mutating: $0)) } }
-    let unpacked = try decodePackage(keepPointers.withUnsafeMutableBufferPointer { buffer in takeCString(icli_deb_unpack_json(path, installPrefix, buffer.baseAddress, Int32(buffer.count))) })
+    let unpacked = try decodeBridgeJSON(keepPointers.withUnsafeMutableBufferPointer { buffer in takeCString(icli_deb_unpack_json(path, installPrefix, buffer.baseAddress, Int32(buffer.count))) }, "package response")
     let installed = unpacked["installed"] as? [String] ?? []
 
     // Files that belonged to the previous version and are gone from this one.
@@ -338,7 +329,7 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
         // dpkg generates md5sums for packages that ship none.
         texts["md5sums"] = installed.compactMap { path -> String? in
             var info = stat()
-            guard path != "/.", !conffiles.contains(path), lstat(installPrefix + path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, let digest = md5Hex(installPrefix + path) else { return nil }
+            guard path != "/.", !conffiles.contains(path), lstat(installPrefix + path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, let digest = takeCString(icli_file_md5(installPrefix + path)) else { return nil }
             return "\(digest)  \(path.dropFirst())"
         }.joined(separator: "\n") + "\n"
     }
@@ -360,7 +351,7 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     fields["Status"] = "install ok installed"
     if !conffiles.isEmpty {
         // dpkg writes "Conffiles:" followed by one indented " path md5" line per file.
-        fields["Conffiles"] = "\n" + conffiles.map { "\($0) \(md5Hex(installPrefix + $0) ?? "newconffile")" }.joined(separator: "\n")
+        fields["Conffiles"] = "\n" + conffiles.map { "\($0) \(takeCString(icli_file_md5(installPrefix + $0)) ?? "newconffile")" }.joined(separator: "\n")
     }
     let order = (metadata["control_order"] as? [String]) ?? Array(control.keys)
     let stanza = Stanza.compose(fields, order: order)
@@ -397,7 +388,7 @@ public func removeDeb(_ name: String, purge: Bool = false) throws -> [String: An
     try database.acquireLock()
     defer { database.releaseLock() }
     let files = fileList(database, name)
-    let conffiles = purge ? [] : ((try? String(contentsOfFile: infoPath(database, name, "conffiles"), encoding: .utf8)) ?? "").split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    let conffiles = purge ? [] : conffileList((try? String(contentsOfFile: infoPath(database, name, "conffiles"), encoding: .utf8)) ?? "")
     let scripts = ["prerm", "postrm"].filter { FileManager.default.fileExists(atPath: infoPath(database, name, $0)) }
     let unregistered = unregisterBundles(files)
     var removed: [String] = [], failed: [String] = []

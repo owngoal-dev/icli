@@ -34,7 +34,6 @@ for package in packages['packages']:
 cases = tests['cases']
 passed = {case['name']: case['passed'] for case in cases}
 failed = [case for case in cases if not case['passed']]
-untested = tests['untested_commands']
 covered = {}
 for case in cases:
     for trace in case['trace']:
@@ -43,6 +42,7 @@ for case in cases:
             words = command.split()
             if arguments[:len(words)] == words:
                 covered.setdefault(command, set()).add(case['name'])
+untested = sorted(set(tests['command_inventory']) - covered.keys())
 
 release = build / 'release' / tests['version']
 release.mkdir(parents=True, exist_ok=True)
@@ -71,7 +71,6 @@ for package in packages['packages']:
     shutil.copy2(build / package['file'], folder / package['file'])
 
 device = tests['device']
-screen = tests.get('screen', {})
 case_rows = [f"| `{c['name']}` | {'PASS' if c['passed'] else 'FAIL'} | {c['seconds']:.1f} | {c.get('error', '').replace('|', '/')[:160]} |" for c in cases]
 command_rows = []
 for command in tests['command_inventory']:

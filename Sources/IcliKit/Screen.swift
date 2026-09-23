@@ -76,11 +76,7 @@ public func drag(points: [(Double, Double)], seconds: Double, hold: Double = 0.5
 
 public func pressButton(_ name: String) throws -> [String: Any] {
     if ["volume-up", "volume-down", "mute"].contains(name) {
-        guard let raw = takeCString(icli_audio_button_json(name)), let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid audio button response") }
-        if let error = result["error"] as? String {
-            throw IcliError.failed(error)
-        }
-        return result
+        return try decodeBridgeJSON(takeCString(icli_audio_button_json(name)), "audio button response")
     }
     if name == "wake" {
         guard icli_wake() else { throw IcliError.failed("wake failed") }
@@ -164,7 +160,7 @@ public func uiElements(maxElements: Int = 250, visibleOnly: Bool = true, clickab
     guard (1 ... 2000).contains(maxElements), limit == nil || (limit! > 0 && limit! <= 2000) else {
         throw IcliError.failed("element limits must be between 1 and 2000")
     }
-    var result = try decodeAX(takeCString(icli_ax_elements_json(frontmostPID(), Int32(maxElements))))
+    var result = try decodeBridgeJSON(takeCString(icli_ax_elements_json(frontmostPID(), Int32(maxElements))), "AX response")
     var elements = result["elements"] as? [[String: Any]] ?? []
     if visibleOnly {
         elements = elements.filter { $0["visible"] as? Bool == true }
@@ -177,16 +173,6 @@ public func uiElements(maxElements: Int = 250, visibleOnly: Bool = true, clickab
     }
     result["elements"] = elements
     result["count"] = elements.count
-    return result
-}
-
-private func decodeAX(_ raw: String?) throws -> [String: Any] {
-    guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
-        throw IcliError.failed("invalid AX response")
-    }
-    if let error = result["error"] as? String {
-        throw IcliError.failed(error)
-    }
     return result
 }
 
@@ -214,7 +200,7 @@ public func describeScreen() throws -> [String: Any] {
 
 public func elementAt(x: Double, y: Double) throws -> [String: Any] {
     try validatePoint(x, y)
-    return try decodeAX(takeCString(icli_ax_element_at_json(frontmostPID(), x, y)))
+    return try decodeBridgeJSON(takeCString(icli_ax_element_at_json(frontmostPID(), x, y)), "AX response")
 }
 
 public struct ElementSelector {

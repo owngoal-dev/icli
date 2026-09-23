@@ -51,10 +51,9 @@ class Device:
         self.layout = 'rootless'
         self.jbroot = '/var/jb'
 
-    def configure(self, layout):
+    def configure(self):
         # icli works on physical paths; a RootHide shell sees the jbroot as /
         # and the physical root under /rootfs, so shell checks translate paths.
-        self.layout = layout
         self.jbroot = self.cli('env')['jbroot'].rstrip('/') or '/'
 
     def jb(self, path):
@@ -1348,6 +1347,15 @@ def wait_for_reconnect(d, seconds):
     return False
 
 
+def wait_usable(d, seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        d.cli('button', 'wake', expected=None)
+        if d.cli('env', expected=None).get('layout') == d.layout and d.cli('screen', 'info', expected=None).get('locked') is False:
+            break
+        time.sleep(3)
+
+
 def request_reboot(d, userspace=False):
     arguments = ['device', 'reboot'] + (['--userspace'] if userspace else []) + ['--force']
     try:
@@ -1388,12 +1396,7 @@ def userspace_reboot(d):
     assert abs(after['boot_time'] - boot) < 5, 'kernel boot time changed: this was a full reboot'
     assert after['uptime_seconds'] > before['uptime_seconds'], 'kernel uptime restarted: this was a full reboot'
     # A passcode device comes back locked; ICLI_UNLOCK_WAIT gives the operator time to unlock it.
-    deadline = time.monotonic() + max(120, d.unlock_wait())
-    while time.monotonic() < deadline:
-        d.cli('button', 'wake', expected=None)
-        if d.cli('env', expected=None).get('layout') == d.layout and d.cli('screen', 'info', expected=None).get('locked') is False:
-            break
-        time.sleep(3)
+    wait_usable(d, max(120, d.unlock_wait()))
     assert d.cli('env')['platform_binary'] is True
     pids_after = service_pids()
     assert all(pids_after[name] != pids_before[name] for name in names), (pids_before, pids_after)
@@ -1410,12 +1413,7 @@ def device_reboot(d):
     time.sleep(30)
     assert wait_for_reconnect(d, 420), 'device did not come back after the reboot'
     assert d.cli('device', 'info')['boot_time'] != boot, 'kernel boot time unchanged: the device did not reboot'
-    deadline = time.monotonic() + 180
-    while time.monotonic() < deadline:
-        d.cli('button', 'wake', expected=None)
-        if d.cli('env', expected=None).get('layout') == d.layout and d.cli('screen', 'info', expected=None).get('locked') is False:
-            break
-        time.sleep(3)
+    wait_usable(d, 180)
     assert d.cli('env')['platform_binary'] is True and d.cli('svc', 'status', 'com.openssh.sshd')['loaded']
     assert d.cli('fs', 'read', '/tmp/icli-reboot-marker', expected=1).get('error'), '/tmp survived the full reboot'
     d.observations.append('A full reboot clears /tmp, so the install fixtures and TestHost must be uploaded again before rerunning other groups.')
@@ -1446,11 +1444,8 @@ def keychain(d):
     service = 'icli.acceptance.' + uuid.uuid4().hex
     selection = ['--class', 'generic_password', '--service', service, '--account', 'acceptance', '--group', 'icli.test']
     assert d.cli('sec', 'keychain', 'list', *selection)['count'] == 0
-    created = False
     try:
-        created = True
         d.cli('sec', 'keychain', 'add', *selection, '--data', 'fixture-before')
-        created = True
         listed = d.cli('sec', 'keychain', 'list', *selection)
         assert listed['count'] == 1 and 'data' not in listed['items'][0]
         assert d.cli('sec', 'keychain', 'get', *selection)['items'][0]['data'] == 'fixture-before'
@@ -1458,8 +1453,7 @@ def keychain(d):
         assert d.cli('sec', 'keychain', 'get', *selection)['items'][0]['data'] == 'fixture-after'
         d.cli('sec', 'keychain', 'delete', *selection, expected=1)
     finally:
-        if created:
-            d.cli('sec', 'keychain', 'delete', *selection, '--force')
+        d.cli('sec', 'keychain', 'delete', *selection, '--force')
     assert d.cli('sec', 'keychain', 'list', *selection)['count'] == 0
     d.cli('sec', 'keychain', 'get', *selection, expected=1)
 
@@ -1504,7 +1498,6 @@ def on_device_self_tests(d):
         verify_report(result, skipped=0)
         failure = d.cli('tests', '--registration-fixture', fixture + '/missing.app', timeout=120, expected=1)
         verify_report(failure, skipped=0, additional_failures={'app_registration_refresh'})
-        assert any(row['name'] == 'app_registration_refresh' and row['result'] == 'failed' for row in failure['tests'])
     finally:
         d.run(['rm', '-rf', d.sh(fixture)])
 
@@ -1545,7 +1538,6 @@ def network_capture(d):
 
 def udp_ports(capture):
     """Destination and source UDP ports of IPv4/IPv6 packets in a classic pcap."""
-    import struct
     magic = capture[:4]
     endian = '<' if magic in (b'\xd4\xc3\xb2\xa1', b'\x4d\x3c\xb2\xa1') else '>'
     link = struct.unpack(endian + 'I', capture[20:24])[0]
@@ -1613,7 +1605,6 @@ def springboard_restart(d):
 
 def unsigned_code(binary):
     """A thin arm64 Mach-O without its code signature and RootHide's section marker."""
-    import struct
     magic, _, _, _, count, _, _, _ = struct.unpack('<8I', binary[:32])
     assert magic == 0xfeedfacf, 'not a thin 64-bit Mach-O'
     data, offset, end = bytearray(binary), 32, len(binary)
@@ -1677,7 +1668,7 @@ def main():
                                    [device.user + '@' + device.host, shlex.join(['cat', device.binary])],
                                    env=device.env, capture_output=True, timeout=60, check=True).stdout
         assert unsigned_code(installed) == unsigned_code(local), 'device binary differs from local build beyond RootHide signing'
-    device.configure(args.layout)
+    device.configure()
     # Install cases read these fixtures from the physical /tmp, which a
     # RootHide shell sees as /rootfs/tmp, so stage them for every run.
     for name in ['icli-install-fixture.deb', 'icli-install-fixture.ipa', 'icli-container-fixture.ipa']:
@@ -1700,17 +1691,12 @@ def main():
     report['tested_at'] = datetime.now(timezone.utc).isoformat()
     # The reboot group disconnects the device, so it always runs last.
     ordered = [c for c in CASES if c[1] != 'reboot'] + [c for c in CASES if c[1] == 'reboot']
-    report['planned_cases'] = [name for name, group, _, _ in ordered
-                               if (args.group == 'all' or args.group == group)
-                               and (not args.cases or name in args.cases)
-                               and not (args.skip_reboot and group == 'reboot')]
-    for name, group, tools, test in ordered:
-        if args.group != 'all' and args.group != group:
-            continue
-        if args.cases and name not in args.cases:
-            continue
-        if args.skip_reboot and group == 'reboot':
-            continue
+    selected = [c for c in ordered
+                if (args.group == 'all' or args.group == c[1])
+                and (not args.cases or c[0] in args.cases)
+                and not (args.skip_reboot and c[1] == 'reboot')]
+    report['planned_cases'] = [c[0] for c in selected]
+    for name, group, tools, test in selected:
         device.trace = []
         device.observations = []
         start = time.monotonic()

@@ -1,12 +1,8 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #import <CoreLocation/CoreLocation.h>
 #import <objc/message.h>
-
-static char *locationJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
 
 // locationd's simulation client (the one Xcode's location simulation uses).
 // The simulated location lives in locationd and outlives this connection;
@@ -40,12 +36,12 @@ char *icli_location_simulate_json(double latitude, double longitude, double alti
                                                             speed:speed
                                                         timestamp:[NSDate date]];
     NSString *error = sendAll(simulationManager(), @[@"stopLocationSimulation", @"clearSimulatedLocations", @"appendSimulatedLocation:", @"flush", @"startLocationSimulation"], location);
-    return locationJSON(error ? @{@"error": error} : @{});
+    return icli_json(error ? @{@"error": error} : @{});
 }
 
 char *icli_location_clear_json(void) {
     NSString *error = sendAll(simulationManager(), @[@"stopLocationSimulation", @"clearSimulatedLocations", @"flush"], nil);
-    return locationJSON(error ? @{@"error": error} : @{});
+    return icli_json(error ? @{@"error": error} : @{});
 }
 
 @interface IcliLocationReader : NSObject <CLLocationManagerDelegate>
@@ -75,10 +71,10 @@ static CLLocationManager *systemServiceManager(NSString **bundlePath) {
 }
 
 char *icli_location_read_json(double timeout, bool match, double latitude, double longitude) {
-    if (![CLLocationManager locationServicesEnabled]) return locationJSON(@{@"error": @"Location Services are turned off"});
+    if (![CLLocationManager locationServicesEnabled]) return icli_json(@{@"error": @"Location Services are turned off"});
     NSString *bundlePath = nil;
     CLLocationManager *manager = systemServiceManager(&bundlePath);
-    if (!manager) return locationJSON(@{@"error": @"no System Services location bundle is authorized to read the location"});
+    if (!manager) return icli_json(@{@"error": @"no System Services location bundle is authorized to read the location"});
     IcliLocationReader *reader = [IcliLocationReader new];
     manager.delegate = reader;
     manager.desiredAccuracy = kCLLocationAccuracyBest;
@@ -98,11 +94,11 @@ char *icli_location_read_json(double timeout, bool match, double latitude, doubl
     [manager stopUpdatingLocation];
     manager.delegate = nil;
     CLLocation *location = reader.latest ?: manager.location;
-    if (reader.error.code == kCLErrorDenied) return locationJSON(@{@"error": @"locationd denied access to the location"});
-    if (!location) return locationJSON(@{@"error": [NSString stringWithFormat:@"no location within %g s", timeout]});
+    if (reader.error.code == kCLErrorDenied) return icli_json(@{@"error": @"locationd denied access to the location"});
+    if (!location) return icli_json(@{@"error": [NSString stringWithFormat:@"no location within %g s", timeout]});
     NSISO8601DateFormatter *formatter = [NSISO8601DateFormatter new];
     formatter.formatOptions |= NSISO8601DateFormatWithFractionalSeconds;
-    return locationJSON(@{
+    return icli_json(@{
         @"latitude": @(location.coordinate.latitude),
         @"longitude": @(location.coordinate.longitude),
         @"altitude": @(location.altitude),

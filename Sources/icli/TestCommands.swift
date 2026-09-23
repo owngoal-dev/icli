@@ -11,7 +11,7 @@ struct Tests: ParsableCommand {
     @Option(help: "Path to the signed SelfTestFixture.app from scripts/build-install-fixtures.sh") var registrationFixture: String?
 
     func validate() throws {
-        if let expectLayout, !["rootless", "roothide", "rootful"].contains(expectLayout) {
+        if let expectLayout, JailbreakRoot.Layout(rawValue: expectLayout) == nil {
             throw ValidationError("Expected layout must be rootless, roothide, or rootful.")
         }
     }

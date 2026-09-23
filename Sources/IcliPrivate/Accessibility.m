@@ -1,4 +1,5 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <dlfcn.h>
@@ -11,11 +12,6 @@ static int (*copyAttribute)(AXElement, CFStringRef, CFTypeRef *);
 static int (*setTimeout)(AXElement, float);
 static Boolean (*getAXValue)(CFTypeRef, int, void *);
 static int (*hitTest)(AXElement, AXElement *, float, float);
-
-static char *axJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
 
 static BOOL prepareAX(void) {
     static dispatch_once_t once;
@@ -87,7 +83,7 @@ static NSDictionary *serializeElement(AXElement element, BOOL fixedSpace) {
         icli_screen_fixed_to_point(point.x, point.y, &x, &y);
         point = CGPointMake(x, y);
     }
-    NSMutableDictionary *node = [@{
+    return @{
         @"label": [label isKindOfClass:NSString.class] ? label : @"",
         @"identifier": [identifier isKindOfClass:NSString.class] ? identifier : @"",
         @"value": [text isKindOfClass:NSString.class] || [text isKindOfClass:NSNumber.class] ? text : @"",
@@ -95,22 +91,21 @@ static NSDictionary *serializeElement(AXElement element, BOOL fixedSpace) {
         @"visible": @(!CGRectIsEmpty(CGRectIntersection(frame, screen))),
         @"frame": @{@"x": @(frame.origin.x), @"y": @(frame.origin.y), @"width": @(frame.size.width), @"height": @(frame.size.height)},
         @"x": @(point.x), @"y": @(point.y)
-    } mutableCopy];
-    return node;
+    };
 }
 
 char *icli_ax_elements_json(int pid, int max_elements) {
-    if (pid <= 0 || max_elements < 1 || max_elements > 2000) return axJSON(@{@"error": @"invalid AX query"});
-    if (!prepareAX()) return axJSON(@{@"error": @"AX runtime unavailable"});
+    if (pid <= 0 || max_elements < 1 || max_elements > 2000) return icli_json(@{@"error": @"invalid AX query"});
+    if (!prepareAX()) return icli_json(@{@"error": @"AX runtime unavailable"});
     AXElement root = createApp(pid);
-    if (!root) return axJSON(@{@"error": @"AX application unavailable"});
+    if (!root) return icli_json(@{@"error": @"AX application unavailable"});
     if (setTimeout) setTimeout(root, 0.5f);
     CFTypeRef value = NULL;
     int error = copyAttribute(root, (CFStringRef)(uintptr_t)3015, &value);
     CFRelease(root);
     if (error || !value || CFGetTypeID(value) != CFArrayGetTypeID()) {
         if (value) CFRelease(value);
-        return axJSON(@{@"error": [NSString stringWithFormat:@"AX element query failed (%d)", error], @"pid": @(pid)});
+        return icli_json(@{@"error": [NSString stringWithFormat:@"AX element query failed (%d)", error], @"pid": @(pid)});
     }
     NSArray *elements = CFBridgingRelease(value);
     NSMutableArray *rows = [NSMutableArray array];
@@ -122,20 +117,20 @@ char *icli_ax_elements_json(int pid, int max_elements) {
         NSDictionary *node = serializeElement((__bridge AXElement)element, fixedSpace);
         if (node) [rows addObject:node];
     }
-    return axJSON(@{@"source": @"ax", @"pid": @(pid), @"elements": rows, @"count": @(rows.count), @"truncated": @(truncated)});
+    return icli_json(@{@"source": @"ax", @"pid": @(pid), @"elements": rows, @"count": @(rows.count), @"truncated": @(truncated)});
 }
 
 char *icli_ax_element_at_json(int pid, double x, double y) {
-    if (pid <= 0 || !prepareAX() || !hitTest) return axJSON(@{@"error": @"AX hit testing unavailable"});
+    if (pid <= 0 || !prepareAX() || !hitTest) return icli_json(@{@"error": @"AX hit testing unavailable"});
     AXElement root = createApp(pid), hit = NULL;
-    if (!root) return axJSON(@{@"error": @"AX application unavailable"});
+    if (!root) return icli_json(@{@"error": @"AX application unavailable"});
     if (setTimeout) setTimeout(root, 0.5f);
     double fx = x, fy = y;
     icli_screen_point_to_fixed(x, y, &fx, &fy);
     int error = hitTest(root, &hit, (float)fx, (float)fy);
     CFRelease(root);
-    if (error) { if (hit) CFRelease(hit); return axJSON(@{@"error": [NSString stringWithFormat:@"AX hit testing failed (%d)", error]}); }
+    if (error) { if (hit) CFRelease(hit); return icli_json(@{@"error": [NSString stringWithFormat:@"AX hit testing failed (%d)", error]}); }
     NSDictionary *node = hit ? serializeElement(hit, framesInFixedSpace(pid)) : nil;
     if (hit) CFRelease(hit);
-    return axJSON(@{@"source": @"ax", @"element": node ?: @{}, @"x": @(x), @"y": @(y)});
+    return icli_json(@{@"source": @"ax", @"element": node ?: @{}, @"x": @(x), @"y": @(y)});
 }

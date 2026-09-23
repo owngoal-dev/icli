@@ -6,9 +6,9 @@ import IcliSystemPrivate
 /// bootstrap layout. Read-only: bundle identifier, name, paths (a `data_path`
 /// means the record has a data container), version and build.
 public func listApps() throws -> [String: Any] {
-    var apps = decodeJSONArray(takeCString(icli_apps_json()) ?? "[]")
+    var apps = decodeJSONArray(takeCString(icli_apps_json()))
     apps.append(contentsOf: scanApplicationDirs())
-    apps = uniqued(apps, key: "bundle_id")
+    apps = uniqued(apps)
     return ["apps": apps, "count": apps.count]
 }
 
@@ -38,20 +38,18 @@ private func scanApplicationDirs() -> [[String: Any]] {
     return extra
 }
 
-private func uniqued(_ apps: [[String: Any]], key: String) -> [[String: Any]] {
+/// The first record for each bundle identifier; a record without one is kept.
+private func uniqued(_ apps: [[String: Any]]) -> [[String: Any]] {
     var seen = Set<String>()
     return apps.filter { app in
-        let id = app[key] as? String ?? UUID().uuidString
-        if seen.contains(id) {
-            return false
-        }
-        seen.insert(id)
-        return true
+        guard let id = app["bundle_id"] as? String else { return true }
+        return seen.insert(id).inserted
     }
 }
 
-private func decodeJSONArray(_ raw: String) -> [[String: Any]] {
-    guard let data = raw.data(using: .utf8),
+private func decodeJSONArray(_ raw: String?) -> [[String: Any]] {
+    guard let raw,
+          let data = raw.data(using: .utf8),
           let obj = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
     else { return [] }
     return obj

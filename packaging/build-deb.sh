@@ -13,15 +13,16 @@ case "$KIND" in
 esac
 [ -f "$BIN" ] || { echo 'build icli first' >&2; exit 66; }
 # Sign once in the build. Packaging must preserve the exact same executable.
-ldid -e "$BIN" > "$ROOT/.build/signed-entitlements.plist"
-[ -s "$ROOT/.build/signed-entitlements.plist" ] || { echo 'icli has no signed entitlements' >&2; exit 65; }
+ENTITLEMENTS=$(ldid -e "$BIN")
+[ -n "$ENTITLEMENTS" ] || { echo 'icli has no signed entitlements' >&2; exit 65; }
 rm -rf "$STAGE"
-mkdir -p "$STAGE/DEBIAN" "$STAGE$PREFIX/usr/bin"
-cp "$BIN" "$STAGE$PREFIX/usr/bin/icli"
-chmod 755 "$STAGE$PREFIX/usr/bin/icli"
-mkdir -p "$STAGE$PREFIX/usr/share/doc/icli/licenses"
-cp "$ROOT/Resources/Licenses/"*.txt "$STAGE$PREFIX/usr/share/doc/icli/licenses/"
-cp "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/LICENSE" "$STAGE$PREFIX/usr/share/doc/icli/"
+STAGED_BIN="$STAGE$PREFIX/usr/bin/icli"
+DOC="$STAGE$PREFIX/usr/share/doc/icli"
+mkdir -p "$STAGE/DEBIAN" "$STAGE$PREFIX/usr/bin" "$DOC/licenses"
+cp "$BIN" "$STAGED_BIN"
+chmod 755 "$STAGED_BIN"
+cp "$ROOT/Resources/Licenses/"*.txt "$DOC/licenses/"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/LICENSE" "$DOC/"
 cat > "$STAGE/DEBIAN/control" <<CONTROL
 Package: com.icli.icli
 Name: icli
@@ -34,5 +35,5 @@ Description: On-device iOS control CLI
 CONTROL
 OUTPUT="$ROOT/.build/com.icli.icli_${VERSION}_${ARCH}.deb"
 dpkg-deb --root-owner-group -b "$STAGE" "$OUTPUT"
-cmp "$BIN" "$STAGE$PREFIX/usr/bin/icli"
+cmp "$BIN" "$STAGED_BIN"
 echo "built $OUTPUT"

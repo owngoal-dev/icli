@@ -3,8 +3,12 @@ import Foundation
 import IcliPrivate
 import IcliSystem
 
-private func managedAppPath(_ bundleID: String) throws -> String {
+func validateBundleID(_ bundleID: String) throws {
     guard bundleID.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{1,200}$", options: .regularExpression) != nil else { throw IcliError.failed("invalid app bundle identifier") }
+}
+
+private func managedAppPath(_ bundleID: String) throws -> String {
+    try validateBundleID(bundleID)
     return JailbreakRoot.current.jbrootPath("/Applications/icli-" + bundleID + ".app")
 }
 
@@ -27,11 +31,7 @@ func stageIPA(_ path: String) throws -> StagedIPA {
     let stage = JailbreakRoot.current.scratchDirectory() + "/icli-install-" + UUID().uuidString
     try manager.createDirectory(atPath: stage, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     do {
-        guard let raw = takeCString(icli_extract_ipa_json(path, stage)),
-              let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid IPA extraction response") }
-        if let error = result["error"] as? String {
-            throw IcliError.failed(error)
-        }
+        _ = try decodeBridgeJSON(takeCString(icli_extract_ipa_json(path, stage)), "IPA extraction response")
         let payload = stage + "/Payload"
         let bundles = try manager.contentsOfDirectory(atPath: payload).filter { $0.hasSuffix(".app") }
         guard bundles.count == 1 else { throw IcliError.failed("IPA must contain exactly one Payload/*.app") }

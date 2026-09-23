@@ -52,7 +52,7 @@ public enum Envelope {
             let result = try body()
             printJSON(result)
             if let status = result["status"] as? Int, status != 0 {
-                Darwin.exit(Int32(min(max(status, 1), 255)))
+                Darwin.exit(exitCode(status))
             }
         } catch let error as IcliError {
             printJSON(error.payload)
@@ -60,13 +60,17 @@ public enum Envelope {
                 Darwin.exit(2)
             }
             if case let .commandFailed(result) = error {
-                Darwin.exit(Int32(min(max(result["status"] as? Int ?? 1, 1), 255)))
+                Darwin.exit(exitCode(result["status"] as? Int ?? 1))
             }
             Darwin.exit(1)
         } catch {
             printJSON(IcliError.failed(error.localizedDescription).payload)
             Darwin.exit(1)
         }
+    }
+
+    private static func exitCode(_ status: Int) -> Int32 {
+        Int32(min(max(status, 1), 255))
     }
 }
 

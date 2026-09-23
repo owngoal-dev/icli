@@ -80,7 +80,7 @@ char *icli_jetsam_json(void) {
     if (priorities) {
         result[@"priorities"] = priorities;
     } else {
-        result[@"priorities_error"] = error ?: @"unavailable";
+        result[@"priorities_error"] = error;
     }
     NSMutableDictionary *memory = [NSMutableDictionary dictionary];
     addSysctl(memory, @"hw_memsize", "hw.memsize");

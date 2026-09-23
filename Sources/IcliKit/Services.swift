@@ -35,16 +35,15 @@ public func loadServices(_ paths: [String], load: Bool, override: Bool) throws -
         }
     }
     let unexpected = services.filter { ($0["loaded"] as? Bool) != load }
-    var payload: [String: Any] = ["paths": absolute, "loaded": load, "services": services, "errors": errors, "verified": unexpected.isEmpty && errors.isEmpty]
+    var payload: [String: Any] = ["paths": absolute, "loaded": load, "services": services, "errors": errors, "verified": true]
     if !errors.isEmpty {
         // launchd reports EEXIST/EALREADY (load) or 113 ENOSERVICE (unload) when a
         // service was already in the requested state.
         let benign = errors.values.allSatisfy { (($0 as? [String: Any])?["code"] as? Int).map { load ? $0 == EEXIST || $0 == EALREADY : $0 == 113 } ?? false }
-        payload["unchanged"] = benign
         if !benign {
             throw IcliError.failed("launchd rejected \(errors.count) path(s): \(errors)")
         }
-        payload["verified"] = unexpected.isEmpty
+        payload["unchanged"] = true
     }
     if !unexpected.isEmpty {
         throw IcliError.failed("\(unexpected.count) service(s) did not reach the requested state: \(unexpected.compactMap { $0["label"] })")

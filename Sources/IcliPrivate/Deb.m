@@ -1,5 +1,6 @@
 #import "IcliPrivate.h"
 #import "ArchiveInternal.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #include <libarchive/archive.h>
 #include <libarchive/archive_entry.h>
@@ -12,11 +13,6 @@
 // data.tar.* (gzip, xz, zstd, bzip2, lzma or none). Members are read into
 // memory (capped) and unpacked with a second reader.
 static const int64_t kDebMemberLimit = 512LL * 1024 * 1024;
-
-static char *debJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
 
 static NSData *readMember(struct archive *reader, struct archive_entry *entry, NSString **failure) {
     int64_t size = archive_entry_size(entry);
@@ -77,7 +73,7 @@ static NSString *walkTar(NSData *data, NSString *destination, NSMutableArray *en
             const char *raw = archive_entry_pathname(entry);
             NSString *path = raw ? @(raw) : @"";
             mode_t type = archive_entry_filetype(entry);
-            [entries addObject:@{@"path": path, @"type": @(type == AE_IFDIR ? "directory" : type == AE_IFLNK ? "symlink" : type == AE_IFREG ? "file" : "other"), @"size": @(archive_entry_size(entry)), @"mode": @(archive_entry_perm(entry) & 07777)}];
+            [entries addObject:icli_archive_entry_info(entry, path)];
             NSString *name = path.lastPathComponent;
             if (texts && type == AE_IFREG && archive_entry_size(entry) <= 1024 * 1024) {
                 NSData *body = readMember(reader, entry, &failure);
@@ -93,7 +89,7 @@ static NSString *walkTar(NSData *data, NSString *destination, NSMutableArray *en
 
 char *icli_deb_read_json(const char *path, const char *destination) {
     struct archive *reader = archive_read_new();
-    if (!reader) return debJSON(@{@"error": @"archive allocation failed"});
+    if (!reader) return icli_json(@{@"error": @"archive allocation failed"});
     archive_read_support_format_ar(reader);
     NSString *failure = nil;
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
@@ -120,7 +116,7 @@ char *icli_deb_read_json(const char *path, const char *destination) {
                 NSString *debian = [root stringByAppendingPathComponent:@"DEBIAN"];
                 NSError *error = nil;
                 if (![NSFileManager.defaultManager createDirectoryAtPath:debian withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0755} error:&error]) failure = error.localizedDescription;
-                else failure = walkTar(body, debian, [NSMutableArray array], nil, false);
+                else failure = walkTar(body, debian, nil, nil, false);
             }
         } else if ([name hasPrefix:@"data.tar"]) {
             result[@"data_member"] = name;
@@ -134,10 +130,10 @@ char *icli_deb_read_json(const char *path, const char *destination) {
     archive_read_free(reader);
     if (!failure && !controlTexts[@"control"]) failure = @"deb has no control file";
     if (!failure && !result[@"data_member"]) failure = @"deb has no data member";
-    if (failure) return debJSON(@{@"error": failure});
+    if (failure) return icli_json(@{@"error": failure});
     NSMutableArray *order = [NSMutableArray array];
     NSDictionary *fields = parseControl(controlTexts[@"control"], order);
-    if (!fields[@"Package"] || !fields[@"Version"]) return debJSON(@{@"error": @"deb control lacks Package or Version"});
+    if (!fields[@"Package"] || !fields[@"Version"]) return icli_json(@{@"error": @"deb control lacks Package or Version"});
     result[@"control"] = fields;
     result[@"control_order"] = order;
     result[@"control_files"] = controlEntries;
@@ -146,7 +142,7 @@ char *icli_deb_read_json(const char *path, const char *destination) {
     result[@"files"] = dataEntries;
     result[@"extracted"] = root ? @YES : @NO;
     if (root) result[@"destination"] = root;
-    return debJSON(result);
+    return icli_json(result);
 }
 
 /// Archive path as dpkg records it in info/*.list: "./usr/bin/x" and
@@ -178,7 +174,7 @@ char *icli_deb_unpack_json(const char *path, const char *prefix, const char **sk
     NSString *failure = nil;
     NSString *root = prefix && *prefix ? @(prefix) : @"";
     struct archive *ar = archive_read_new();
-    if (!ar) return debJSON(@{@"error": @"archive allocation failed"});
+    if (!ar) return icli_json(@{@"error": @"archive allocation failed"});
     archive_read_support_format_ar(ar);
     if (archive_read_open_filename(ar, path, 65536) != ARCHIVE_OK) failure = @(archive_error_string(ar) ?: "could not open deb");
     struct archive_entry *member;
@@ -241,8 +237,8 @@ char *icli_deb_unpack_json(const char *path, const char *prefix, const char **sk
     }
     if (!failure && tar && status != ARCHIVE_EOF) failure = @(archive_error_string(tar) ?: "invalid data member");
     if (tar) archive_read_free(tar);
-    if (failure) return debJSON(@{@"error": failure, @"installed": installed});
-    return debJSON(@{@"installed": installed, @"kept": kept});
+    if (failure) return icli_json(@{@"error": failure, @"installed": installed});
+    return icli_json(@{@"installed": installed, @"kept": kept});
 }
 
 /// Reads one small entry from a tar file (optionally compressed), for

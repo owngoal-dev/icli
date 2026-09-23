@@ -28,7 +28,7 @@ id icli_ls_workspace(void) {
     if (![wsClass respondsToSelector:@selector(defaultWorkspace)]) {
         return nil;
     }
-    return [wsClass performSelector:@selector(defaultWorkspace)];
+    return [wsClass defaultWorkspace];
 }
 
 id icli_ls_value(id proxy, NSString *key) {
@@ -63,18 +63,14 @@ NSString *icli_ls_string(id value) {
 
 NSDictionary *icli_ls_app_dictionary(id proxy) {
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
-    NSString *bundleID = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
-    NSString *name = icli_ls_string(icli_ls_value(proxy, @"localizedName"));
-    NSString *bundlePath = icli_ls_string(icli_ls_value(proxy, @"bundleURL"));
-    NSString *dataPath = icli_ls_string(icli_ls_value(proxy, @"dataContainerURL"));
-    NSString *version = icli_ls_string(icli_ls_value(proxy, @"shortVersionString"));
-    NSString *build = icli_ls_string(icli_ls_value(proxy, @"bundleVersion"));
-    NSString *type = icli_ls_string(icli_ls_value(proxy, @"applicationType"));
-    NSString *signer = icli_ls_string(icli_ls_value(proxy, @"signerIdentity")) ?: icli_ls_string(icli_ls_value(proxy, @"teamID"));
-    if (bundleID) d[@"bundle_id"] = bundleID;
-    if (name) d[@"name"] = name;
-    if (bundlePath) d[@"bundle_path"] = bundlePath;
-    if (dataPath) d[@"data_path"] = dataPath;
+    d[@"bundle_id"] = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
+    d[@"name"] = icli_ls_string(icli_ls_value(proxy, @"localizedName"));
+    d[@"bundle_path"] = icli_ls_string(icli_ls_value(proxy, @"bundleURL"));
+    d[@"data_path"] = icli_ls_string(icli_ls_value(proxy, @"dataContainerURL"));
+    d[@"version"] = icli_ls_string(icli_ls_value(proxy, @"shortVersionString"));
+    d[@"build"] = icli_ls_string(icli_ls_value(proxy, @"bundleVersion"));
+    d[@"type"] = icli_ls_string(icli_ls_value(proxy, @"applicationType"));
+    d[@"signer"] = icli_ls_string(icli_ls_value(proxy, @"signerIdentity")) ?: icli_ls_string(icli_ls_value(proxy, @"teamID"));
     id groups = icli_ls_value(proxy, @"groupContainerURLs");
     NSMutableDictionary *groupPaths = [NSMutableDictionary dictionary];
     if ([groups isKindOfClass:NSDictionary.class]) {
@@ -84,10 +80,6 @@ NSDictionary *icli_ls_app_dictionary(id proxy) {
         }
     }
     d[@"group_containers"] = groupPaths;
-    if (version) d[@"version"] = version;
-    if (build) d[@"build"] = build;
-    if (type) d[@"type"] = type;
-    if (signer) d[@"signer"] = signer;
     id running = icli_ls_value(proxy, @"isRunning");
     if ([running respondsToSelector:@selector(boolValue)]) {
         d[@"running"] = @([running boolValue]);
@@ -103,7 +95,7 @@ char *icli_apps_json(void) {
     id ws = icli_ls_workspace();
     NSArray *apps = nil;
     if ([ws respondsToSelector:@selector(allInstalledApplications)]) {
-        apps = [ws performSelector:@selector(allInstalledApplications)];
+        apps = [ws allInstalledApplications];
     }
     NSMutableArray *out = [NSMutableArray array];
     for (id proxy in apps) {
@@ -113,8 +105,5 @@ char *icli_apps_json(void) {
     if (!json) {
         return strdup("[]");
     }
-    char *copy = malloc(json.length + 1);
-    memcpy(copy, json.bytes, json.length);
-    copy[json.length] = 0;
-    return copy;
+    return strndup(json.bytes, json.length);
 }

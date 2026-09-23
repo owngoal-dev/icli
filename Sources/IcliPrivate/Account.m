@@ -1,4 +1,5 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <Security/SecRandom.h>
@@ -76,11 +77,6 @@ char *icli_sha512_crypt(const char *key, const char *salt) {
     return strdup(out.UTF8String);
 }
 
-static char *accountJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
-
 static NSString *randomSalt(void) {
     unsigned char bytes[16];
     if (SecRandomCopyBytes(kSecRandomDefault, sizeof(bytes), bytes) != errSecSuccess) return nil;
@@ -149,17 +145,17 @@ static NSString *updateHashDatabase(NSString *path, NSString *user, NSString *ha
 }
 
 char *icli_account_set_password_json(const char *etc_directory, const char *user, const char *password) {
-    if (!etc_directory || !user || !password || !*user) return accountJSON(@{@"error": @"invalid account arguments"});
+    if (!etc_directory || !user || !password || !*user) return icli_json(@{@"error": @"invalid account arguments"});
     NSString *etc = @(etc_directory);
     NSString *masterPath = [etc stringByAppendingPathComponent:@"master.passwd"];
     NSString *databasePath = [etc stringByAppendingPathComponent:@"spwd.db"];
     struct stat original;
-    if (stat(masterPath.fileSystemRepresentation, &original) != 0) return accountJSON(@{@"error": [@"master.passwd: " stringByAppendingString:@(strerror(errno))]});
+    if (stat(masterPath.fileSystemRepresentation, &original) != 0) return icli_json(@{@"error": [@"master.passwd: " stringByAppendingString:@(strerror(errno))]});
     NSString *text = [NSString stringWithContentsOfFile:masterPath encoding:NSUTF8StringEncoding error:nil];
-    if (!text) return accountJSON(@{@"error": @"master.passwd unreadable (root required)"});
+    if (!text) return icli_json(@{@"error": @"master.passwd unreadable (root required)"});
     NSString *salt = randomSalt();
     char *hashed = salt ? icli_sha512_crypt(password, salt.UTF8String) : NULL;
-    if (!hashed) return accountJSON(@{@"error": @"password hashing failed"});
+    if (!hashed) return icli_json(@{@"error": @"password hashing failed"});
     NSString *hash = @(hashed);
     free(hashed);
 
@@ -169,16 +165,16 @@ char *icli_account_set_password_json(const char *etc_directory, const char *user
     for (NSUInteger i = 0; i < lines.count; i++) {
         if (![lines[i] hasPrefix:prefix]) continue;
         NSMutableArray *fields = [[lines[i] componentsSeparatedByString:@":"] mutableCopy];
-        if (fields.count < 10) return accountJSON(@{@"error": @"master.passwd entry is malformed"});
+        if (fields.count < 10) return icli_json(@{@"error": @"master.passwd entry is malformed"});
         fields[1] = hash;
         lines[i] = [fields componentsJoinedByString:@":"];
         matches++;
     }
-    if (matches == 0) return accountJSON(@{@"error": [NSString stringWithFormat:@"user not found in master.passwd: %s", user]});
+    if (matches == 0) return icli_json(@{@"error": [NSString stringWithFormat:@"user not found in master.passwd: %s", user]});
     NSUInteger updated = 0;
     NSString *failure = updateHashDatabase(databasePath, @(user), hash, &updated);
-    if (failure) return accountJSON(@{@"error": [@"spwd.db: " stringByAppendingString:failure]});
+    if (failure) return icli_json(@{@"error": [@"spwd.db: " stringByAppendingString:failure]});
     failure = replaceFile(masterPath, [[lines componentsJoinedByString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding], &original);
-    if (failure) return accountJSON(@{@"error": [@"master.passwd: " stringByAppendingString:failure], @"spwd_db_updated": @YES});
-    return accountJSON(@{@"user": @(user), @"scheme": @"sha512crypt", @"salt": salt, @"master_passwd_entries": @(matches), @"spwd_db_records": @(updated), @"files": @[masterPath, databasePath]});
+    if (failure) return icli_json(@{@"error": [@"master.passwd: " stringByAppendingString:failure], @"spwd_db_updated": @YES});
+    return icli_json(@{@"user": @(user), @"scheme": @"sha512crypt", @"salt": salt, @"master_passwd_entries": @(matches), @"spwd_db_records": @(updated), @"files": @[masterPath, databasePath]});
 }

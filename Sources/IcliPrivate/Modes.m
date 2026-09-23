@@ -1,13 +1,9 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #import <xpc/xpc.h>
 #import <objc/message.h>
 #import <dlfcn.h>
-
-static char *modesJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
 
 // amfid's Developer Mode service, as vphoned uses it. The request and reply
 // are CF dictionaries wrapped by CoreFoundation's XPC bridge; the reply sits
@@ -24,21 +20,21 @@ char *icli_amfi_developer_mode_json(bool arm) {
     CreateMachService createService = (CreateMachService)dlsym(RTLD_DEFAULT, "xpc_connection_create_mach_service");
     CreateXPCMessage toXPC = (CreateXPCMessage)dlsym(RTLD_DEFAULT, "_CFXPCCreateXPCMessageWithCFObject");
     CFTypeRef (*fromXPC)(xpc_object_t) = dlsym(RTLD_DEFAULT, "_CFXPCCreateCFObjectFromXPCMessage");
-    if (!createService || !toXPC || !fromXPC) return modesJSON(@{@"error": @"The XPC functions for amfid are unavailable."});
+    if (!createService || !toXPC || !fromXPC) return icli_json(@{@"error": @"The XPC functions for amfid are unavailable."});
     xpc_connection_t connection = createService("com.apple.amfi.xpc", NULL, 0);
-    if (!connection) return modesJSON(@{@"error": @"Could not connect to amfid."});
+    if (!connection) return icli_json(@{@"error": @"Could not connect to amfid."});
     xpc_connection_set_event_handler(connection, ^(xpc_object_t event) {});
     xpc_connection_resume(connection);
     xpc_object_t message = toXPC((__bridge CFDictionaryRef)@{@"action": @(arm ? AMFIActionArm : AMFIActionStatus)});
     xpc_object_t reply = message ? xpc_connection_send_message_with_reply_sync(connection, message) : nil;
     xpc_connection_cancel(connection);
     if (!reply || xpc_get_type(reply) != XPC_TYPE_DICTIONARY) {
-        return modesJSON(@{@"error": @"amfid did not answer the Developer Mode request."});
+        return icli_json(@{@"error": @"amfid did not answer the Developer Mode request."});
     }
     xpc_object_t wrapped = xpc_dictionary_get_value(reply, "cfreply");
     id object = wrapped ? CFBridgingRelease(fromXPC(wrapped)) : nil;
-    if (![object isKindOfClass:NSDictionary.class]) return modesJSON(@{@"error": @"amfid sent a Developer Mode reply without a result."});
-    return modesJSON(object);
+    if (![object isKindOfClass:NSDictionary.class]) return icli_json(@{@"error": @"amfid sent a Developer Mode reply without a result."});
+    return icli_json(object);
 }
 
 // powerd's Low Power Mode service (com.apple.powerd.lowpowermode), reached

@@ -34,9 +34,8 @@ public func developerModeStatus() throws -> [String: Any] {
 /// once the user confirms the prompt. Does nothing when it is already on.
 public func enableDeveloperMode() throws -> [String: Any] {
     var status = try developerModeStatus()
-    status["already_enabled"] = status["enabled"]
-    status["restart_required"] = false
     if status["enabled"] as? Bool == true || status["armed"] as? Bool == true {
+        status["already_enabled"] = status["enabled"]
         status["restart_required"] = status["enabled"] as? Bool != true
         return status
     }

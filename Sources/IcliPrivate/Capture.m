@@ -1,4 +1,5 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #include <arpa/inet.h>
 #include <errno.h>
@@ -43,11 +44,6 @@ typedef struct {
     char src[64], dst[64];
     int srcPort, dstPort;
 } PacketSummary;
-
-static char *captureJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
 
 static bool parseFilter(const char *text, CaptureFilter *filter) {
     memset(filter, 0, sizeof(*filter));
@@ -145,7 +141,7 @@ static NSDictionary *summaryDictionary(const PacketSummary *summary, uint32_t le
 
 char *icli_capture_packets_json(const char *interface, const char *filter_text, double seconds, const char *output_path) {
     CaptureFilter filter;
-    if (!parseFilter(filter_text, &filter)) return captureJSON(@{@"error": @"unsupported filter; use [tcp|udp|icmp] [src|dst] port N [src|dst] host A joined by and"});
+    if (!parseFilter(filter_text, &filter)) return icli_json(@{@"error": @"unsupported filter; use [tcp|udp|icmp] [src|dst] port N [src|dst] host A joined by and"});
     int fd = -1;
     for (int i = 0; i < 256 && fd < 0; i++) {
         char device[32];
@@ -153,19 +149,19 @@ char *icli_capture_packets_json(const char *interface, const char *filter_text, 
         fd = open(device, O_RDWR);
         if (fd < 0 && errno != EBUSY) break;
     }
-    if (fd < 0) return captureJSON(@{@"error": [NSString stringWithFormat:@"no BPF device available: %s (root required)", strerror(errno)]});
+    if (fd < 0) return icli_json(@{@"error": [NSString stringWithFormat:@"no BPF device available: %s (root required)", strerror(errno)]});
     struct ifreq request = {0};
     strlcpy(request.ifr_name, interface, sizeof(request.ifr_name));
     unsigned immediate = 1, bufferLength = 0, dlt = 0;
     if (ioctl(fd, BIOCSETIF, &request) < 0 || ioctl(fd, BIOCIMMEDIATE, &immediate) < 0 || ioctl(fd, BIOCGBLEN, &bufferLength) < 0 || ioctl(fd, BIOCGDLT, &dlt) < 0) {
         int error = errno;
         close(fd);
-        return captureJSON(@{@"error": [NSString stringWithFormat:@"BPF setup failed for %s: %s", interface, strerror(error)]});
+        return icli_json(@{@"error": [NSString stringWithFormat:@"BPF setup failed for %s: %s", interface, strerror(error)]});
     }
     FILE *output = fopen(output_path, "wb");
-    if (!output) { int error = errno; close(fd); return captureJSON(@{@"error": [NSString stringWithFormat:@"cannot write %s: %s", output_path, strerror(error)]}); }
+    if (!output) { int error = errno; close(fd); return icli_json(@{@"error": [NSString stringWithFormat:@"cannot write %s: %s", output_path, strerror(error)]}); }
+    // pcap magic, version 2.4, time zone, sigfigs, snap length, link type.
     uint32_t header[6] = {0xa1b2c3d4, 0x00040002, 0, 0, 65535, dlt};
-    header[1] = 2 | (4 << 16);
     fwrite(header, sizeof(header), 1, output);
     unsigned char *buffer = malloc(bufferLength);
     NSMutableArray *packets = [NSMutableArray array];
@@ -197,6 +193,6 @@ char *icli_capture_packets_json(const char *interface, const char *filter_text, 
     close(fd);
     bool flushed = fclose(output) == 0;
     NSString *linkType = dlt == DLT_NULL ? @"null" : dlt == DLT_EN10MB ? @"ethernet" : dlt == DLT_RAW ? @"raw" : [NSString stringWithFormat:@"dlt-%u", dlt];
-    if (!flushed) return captureJSON(@{@"error": @"capture file could not be written"});
-    return captureJSON(@{@"path": @(output_path), @"interface": @(interface), @"link_type": linkType, @"filter": filter_text ? @(filter_text) : @"", @"packets": @(count), @"bytes": @(bytes), @"summary": packets});
+    if (!flushed) return icli_json(@{@"error": @"capture file could not be written"});
+    return icli_json(@{@"path": @(output_path), @"interface": @(interface), @"link_type": linkType, @"filter": filter_text ? @(filter_text) : @"", @"packets": @(count), @"bytes": @(bytes), @"summary": packets});
 }

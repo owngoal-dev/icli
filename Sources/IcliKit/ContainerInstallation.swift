@@ -191,19 +191,22 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
     defer { try? manager.removeItem(atPath: staged.stage) }
     let bundleID = staged.bundleID
     let plugIns = try appPlugIns(of: staged.app, owner: bundleID)
-    var bundleContainer = try container("app", bundleID, create: false)["path"] as? String
-    let previous = bundleContainer.flatMap(appBundle(in:))
-    if let bundleContainer, previous != nil, !isManaged(bundleContainer) {
+    let existingContainer = try container("app", bundleID, create: false)["path"] as? String
+    let previous = existingContainer.flatMap(appBundle(in:))
+    if let existingContainer, previous != nil, !isManaged(existingContainer) {
         throw IcliError.failed("\(bundleID) is already installed and icli did not install it; remove it first")
     }
     if let installed = (try? appInfo(bundleID))?["bundle_path"] as? String,
-       !physicalPath(installed).hasPrefix(physicalPath(bundleContainer ?? "/nonexistent") + "/")
+       !physicalPath(installed).hasPrefix(physicalPath(existingContainer ?? "/nonexistent") + "/")
     {
         throw IcliError.failed("\(bundleID) is already installed at \(installed); only an app icli installed in a container can be replaced")
     }
 
     var created: [CreatedContainer] = []
-    if bundleContainer == nil {
+    let bundleContainer: String
+    if let existingContainer {
+        bundleContainer = existingContainer
+    } else {
         let made = try container("app", bundleID, create: true)
         guard let path = made["path"] as? String else { throw IcliError.failed("no bundle container for \(bundleID)") }
         if made["existed"] as? Bool == false {
@@ -211,7 +214,6 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
         }
         bundleContainer = path
     }
-    guard let bundleContainer else { throw IcliError.failed("no bundle container for \(bundleID)") }
     let previousType = previous.flatMap { try? appRegistration($0)["type"] as? String }
     if previous != nil, (try? appInfo(bundleID)) != nil {
         _ = try killApp(bundleID, force: true)

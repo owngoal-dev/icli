@@ -1,5 +1,6 @@
 #import "IcliPrivate.h"
 #import "ArchiveInternal.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #include <libarchive/archive.h>
 #include <libarchive/archive_entry.h>
@@ -15,6 +16,11 @@ static BOOL parentInsideRoot(NSString *path, NSString *realRootPrefix) {
     char resolved[PATH_MAX];
     if (!realpath(path.stringByDeletingLastPathComponent.fileSystemRepresentation, resolved)) return NO;
     return [[@(resolved) stringByAppendingString:@"/"] hasPrefix:realRootPrefix];
+}
+
+NSDictionary *icli_archive_entry_info(struct archive_entry *entry, NSString *path) {
+    mode_t type = archive_entry_filetype(entry);
+    return @{@"path": path, @"type": @(type == AE_IFDIR ? "directory" : type == AE_IFLNK ? "symlink" : type == AE_IFREG ? "file" : "other"), @"size": @(archive_entry_size(entry)), @"mode": @(archive_entry_perm(entry) & 07777)};
 }
 
 NSString *icli_archive_extract(struct archive *reader, NSString *destination, bool allow_absolute_symlinks, NSMutableArray *entries, NSUInteger *count, uint64_t *total) {
@@ -40,7 +46,7 @@ NSString *icli_archive_extract(struct archive *reader, NSString *destination, bo
         NSError *error = nil;
         if (![NSFileManager.defaultManager createDirectoryAtPath:path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0755} error:&error]) { failure = error.localizedDescription; break; }
         if (!parentInsideRoot(path, realRootPrefix)) { failure = @"archive entry escapes its staging directory"; break; }
-        if (entries) [entries addObject:@{@"path": relative, @"type": @(type == AE_IFDIR ? "directory" : type == AE_IFLNK ? "symlink" : type == AE_IFREG ? "file" : "other"), @"size": @(archive_entry_size(entry)), @"mode": @(archive_entry_perm(entry) & 07777)}];
+        if (entries) [entries addObject:icli_archive_entry_info(entry, relative)];
         if (type == AE_IFDIR) {
             if (![NSFileManager.defaultManager createDirectoryAtPath:path withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@(archive_entry_perm(entry) & 0777 ?: 0755)} error:&error]) failure = error.localizedDescription;
         } else if (type == AE_IFLNK) {
@@ -91,6 +97,5 @@ char *icli_extract_ipa_json(const char *source, const char *destination) {
     if (!failure) failure = icli_archive_extract(reader, @(destination), false, nil, &count, &total);
     archive_read_free(reader);
     NSDictionary *result = failure ? @{@"error": [@"IPA: " stringByAppendingString:failure]} : @{@"entries": @(count), @"bytes": @(total)};
-    NSData *json = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
-    return json ? strndup(json.bytes, json.length) : NULL;
+    return icli_json(result);
 }

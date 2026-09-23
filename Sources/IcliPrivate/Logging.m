@@ -1,4 +1,5 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #import <objc/message.h>
 #import <dlfcn.h>
@@ -12,11 +13,6 @@ static id logProperty(id event, NSString *name) {
     return ((id (*)(id, SEL))objc_msgSend)(event, selector);
 }
 
-static char *logJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
-
 char *icli_syslog_json(double seconds, const char *process, const char *level, int max_lines) {
     dlopen("/System/Library/PrivateFrameworks/LoggingSupport.framework/LoggingSupport", RTLD_NOW);
     Class streamClass = NSClassFromString(@"OSLogEventLiveStream");
@@ -25,7 +21,7 @@ char *icli_syslog_json(double seconds, const char *process, const char *level, i
     SEL activate = NSSelectorFromString(@"activate");
     SEL invalidate = NSSelectorFromString(@"invalidate");
     if (!stream || ![stream respondsToSelector:setHandler] || ![stream respondsToSelector:activate] || ![stream respondsToSelector:invalidate]) {
-        return logJSON(@{@"error": @"unified log stream unavailable"});
+        return icli_json(@{@"error": @"unified log stream unavailable"});
     }
     NSMutableArray *entries = [NSMutableArray array];
     NSLock *lock = [NSLock new];
@@ -64,5 +60,5 @@ char *icli_syslog_json(double seconds, const char *process, const char *level, i
     NSArray *snapshot = [entries copy];
     BOOL wasTruncated = truncated;
     [lock unlock];
-    return logJSON(@{@"entries": snapshot, @"count": @(snapshot.count), @"truncated": @(wasTruncated), @"source": @"unified_log", @"seconds": @(seconds)});
+    return icli_json(@{@"entries": snapshot, @"count": @(snapshot.count), @"truncated": @(wasTruncated), @"source": @"unified_log", @"seconds": @(seconds)});
 }

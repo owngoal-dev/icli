@@ -8,38 +8,33 @@ case "${1:-rootless}" in
 esac
 root="$PWD/.build/install-fixtures"
 app="$root/Payload/IcliInstallFixture.app"
+# stamp BUNDLE IDENTIFIER NAME ENTITLEMENTS_OUT [--container]: gives a TestHost
+# copy its own identity. A container fixture drops the TestHost's entitlements.
+stamp() {
+  python3 - "$@" <<'PY'
+import plistlib, sys
+from pathlib import Path
+bundle, identifier, name, entitlements = sys.argv[1:5]
+container = sys.argv[5:] == ['--container']
+info = plistlib.loads(Path('Tests/TestHost/Info.plist').read_bytes())
+info.pop('CFBundleURLTypes', None)
+info['CFBundleIdentifier'] = identifier
+info['CFBundleDisplayName'] = name
+(Path(bundle) / 'Info.plist').write_bytes(plistlib.dumps(info))
+ent = {'get-task-allow': True} if container else plistlib.loads(Path('Tests/TestHost/entitlements.plist').read_bytes())
+ent['application-identifier'] = identifier
+Path(entitlements).write_bytes(plistlib.dumps(ent))
+PY
+}
 mkdir -p "$app" "$root/deb/DEBIAN" "$root/deb/var/mobile/Library/Caches/icli-install-test"
 cp .build/testhost-app/IcliTestHost "$app/IcliTestHost"
-python3 - "$app" "$root" <<'PY'
-import plistlib,sys
-from pathlib import Path
-app=Path(sys.argv[1]); root=Path(sys.argv[2])
-info=plistlib.load(open('Tests/TestHost/Info.plist','rb'))
-info['CFBundleIdentifier']='dev.owngoal.icli.InstallFixture'
-info['CFBundleDisplayName']='icli Install Fixture'
-info.pop('CFBundleURLTypes',None)
-plistlib.dump(info,open(app/'Info.plist','wb'))
-ent=plistlib.load(open('Tests/TestHost/entitlements.plist','rb'))
-ent['application-identifier']=info['CFBundleIdentifier']
-plistlib.dump(ent,open(root/'entitlements.plist','wb'))
-PY
+stamp "$app" dev.owngoal.icli.InstallFixture 'icli Install Fixture' "$root/entitlements.plist"
 ldid -S"$root/entitlements.plist" "$app"
 # A separate identity keeps on-device self-tests away from install acceptance.
 selftest="$root/SelfTestFixture.app"
 mkdir -p "$selftest"
 cp "$app/IcliTestHost" "$selftest/IcliTestHost"
-python3 - "$app" "$selftest" "$root" <<'PY'
-import plistlib, sys
-from pathlib import Path
-app, fixture, root = map(Path, sys.argv[1:])
-info = plistlib.loads((app / 'Info.plist').read_bytes())
-info['CFBundleIdentifier'] = 'dev.owngoal.icli.SelfTestFixture'
-info['CFBundleDisplayName'] = 'icli Self-Test Fixture'
-(fixture / 'Info.plist').write_bytes(plistlib.dumps(info))
-ent = plistlib.loads((root / 'entitlements.plist').read_bytes())
-ent['application-identifier'] = info['CFBundleIdentifier']
-(root / 'selftest-entitlements.plist').write_bytes(plistlib.dumps(ent))
-PY
+stamp "$selftest" dev.owngoal.icli.SelfTestFixture 'icli Self-Test Fixture' "$root/selftest-entitlements.plist"
 ldid -S"$root/selftest-entitlements.plist" "$selftest/IcliTestHost"
 ldid -S"$root/selftest-entitlements.plist" "$selftest"
 (cd "$root" && rm -f icli-install-fixture.ipa && zip -qr icli-install-fixture.ipa Payload)
@@ -49,17 +44,7 @@ container="$root/container/Payload/IcliContainerFixture.app"
 rm -rf "$root/container"
 mkdir -p "$container"
 cp "$app/IcliTestHost" "$container/IcliTestHost"
-python3 - "$app" "$container" "$root" <<'PY'
-import plistlib, sys
-from pathlib import Path
-app, fixture, root = map(Path, sys.argv[1:])
-info = plistlib.loads((app / 'Info.plist').read_bytes())
-info['CFBundleIdentifier'] = 'dev.owngoal.icli.ContainerFixture'
-info['CFBundleDisplayName'] = 'icli Container Fixture'
-(fixture / 'Info.plist').write_bytes(plistlib.dumps(info))
-ent = {'application-identifier': info['CFBundleIdentifier'], 'get-task-allow': True}
-(root / 'container-entitlements.plist').write_bytes(plistlib.dumps(ent))
-PY
+stamp "$container" dev.owngoal.icli.ContainerFixture 'icli Container Fixture' "$root/container-entitlements.plist" --container
 ldid -S"$root/container-entitlements.plist" "$container"
 (cd "$root/container" && rm -f ../icli-container-fixture.ipa && zip -qr ../icli-container-fixture.ipa Payload)
 cat > "$root/deb/DEBIAN/control" <<CONTROL

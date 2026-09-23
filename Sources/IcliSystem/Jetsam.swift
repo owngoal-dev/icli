@@ -32,8 +32,7 @@ private func jsonSafe(_ value: Any) -> Any {
     case let array as [Any]: array.map(jsonSafe)
     case let data as Data: data.base64EncodedString()
     case let date as Date: ISO8601DateFormatter().string(from: date)
-    case let number as NSNumber: number
-    case let string as String: string
+    case is NSNumber, is String: value
     default: String(describing: value)
     }
 }

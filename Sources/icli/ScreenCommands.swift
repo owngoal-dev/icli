@@ -9,6 +9,8 @@ struct Screen: ParsableCommand {
     )
 }
 
+private let normalizedHelp: ArgumentHelp = "x and y are 0–1 in the fixed portrait digitizer space instead of UI points."
+
 extension Screen {
     struct Tap: ParsableCommand {
         @OptionGroup var output: OutputOptions
@@ -89,7 +91,7 @@ extension Screen {
         @Argument(help: "down, move or up.") var phase: String
         @Argument var x: Double
         @Argument var y: Double
-        @Flag(help: "x and y are 0–1 in the fixed portrait digitizer space instead of UI points.") var normalized = false
+        @Flag(help: normalizedHelp) var normalized = false
         func run() {
             emit(output) {
                 guard let phase = TouchPhase(rawValue: phase) else { throw IcliError.failed("phase must be down, move or up") }
@@ -102,7 +104,7 @@ extension Screen {
         static var configuration = CommandConfiguration(commandName: "touch-sequence", abstract: "Send several digitizer events from one process.")
         @OptionGroup var output: OutputOptions
         @Option(help: "JSON array of {phase,x,y,delay_ms}; delay_ms is the pause after that event.") var events: String
-        @Flag(help: "x and y are 0–1 in the fixed portrait digitizer space instead of UI points.") var normalized = false
+        @Flag(help: normalizedHelp) var normalized = false
         func run() {
             emit(output) { try touchSequence(TouchEvent.list(fromJSON: events), normalized: normalized) }
         }

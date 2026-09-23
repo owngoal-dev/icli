@@ -47,22 +47,20 @@ def build(product, triple):
     command = ['swift', 'build', '--package-path', str(consumer), '--scratch-path', str(work / 'build'),
                '-c', 'release', '--triple', triple, '--sdk', sdk, '--product', product]
     subprocess.run(command, check=True)
-    return command
+    return Path(subprocess.check_output(command + ['--show-bin-path'], text=True).strip()) / product
 
-command = build('IcliPackageConsumer', 'arm64-apple-ios16.0')
+output = build('IcliPackageConsumer', 'arm64-apple-ios16.0')
 # The read-only product at the package's floor: an app that deploys to iOS 15
 # can link IcliSystem, which the library product is there to allow.
-system_command = build('IcliSystemConsumer', 'arm64-apple-ios15.0')
+system_output = build('IcliSystemConsumer', 'arm64-apple-ios15.0')
 sources = [root / 'Package.swift'] + sorted((root / 'Sources').rglob('*')) + sorted((root / 'Resources').rglob('*'))
 source_hashes = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
                  for path in sources if path.is_file()}
 checkout = work / 'build/checkouts/icli'
 for path, digest in source_hashes.items():
     assert hashlib.sha256((checkout / path).read_bytes()).hexdigest() == digest, 'consumer resolved stale source: ' + path
-output = Path(subprocess.check_output(command + ['--show-bin-path'], text=True).strip()) / 'IcliPackageConsumer'
 binary = work / 'IcliPackageConsumer'
 shutil.copy2(output, binary)
-system_output = Path(subprocess.check_output(system_command + ['--show-bin-path'], text=True).strip()) / 'IcliSystemConsumer'
 system_binary = work / 'IcliSystemConsumer'
 shutil.copy2(system_output, system_binary)
 report = {'version': version, 'product': 'IcliKit', 'dependency_kind': 'source-control exact version',

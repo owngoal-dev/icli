@@ -3,14 +3,6 @@ import Foundation
 import IcliPrivate
 import IcliSystem
 
-private func decodeSystem(_ raw: String?) throws -> [String: Any] {
-    guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid response") }
-    if let error = result["error"] as? String {
-        throw IcliError.failed(error)
-    }
-    return result
-}
-
 /// Requests a userspace or full reboot. Success means the kernel accepted
 /// the request; the caller proves completion by reconnecting.
 public func requestReboot(userspace: Bool, force: Bool) throws -> [String: Any] {
@@ -22,19 +14,19 @@ public func requestReboot(userspace: Bool, force: Bool) throws -> [String: Any] 
 }
 
 public func appNetworkPolicy(_ bundleID: String, repair: Bool) throws -> [String: Any] {
-    guard bundleID.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{1,200}$", options: .regularExpression) != nil else { throw IcliError.failed("invalid app bundle identifier") }
-    return try decodeSystem(takeCString(icli_app_network_policy_json(bundleID, repair)))
+    try validateBundleID(bundleID)
+    return try decodeBridgeJSON(takeCString(icli_app_network_policy_json(bundleID, repair)), "response")
 }
 
 /// SpringBoard's "show non-default system apps" preference (read or set).
 public func systemAppsVisibility(set visible: Bool?) throws -> [String: Any] {
-    try decodeSystem(takeCString(icli_system_apps_visible_json(visible.map { $0 ? 1 : 0 } ?? -1)))
+    try decodeBridgeJSON(takeCString(icli_system_apps_visible_json(visible.map { $0 ? 1 : 0 } ?? -1)), "response")
 }
 
 public func renderBootLogo(mark: String, output: String, dark: Bool, width: Int, height: Int, markPoints: Double) throws -> [String: Any] {
     guard FileManager.default.fileExists(atPath: mark) else { throw IcliError.failed("mark image not found: \(mark)") }
     guard width >= 0, height >= 0, markPoints >= 0 else { throw IcliError.failed("sizes must not be negative") }
-    return try decodeSystem(takeCString(icli_bootlogo_render_json(mark, output, dark, Int32(width), Int32(height), markPoints)))
+    return try decodeBridgeJSON(takeCString(icli_bootlogo_render_json(mark, output, dark, Int32(width), Int32(height), markPoints)), "response")
 }
 
 /// Replaces the bootstrap account's password hash in master.passwd and the
@@ -43,7 +35,7 @@ public func setAccountPassword(user: String, password: String) throws -> [String
     guard user.range(of: "^[a-z_][a-z0-9_-]{0,31}$", options: .regularExpression) != nil else { throw IcliError.failed("invalid account name") }
     guard !password.isEmpty, password.utf8.count <= 256, !password.contains("\n"), !password.contains(":") else { throw IcliError.failed("password must be 1-256 bytes without newlines or colons") }
     guard geteuid() == 0 else { throw IcliError.failed("changing an account password requires root") }
-    return try decodeSystem(takeCString(icli_account_set_password_json(JailbreakRoot.current.jbrootPath("/etc"), user, password)))
+    return try decodeBridgeJSON(takeCString(icli_account_set_password_json(JailbreakRoot.current.jbrootPath("/etc"), user, password)), "response")
 }
 
 /// Structured runtime capabilities: layout, markers, platform services and

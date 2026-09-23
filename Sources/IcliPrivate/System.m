@@ -1,15 +1,11 @@
 #import "IcliPrivate.h"
+#import "IcliJSON.h"
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <dlfcn.h>
 #import <errno.h>
 #import <objc/message.h>
 #import <unistd.h>
-
-static char *systemJSON(NSDictionary *value) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
-    return data ? strndup(data.bytes, data.length) : NULL;
-}
 
 extern int csops(pid_t pid, unsigned int ops, void *useraddr, size_t usersize);
 
@@ -53,38 +49,41 @@ bool icli_springboard_relaunch(void) {
 // leave a sideloaded app without Wi-Fi or cellular access.
 static NSString *const kAlwaysAllow = @"kCTCellularDataUsagePolicyAlwaysAllow";
 
+static BOOL allowsAllData(NSDictionary *policy) {
+    return [policy[@"kCTCellularDataUsagePolicy"] isEqual:kAlwaysAllow] && [policy[@"kCTWiFiDataUsagePolicy"] isEqual:kAlwaysAllow];
+}
+
 char *icli_app_network_policy_json(const char *bundle_id, bool repair) {
-    if (!bundle_id || !*bundle_id) return systemJSON(@{@"error": @"bundle identifier required"});
+    if (!bundle_id || !*bundle_id) return icli_json(@{@"error": @"bundle identifier required"});
     void *handle = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_NOW);
     CFTypeRef (*create)(CFAllocatorRef, void *, void *) = handle ? dlsym(handle, "_CTServerConnectionCreate") : NULL;
     int64_t (*copyPolicy)(CFTypeRef, CFStringRef, CFDictionaryRef *) = handle ? dlsym(handle, "_CTServerConnectionCopyCellularUsagePolicy") : NULL;
     int64_t (*setPolicy)(CFTypeRef, CFStringRef, CFDictionaryRef) = handle ? dlsym(handle, "_CTServerConnectionSetCellularUsagePolicy") : NULL;
-    if (!create || !copyPolicy || !setPolicy) return systemJSON(@{@"error": @"CoreTelephony usage policy SPI unavailable"});
+    if (!create || !copyPolicy || !setPolicy) return icli_json(@{@"error": @"CoreTelephony usage policy SPI unavailable"});
     CFTypeRef connection = create(kCFAllocatorDefault, NULL, NULL);
-    if (!connection) return systemJSON(@{@"error": @"CoreTelephony server connection failed"});
+    if (!connection) return icli_json(@{@"error": @"CoreTelephony server connection failed"});
     NSString *bundle = @(bundle_id);
     NSMutableDictionary *result = [@{@"bundle_id": bundle} mutableCopy];
     CFDictionaryRef before = NULL;
     int64_t status = copyPolicy(connection, (__bridge CFStringRef)bundle, &before);
     NSDictionary *policy = before ? CFBridgingRelease(before) : nil;
-    if (status != 0) { CFRelease(connection); return systemJSON(@{@"error": [NSString stringWithFormat:@"CoreTelephony policy query failed (status %lld)", status]}); }
+    if (status != 0) { CFRelease(connection); return icli_json(@{@"error": [NSString stringWithFormat:@"CoreTelephony policy query failed (status %lld)", status]}); }
     result[@"policy"] = policy ?: @{};
-    BOOL allowed = [policy[@"kCTCellularDataUsagePolicy"] isEqual:kAlwaysAllow] && [policy[@"kCTWiFiDataUsagePolicy"] isEqual:kAlwaysAllow];
+    BOOL allowed = allowsAllData(policy);
     result[@"allowed"] = @(allowed);
     if (repair) {
         NSDictionary *wanted = @{@"kCTCellularDataUsagePolicy": kAlwaysAllow, @"kCTWiFiDataUsagePolicy": kAlwaysAllow};
         status = allowed ? 0 : setPolicy(connection, (__bridge CFStringRef)bundle, (__bridge CFDictionaryRef)wanted);
-        if (status != 0) { CFRelease(connection); return systemJSON(@{@"error": [NSString stringWithFormat:@"CoreTelephony policy update failed (status %lld)", status], @"policy": policy ?: @{}}); }
+        if (status != 0) { CFRelease(connection); return icli_json(@{@"error": [NSString stringWithFormat:@"CoreTelephony policy update failed (status %lld)", status], @"policy": policy ?: @{}}); }
         CFDictionaryRef after = NULL;
-        status = copyPolicy(connection, (__bridge CFStringRef)bundle, &after);
+        copyPolicy(connection, (__bridge CFStringRef)bundle, &after);
         NSDictionary *verified = after ? CFBridgingRelease(after) : nil;
         result[@"policy"] = verified ?: @{};
         result[@"changed"] = allowed ? @NO : @YES;
-        BOOL nowAllowed = [verified[@"kCTCellularDataUsagePolicy"] isEqual:kAlwaysAllow] && [verified[@"kCTWiFiDataUsagePolicy"] isEqual:kAlwaysAllow];
-        result[@"allowed"] = nowAllowed ? @YES : @NO;
+        result[@"allowed"] = @(allowsAllData(verified));
     }
     CFRelease(connection);
-    return systemJSON(result);
+    return icli_json(result);
 }
 
 // SpringBoard's SBShowNonDefaultSystemApps preference, mediated by cfprefsd
@@ -106,16 +105,16 @@ static NSNumber *visibilityValue(void) {
 char *icli_system_apps_visible_json(int desired) {
     NSNumber *before = visibilityValue();
     NSMutableDictionary *result = [@{@"visible": @(before.boolValue), @"configured": before ? @YES : @NO} mutableCopy];
-    if (desired < 0) return systemJSON(result);
+    if (desired < 0) return icli_json(result);
     BOOL wanted = desired > 0;
-    if (before && before.boolValue == wanted) { result[@"changed"] = @NO; return systemJSON(result); }
+    if (before && before.boolValue == wanted) { result[@"changed"] = @NO; return icli_json(result); }
     CFPreferencesSetValue(kVisibilityKey, wanted ? kCFBooleanTrue : kCFBooleanFalse, kSpringBoardDomain, preferencesUser(), kCFPreferencesAnyHost);
     Boolean synced = CFPreferencesSynchronize(kSpringBoardDomain, preferencesUser(), kCFPreferencesAnyHost);
     NSNumber *after = visibilityValue();
-    if (!synced || !after || after.boolValue != wanted) return systemJSON(@{@"error": @"SpringBoard preference did not persist", @"visible": @(after.boolValue)});
+    if (!synced || !after || after.boolValue != wanted) return icli_json(@{@"error": @"SpringBoard preference did not persist", @"visible": @(after.boolValue)});
     result[@"visible"] = after;
     result[@"configured"] = @YES;
     result[@"changed"] = @YES;
     result[@"requires_respring"] = @YES;
-    return systemJSON(result);
+    return icli_json(result);
 }

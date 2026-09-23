@@ -16,7 +16,7 @@ public func deviceSnapshot() throws -> [String: Any] {
 
     let info = ProcessInfo.processInfo
     let version = info.operatingSystemVersion
-    let disk = try diskUsage("/")
+    let disk = try rootVolumeUsage()
 
     let boot = takeCString(icli_boot_info_json()).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] } ?? [:]
     return [
@@ -39,8 +39,8 @@ public func deviceSnapshot() throws -> [String: Any] {
     ]
 }
 
-private func diskUsage(_ path: String) throws -> [String: Any] {
-    let values = try URL(fileURLWithPath: path).resourceValues(forKeys: [
+private func rootVolumeUsage() throws -> [String: Any] {
+    let values = try URL(fileURLWithPath: "/").resourceValues(forKeys: [
         .volumeTotalCapacityKey, .volumeAvailableCapacityKey,
     ])
     return [

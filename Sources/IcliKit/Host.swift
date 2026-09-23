@@ -69,15 +69,7 @@ public func captureSyslog(seconds: TimeInterval, process: String? = nil, level: 
     guard seconds.isFinite, (0.1 ... 60).contains(seconds), ["all", "error", "fault"].contains(level), (1 ... 5000).contains(maxLines) else {
         throw IcliError.failed("seconds must be 0.1–60, level all/error/fault, and max-lines 1–5000")
     }
-    guard let raw = takeCString(icli_syslog_json(seconds, process, level, Int32(maxLines))),
-          let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
-    else {
-        throw IcliError.failed("invalid unified log response")
-    }
-    if let error = result["error"] as? String {
-        throw IcliError.failed(error)
-    }
-    return result
+    return try decodeBridgeJSON(takeCString(icli_syslog_json(seconds, process, level, Int32(maxLines))), "unified log response")
 }
 
 public func dumpKeychain() throws -> [String: Any] {
@@ -108,15 +100,10 @@ public func listKeychain(
             result = nil
             status = SecItemCopyMatching(query as CFDictionary, &result)
         }
-        if status == errSecInteractionNotAllowed {
-            throw IcliError.failed("keychain unavailable while device is locked")
-        }
         if status == errSecItemNotFound {
             continue
         }
-        if status != errSecSuccess {
-            throw IcliError.failed("keychain query status \(status)")
-        }
+        try throwIfKeychain(status, action: "query")
         let rows = result as? [[String: Any]] ?? []
         items.append(contentsOf: rows.map { encodeKeychainItem($0, className: entry.name, includeData: withData) })
     }
