@@ -607,6 +607,42 @@ def rotation(d):
         d.cli('device', 'rotation', 'lock', 'set', 'on' if original['locked'] else 'off')
 
 
+@case('developer_mode', 'controls', ['device devmode get', 'device devmode enable'])
+def developer_mode(d):
+    status = d.cli('device', 'devmode', 'get')
+    assert all(isinstance(status[key], bool) for key in ['enabled', 'armed', 'writable']), status
+    # The kernel's own record of the state, read outside icli.
+    kernel = d.run(['sysctl', '-n', 'security.mac.amfi.developer_mode_status'])
+    assert kernel.returncode == 0 and status['enabled'] == (kernel.stdout.strip() == '1'), (status, kernel.stdout)
+    # amfid answers a status request without root or entitlements; root sees the same.
+    assert d.cli('device', 'devmode', 'get', sudo=True) == status
+    if not status['enabled']:
+        # Arming changes the next boot, so it is left to an operator.
+        d.observations.append('Developer Mode is off, so devmode enable was not run.')
+        return
+    enabled = d.cli('device', 'devmode', 'enable')
+    assert enabled['enabled'] and enabled['already_enabled'] and not enabled['restart_required'], enabled
+    assert d.cli('device', 'devmode', 'get') == status
+
+
+@case('low_power_mode', 'controls', ['device low-power get', 'device low-power set'])
+def low_power_mode(d):
+    original = d.cli('device', 'low-power', 'get')
+    assert original['method'] == 'powerd', original
+    try:
+        for value in [not original['enabled'], original['enabled']]:
+            applied = d.cli('device', 'low-power', 'set', 'on' if value else 'off')
+            assert applied['enabled'] is value and applied['changed'], applied
+            # A new process reads the state through NSProcessInfo.
+            assert d.cli('device', 'low-power', 'get')['enabled'] is value
+        repeated = d.cli('device', 'low-power', 'set', 'on' if original['enabled'] else 'off')
+        assert repeated['changed'] is False, repeated
+        d.cli('device', 'low-power', 'set', 'maybe', expected=1)
+    finally:
+        d.cli('device', 'low-power', 'set', 'on' if original['enabled'] else 'off', expected=None)
+        assert d.cli('device', 'low-power', 'get')['enabled'] == original['enabled']
+
+
 @case('package_commands', 'packages', ['pkg list', 'pkg install', 'pkg remove', 'pkg tweaks', 'pkg status'])
 def packages(d):
     name = 'dev.owngoal.icli.installtest'
