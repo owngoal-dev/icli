@@ -12,9 +12,11 @@ import plistlib
 import hashlib
 from pathlib import Path
 import shlex
+import struct
 import subprocess
 import time
 import uuid
+import zlib
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 
@@ -298,6 +300,74 @@ def clipboard(d):
         time.sleep(0.3)
         assert d.state()['text'] == text
         d.cli('url', 'open', 'icli-test://blur')
+
+
+def make_png(width, height):
+    rows = b''.join(b'\x00' + b''.join(bytes((x * 255 // width, y * 255 // height, 128, 255)) for x in range(width)) for y in range(height))
+    def chunk(kind, body):
+        return struct.pack('>I', len(body)) + kind + body + struct.pack('>I', zlib.crc32(kind + body))
+    header = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b'')
+
+
+def decode_png(data):
+    """Pixel size of a non-interlaced PNG after checking every CRC and inflating the pixel data."""
+    assert data.startswith(b'\x89PNG\r\n\x1a\n'), 'not a PNG signature'
+    offset, chunks, pixels = 8, {}, b''
+    while offset < len(data):
+        length, kind = struct.unpack('>I4s', data[offset:offset + 8])
+        body = data[offset + 8:offset + 8 + length]
+        assert struct.unpack('>I', data[offset + 8 + length:offset + 12 + length])[0] == zlib.crc32(kind + body), f'bad CRC in {kind}'
+        chunks.setdefault(kind, body)
+        if kind == b'IDAT':
+            pixels += body
+        offset += 12 + length
+    width, height, depth, color, _, _, interlace = struct.unpack('>IIBBBBB', chunks[b'IHDR'])
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color]
+    if interlace == 0:
+        assert len(zlib.decompress(pixels)) == height * (1 + (width * channels * depth + 7) // 8), 'pixel data size mismatch'
+    return width, height
+
+
+@case('clipboard_image_and_metadata', 'input', ['clipboard get', 'clipboard set'])
+def clipboard_image(d):
+    original = d.cli('clipboard', 'get')
+    token = uuid.uuid4().hex[:8]
+    source, output = f'/tmp/icli-clip-{token}.png', f'/tmp/icli-clip-{token}-out.png'
+    local = ROOT / f'.build/icli-clip-{token}.png'
+    local.write_bytes(make_png(37, 23))
+    try:
+        d.upload(local, source)
+        before = d.cli('clipboard', 'get')
+        assert isinstance(before['change_count'], int) and isinstance(before['types'], list) and 'image_path' not in before, before
+        copied = d.cli('clipboard', 'set', '--image', source)
+        assert copied['change_count'] > before['change_count'] and copied['has_image'] and not copied['has_text'], copied
+        assert copied['image']['width'] == 37 and copied['image']['height'] == 23 and 'public.png' in copied['types'], copied
+        # Another process as mobile and as root sees the same image.
+        for sudo in [False, True]:
+            seen = d.cli('clipboard', 'get', sudo=sudo)
+            assert seen['has_image'] and seen['image'] == copied['image'] and seen['text'] == '' and seen['items'] == 1, seen
+        written = d.cli('clipboard', 'get', '--image-output', output)
+        png = base64.b64decode(d.cli('fs', 'read', output, '--binary')['content'])
+        assert written['image_path'] == output and written['image_bytes'] == len(png), written
+        assert decode_png(png) == (37, 23)
+        text = 'clipboard metadata 中文 ' + token
+        replaced = d.cli('clipboard', 'set', text)
+        assert replaced['text'] == text and replaced['has_text'] and not replaced['has_image'] and 'image' not in replaced, replaced
+        assert replaced['change_count'] > copied['change_count'] and 'public.utf8-plain-text' in replaced['types'], replaced
+        assert d.cli('clipboard', 'get', sudo=True)['text'] == text
+        d.cli('clipboard', 'get', '--image-output', output + '.none', expected=1)
+        assert d.run(['test', '-e', d.sh(output + '.none')]).returncode == 1
+        d.cli('clipboard', 'set', expected=1)
+        d.cli('clipboard', 'set', 'text', '--image', source, expected=1)
+        d.cli('fs', 'write', source, 'not an image')
+        d.cli('clipboard', 'set', '--image', source, expected=1)
+        assert d.cli('clipboard', 'get')['text'] == text, 'a rejected image replaced the clipboard'
+    finally:
+        local.unlink(missing_ok=True)
+        d.run(['rm', '-f', d.sh(source), d.sh(output)])
+        d.cli('clipboard', 'set', original['text'])
+    assert d.cli('clipboard', 'get')['text'] == original['text']
 
 
 @case('app_lifecycle_and_metadata', 'apps', ['app list', 'app launch', 'app kill', 'app running', 'app frontmost', 'app info', 'url open'])
@@ -867,6 +937,108 @@ def system_apps(d):
     assert d.cli('sb', 'system-apps', 'get')['visible'] is original['visible']
     if not original['configured']:
         d.observations.append('SBShowNonDefaultSystemApps was absent before the test; it is now stored explicitly as false, which is the same default.')
+
+
+@case('preferences_roundtrip', 'system', ['prefs read', 'prefs write', 'prefs delete'])
+def preferences_roundtrip(d):
+    domain = 'dev.owngoal.icli.prefs-test'
+    token = uuid.uuid4().hex[:8]
+    values = {
+        'string': ('text 中文', 'text 中文'),
+        'int': ('-7', -7),
+        'float': ('2.5', 2.5),
+        'bool': ('yes', True),
+        'date': ('2024-01-02T03:04:05Z', '2024-01-02T03:04:05Z'),
+        'data': (base64.b64encode(b'\x00icli').decode(), base64.b64encode(b'\x00icli').decode()),
+        'json': ('{"list": [1, true, "x"], "ratio": 1.5}', {'list': [1, True, 'x'], 'ratio': 1.5}),
+    }
+    read_type = {'json': 'dictionary'}
+    keys = {kind: f'{kind}-{token}' for kind in values}
+    # RootHide keeps a jailbroken process's non-Apple domains in the jbroot,
+    # so the plist is under the shell's /var/mobile there and under the
+    # physical path elsewhere.
+    mobile_plists = ['/var/mobile/Library/Preferences/' + domain + '.plist', d.sh('/var/mobile/Library/Preferences/' + domain + '.plist')]
+    root_plists = ['/var/root/Library/Preferences/' + domain + '.plist', d.sh('/var/root/Library/Preferences/' + domain + '.plist')]
+    path_domain = f'/tmp/icli-prefs-{token}.plist'
+
+    def on_disk(paths, sudo=False):
+        for path in paths:
+            result = d.run(['base64', path], sudo=sudo)
+            if result.returncode == 0 and result.stdout.strip():
+                return path, plistlib.loads(base64.b64decode(result.stdout))
+        return None, {}
+
+    def wait_on_disk(paths, check, sudo=False):
+        # cfprefsd acknowledges synchronization before its disk flush finishes.
+        deadline = time.monotonic() + 15
+        while True:
+            path, stored = on_disk(paths, sudo)
+            if check(stored):
+                return path, stored
+            assert time.monotonic() < deadline, f'preferences not flushed to disk: {stored}'
+            time.sleep(0.5)
+
+    try:
+        for kind, (text, expected) in values.items():
+            written = d.cli('prefs', 'write', '--type', kind, domain, keys[kind], '--', text)
+            assert written['value'] == expected and written['type'] == read_type.get(kind, kind) and written['user'] == 'mobile', written
+        for sudo in [False, True]:
+            listed = d.cli('prefs', 'read', domain, sudo=sudo)
+            assert listed['user'] == 'mobile', listed
+            for kind, (_, expected) in values.items():
+                assert listed['values'][keys[kind]] == {'value': expected, 'type': read_type.get(kind, kind)}, (kind, listed)
+            one = d.cli('prefs', 'read', domain, keys['int'], sudo=sudo)
+            assert one['exists'] and one['value'] == -7 and one['type'] == 'int', one
+        path, stored = wait_on_disk(mobile_plists, lambda stored: all(key in stored for key in keys.values()))
+        assert stored[keys['date']] == datetime(2024, 1, 2, 3, 4, 5) and stored[keys['data']] == b'\x00icli' and stored[keys['bool']] is True, stored
+        d.observations.append(f'mobile preferences for {domain} were flushed to {path}')
+        written = d.cli('prefs', 'write', domain, keys['int'], '1700000000.25', '--type', 'date', '--notify', domain + '.changed', sudo=True)
+        assert written['type'] == 'date' and written['value'] == '2023-11-14T22:13:20.250Z' and written['notified'] == domain + '.changed', written
+        assert d.cli('prefs', 'read', domain, keys['int'])['type'] == 'date'
+
+        # --user root is a separate set of preferences.
+        root_key = 'root-' + token
+        d.cli('prefs', 'write', domain, root_key, 'root only', '--user', 'root', sudo=True)
+        assert d.cli('prefs', 'read', domain, root_key, '--user', 'root')['value'] == 'root only'
+        assert not d.cli('prefs', 'read', domain, root_key, sudo=True)['exists']
+        assert d.cli('prefs', 'delete', domain, root_key, '--user', 'root', sudo=True)['removed']
+
+        # An absolute path to a .plist is a domain of its own.
+        d.cli('prefs', 'write', path_domain, 'answer', '42', '--type', 'int')
+        assert d.cli('prefs', 'read', path_domain)['values'] == {'answer': {'value': 42, 'type': 'int'}}
+        wait_on_disk([d.sh(path_domain)], lambda stored: stored == {'answer': 42})
+
+        for kind, key in keys.items():
+            removed = d.cli('prefs', 'delete', domain, key, sudo=kind == 'int')
+            assert removed['removed'] and not removed['exists'], removed
+        assert not d.cli('prefs', 'delete', domain, keys['int'])['removed']
+        assert not any(key in d.cli('prefs', 'read', domain, sudo=True)['values'] for key in keys.values())
+        wait_on_disk(mobile_plists, lambda stored: not any(key in stored for key in keys.values()))
+
+        for arguments in [['write', domain, 'bad', '12x', '--type', 'int'], ['write', domain, 'bad', '1', '--type', 'integer'],
+                          ['write', domain, 'bad', '[null]', '--type', 'json'], ['write', domain, 'bad', '"x"', '--type', 'json'],
+                          ['write', domain, 'bad', 'maybe', '--type', 'bool'], ['write', domain, 'bad', '%%', '--type', 'data'],
+                          ['read', domain, '--user', 'nobody'], ['read', '/tmp/not-a-plist']]:
+            d.cli('prefs', *arguments, expected=1)
+        assert 'bad' not in d.cli('prefs', 'read', domain)['values']
+
+        # A real system domain is readable, and sudo still reads mobile's copy.
+        springboard = d.cli('prefs', 'read', 'com.apple.springboard')
+        assert springboard['count'] > 0 and springboard['count'] == len(springboard['values']), springboard
+        assert set(d.cli('prefs', 'read', 'com.apple.springboard', sudo=True)['values']) == set(springboard['values'])
+        disk = d.cli('fs', 'plist', '/var/mobile/Library/Preferences/com.apple.springboard.plist', sudo=True)['plist']
+        assert len(set(disk) & set(springboard['values'])) >= len(disk) // 2, 'com.apple.springboard does not match its plist'
+    finally:
+        for key in keys.values():
+            d.cli('prefs', 'delete', domain, key, expected=None)
+        d.cli('prefs', 'delete', domain, 'root-' + token, '--user', 'root', expected=None, sudo=True)
+        d.run(['rm', '-f', d.sh(path_domain)])
+        # Only remove the scratch plists once they no longer hold anything.
+        for paths, sudo in [(mobile_plists, False), (root_plists, True)]:
+            for path in paths:
+                _, stored = on_disk([path], sudo)
+                if not stored:
+                    d.run(['rm', '-f', path], sudo=sudo)
 
 
 @case('account_password', 'system', ['account set-password'])

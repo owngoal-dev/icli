@@ -131,18 +131,28 @@ extension App {
 }
 
 struct Clipboard: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "Read or replace clipboard text.", subcommands: [Get.self, Set.self])
+    static var configuration = CommandConfiguration(abstract: "Read or replace the clipboard's text or image.", subcommands: [Get.self, Set.self])
 }
 
 extension Clipboard {
     struct Get: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Text, change count, types, and the image's pixel size if there is one")
         @OptionGroup var output: OutputOptions
-        func run() { emit(output) { try clipboardText() } }
+        @Option(help: "Write the clipboard image to this path as PNG.") var imageOutput: String?
+        func run() { emit(output) { try clipboardInfo(imageOutput: imageOutput) } }
     }
     struct Set: ParsableCommand {
+        static var configuration = CommandConfiguration(abstract: "Replace the clipboard with text or an image and read it back")
         @OptionGroup var output: OutputOptions
-        @Argument var text: String
-        func run() { emit(output) { try setClipboard(text) } }
+        @Argument var text: String?
+        @Option(help: "PNG, JPEG or HEIC file to copy instead of text.") var image: String?
+        func run() { emit(output) {
+            switch (text, image) {
+            case (let text?, nil): return try setClipboard(text)
+            case (nil, let image?): return try setClipboardImage(Data(contentsOf: URL(fileURLWithPath: image)))
+            default: throw IcliError.failed("pass either text or --image")
+            }
+        } }
     }
 }
 
