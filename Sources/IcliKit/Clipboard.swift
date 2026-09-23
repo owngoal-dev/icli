@@ -85,7 +85,9 @@ public func setClipboardImage(_ data: Data) throws -> [String: Any] {
     let before = pasteboard.changeCount
     pasteboard.image = image
     let wanted = pixelSize(image)
-    guard pasteboard.changeCount != before, pasteboard.hasImages, let stored = pasteboard.image, pixelSize(stored) == wanted else {
+    guard pasteboard.changeCount != before, pasteboard.hasImages,
+          let stored = pasteboard.image, pixelSize(stored) == wanted
+    else {
         throw IcliError.unavailable("The device did not apply the clipboard image.")
     }
     return try clipboardInfo()

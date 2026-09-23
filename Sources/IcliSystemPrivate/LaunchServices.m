@@ -63,14 +63,16 @@ NSString *icli_ls_string(id value) {
 
 NSDictionary *icli_ls_app_dictionary(id proxy) {
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
-    d[@"bundle_id"] = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
+    d[@"bundle_id"] = icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier"))
+        ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
     d[@"name"] = icli_ls_string(icli_ls_value(proxy, @"localizedName"));
     d[@"bundle_path"] = icli_ls_string(icli_ls_value(proxy, @"bundleURL"));
     d[@"data_path"] = icli_ls_string(icli_ls_value(proxy, @"dataContainerURL"));
     d[@"version"] = icli_ls_string(icli_ls_value(proxy, @"shortVersionString"));
     d[@"build"] = icli_ls_string(icli_ls_value(proxy, @"bundleVersion"));
     d[@"type"] = icli_ls_string(icli_ls_value(proxy, @"applicationType"));
-    d[@"signer"] = icli_ls_string(icli_ls_value(proxy, @"signerIdentity")) ?: icli_ls_string(icli_ls_value(proxy, @"teamID"));
+    d[@"signer"] = icli_ls_string(icli_ls_value(proxy, @"signerIdentity"))
+        ?: icli_ls_string(icli_ls_value(proxy, @"teamID"));
     id groups = icli_ls_value(proxy, @"groupContainerURLs");
     NSMutableDictionary *groupPaths = [NSMutableDictionary dictionary];
     if ([groups isKindOfClass:NSDictionary.class]) {

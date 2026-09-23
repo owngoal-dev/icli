@@ -87,7 +87,12 @@ bool icli_rotation_lock_set(bool locked);
 char *icli_extract_ipa_json(const char *source, const char *destination);
 char *icli_deb_read_json(const char *path, const char *destination);
 char *icli_deb_unpack_json(const char *path, const char *prefix, const char **skip, int skip_count);
-char *icli_capture_packets_json(const char *interface, const char *filter_text, double seconds, const char *output_path);
+char *icli_capture_packets_json(
+    const char *interface,
+    const char *filter_text,
+    double seconds,
+    const char *output_path
+);
 char *icli_tar_entry_text(const char *path, const char *entry_name);
 int icli_compare_debian_versions(const char *left, const char *right, int *comparison);
 
@@ -114,7 +119,14 @@ bool icli_platform_binary(void);
 int icli_reboot(bool userspace);
 char *icli_app_network_policy_json(const char *bundle_id, bool repair);
 char *icli_system_apps_visible_json(int desired);
-char *icli_bootlogo_render_json(const char *mark_path, const char *output_path, bool dark, int width, int height, double mark_points);
+char *icli_bootlogo_render_json(
+    const char *mark_path,
+    const char *output_path,
+    bool dark,
+    int width,
+    int height,
+    double mark_points
+);
 char *icli_active_audio_json(void);
 char *icli_audio_button_json(const char *button);
 
@@ -125,7 +137,15 @@ char *icli_amfi_developer_mode_json(bool arm);
 int icli_low_power_mode_get(void);
 bool icli_low_power_mode_set(bool enabled);
 /// Location simulation through locationd; the location outlives the process.
-char *icli_location_simulate_json(double latitude, double longitude, double altitude, double horizontal_accuracy, double vertical_accuracy, double speed, double course);
+char *icli_location_simulate_json(
+    double latitude,
+    double longitude,
+    double altitude,
+    double horizontal_accuracy,
+    double vertical_accuracy,
+    double speed,
+    double course
+);
 char *icli_location_clear_json(void);
 /// Waits up to `timeout` seconds for a fresh fix (at the target coordinate when `match`).
 char *icli_location_read_json(double timeout, bool match, double latitude, double longitude);

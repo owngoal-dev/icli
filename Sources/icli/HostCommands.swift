@@ -3,7 +3,10 @@ import Foundation
 import IcliKit
 
 struct Log: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "Capture system logs and read crash reports.", subcommands: [Syslog.self, Crashes.self, Crash.self])
+    static var configuration = CommandConfiguration(
+        abstract: "Capture system logs and read crash reports.",
+        subcommands: [Syslog.self, Crashes.self, Crash.self]
+    )
 }
 
 extension Log {
@@ -14,7 +17,9 @@ extension Log {
         @Option var level: String = "all"
         @Option var maxLines: Int = 500
         func run() {
-            emit(allowWhenLocked: true, output) { try captureSyslog(seconds: seconds, process: process, level: level, maxLines: maxLines) }
+            emit(allowWhenLocked: true, output) {
+                try captureSyslog(seconds: seconds, process: process, level: level, maxLines: maxLines)
+            }
         }
     }
 
@@ -44,7 +49,9 @@ struct Pkg: ParsableCommand {
 
 extension Pkg {
     struct Info: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Control fields, scripts and file list of a .deb")
+        static var configuration = CommandConfiguration(
+            abstract: "Control fields, scripts and file list of a .deb"
+        )
         @OptionGroup var output: OutputOptions
         @Argument var path: String
         func run() {
@@ -53,7 +60,9 @@ extension Pkg {
     }
 
     struct Extract: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Unpack a .deb into an empty directory (DEBIAN/ plus payload)")
+        static var configuration = CommandConfiguration(
+            abstract: "Unpack a .deb into an empty directory (DEBIAN/ plus payload)"
+        )
         @OptionGroup var output: OutputOptions
         @Argument var path: String
         @Argument var destination: String
@@ -90,7 +99,9 @@ extension Pkg {
     }
 
     struct Install: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Install a local .deb natively (root); maintainer scripts are reported, not run")
+        static var configuration = CommandConfiguration(
+            abstract: "Install a local .deb natively (root); maintainer scripts are reported, not run"
+        )
         @OptionGroup var output: OutputOptions
         @Argument var path: String
         @Flag(help: "Install even when Depends/Pre-Depends are not satisfied") var ignoreDepends = false
@@ -100,7 +111,9 @@ extension Pkg {
     }
 
     struct Remove: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Remove an installed Debian package. Requires root; keeps package configuration files unless --purge is supplied.")
+        static var configuration = CommandConfiguration(
+            abstract: "Remove an installed Debian package. Requires root; keeps package configuration files unless --purge is supplied."
+        )
         @OptionGroup var output: OutputOptions
         @Argument var name: String
         @Flag var purge = false
@@ -134,12 +147,17 @@ extension Pkg {
 }
 
 struct SB: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "Refresh app registrations, restart SpringBoard, and manage system app visibility.", subcommands: [Uicache.self, Respring.self, SystemApps.self])
+    static var configuration = CommandConfiguration(
+        abstract: "Refresh app registrations, restart SpringBoard, and manage system app visibility.",
+        subcommands: [Uicache.self, Respring.self, SystemApps.self]
+    )
 }
 
 extension SB {
     struct Uicache: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Refresh app registrations in the bootstrap's /Applications")
+        static var configuration = CommandConfiguration(
+            abstract: "Refresh app registrations in the bootstrap's /Applications"
+        )
         @OptionGroup var output: OutputOptions
         func run() {
             emit(allowWhenLocked: true, output) { try refreshApps(directory: nil) }
@@ -154,7 +172,11 @@ extension SB {
     }
 
     struct SystemApps: ParsableCommand {
-        static var configuration = CommandConfiguration(commandName: "system-apps", abstract: "Visibility of non-default system apps", subcommands: [Get.self, Set.self])
+        static var configuration = CommandConfiguration(
+            commandName: "system-apps",
+            abstract: "Visibility of non-default system apps",
+            subcommands: [Get.self, Set.self]
+        )
         struct Get: ParsableCommand {
             @OptionGroup var output: OutputOptions
             func run() {
@@ -173,17 +195,25 @@ extension SB {
 }
 
 struct Account: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "Bootstrap user accounts", subcommands: [SetPassword.self])
+    static var configuration = CommandConfiguration(
+        abstract: "Bootstrap user accounts",
+        subcommands: [SetPassword.self]
+    )
 }
 
 extension Account {
     struct SetPassword: ParsableCommand {
-        static var configuration = CommandConfiguration(commandName: "set-password", abstract: "Read the new password from stdin (first line) and store it for the bootstrap account")
+        static var configuration = CommandConfiguration(
+            commandName: "set-password",
+            abstract: "Read the new password from stdin (first line) and store it for the bootstrap account"
+        )
         @OptionGroup var output: OutputOptions
         @Argument var user: String = "mobile"
         func run() {
             emit(allowWhenLocked: true, output) {
-                guard let line = readLine(strippingNewline: true) else { throw IcliError.failed("no password on stdin") }
+                guard let line = readLine(strippingNewline: true) else {
+                    throw IcliError.failed("no password on stdin")
+                }
                 return try setAccountPassword(user: user, password: line)
             }
         }
@@ -191,7 +221,11 @@ extension Account {
 }
 
 struct Env: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "Runtime environment and capability report", subcommands: [Info.self, Basebin.self], defaultSubcommand: Info.self)
+    static var configuration = CommandConfiguration(
+        abstract: "Runtime environment and capability report",
+        subcommands: [Info.self, Basebin.self],
+        defaultSubcommand: Info.self
+    )
 }
 
 extension Env {
@@ -203,7 +237,9 @@ extension Env {
     }
 
     struct Basebin: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Compare the installed BaseBin version with a bundled basebin.tar")
+        static var configuration = CommandConfiguration(
+            abstract: "Compare the installed BaseBin version with a bundled basebin.tar"
+        )
         @OptionGroup var output: OutputOptions
         @Option(help: "Path to a basebin archive containing basebin/.version") var bundled: String?
         func run() {
@@ -227,7 +263,10 @@ extension Proc {
 }
 
 struct Net: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "Capture network traffic to a packet capture file.", subcommands: [Capture.self])
+    static var configuration = CommandConfiguration(
+        abstract: "Capture network traffic to a packet capture file.",
+        subcommands: [Capture.self]
+    )
 }
 
 extension Net {
@@ -238,7 +277,9 @@ extension Net {
         @Option(help: "[tcp|udp|icmp] [src|dst] port N [src|dst] host A, joined with and") var filter: String?
         @Option(name: .customLong("output"), help: "pcap path (default: a temporary file)") var path: String?
         func run() {
-            emit(allowWhenLocked: true, output) { try capturePackets(seconds: seconds, interface: interface, filter: filter, output: path) }
+            emit(allowWhenLocked: true, output) {
+                try capturePackets(seconds: seconds, interface: interface, filter: filter, output: path)
+            }
         }
     }
 }

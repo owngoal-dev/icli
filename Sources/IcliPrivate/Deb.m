@@ -20,7 +20,8 @@ static NSData *readMember(struct archive *reader, struct archive_entry *entry, N
     NSMutableData *data = [NSMutableData dataWithCapacity:(NSUInteger)size];
     char buffer[65536];
     la_ssize_t bytes;
-    while ((bytes = archive_read_data(reader, buffer, sizeof(buffer))) > 0) [data appendBytes:buffer length:(NSUInteger)bytes];
+    while ((bytes = archive_read_data(reader, buffer, sizeof(buffer))) > 0)
+        [data appendBytes:buffer length:(NSUInteger)bytes];
     if (bytes < 0) { *failure = @(archive_error_string(reader) ?: "deb member could not be read"); return nil; }
     return data;
 }
@@ -45,20 +46,28 @@ static NSDictionary *parseControl(NSString *text, NSMutableArray *order) {
     for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
         if (line.length == 0) { if (fields.count) break; continue; }
         if ([line hasPrefix:@" "] || [line hasPrefix:@"\t"]) {
-            if (current) fields[current] = [fields[current] stringByAppendingFormat:@"\n%@", [line substringFromIndex:1]];
+            if (current)
+                fields[current] = [fields[current] stringByAppendingFormat:@"\n%@", [line substringFromIndex:1]];
             continue;
         }
         NSRange colon = [line rangeOfString:@":"];
         if (colon.location == NSNotFound) continue;
         current = [line substringToIndex:colon.location];
-        fields[current] = [[line substringFromIndex:colon.location + 1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        fields[current] = [[line substringFromIndex:colon.location + 1]
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
         [order addObject:current];
     }
     return fields;
 }
 
 /// Lists a tar member; when `destination` is set the entries are extracted there too.
-static NSString *walkTar(NSData *data, NSString *destination, NSMutableArray *entries, NSMutableDictionary *texts, bool absoluteLinks) {
+static NSString *walkTar(
+    NSData *data,
+    NSString *destination,
+    NSMutableArray *entries,
+    NSMutableDictionary *texts,
+    bool absoluteLinks
+) {
     NSString *failure = nil;
     struct archive *reader = tarReader(data, &failure);
     if (!reader) return failure;
@@ -78,7 +87,8 @@ static NSString *walkTar(NSData *data, NSString *destination, NSMutableArray *en
             if (texts && type == AE_IFREG && archive_entry_size(entry) <= 1024 * 1024) {
                 NSData *body = readMember(reader, entry, &failure);
                 if (failure) break;
-                texts[name] = [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding] ?: [body base64EncodedStringWithOptions:0];
+                texts[name] = [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding]
+                    ?: [body base64EncodedStringWithOptions:0];
             }
         }
         if (!failure && status != ARCHIVE_EOF) failure = @(archive_error_string(reader) ?: "invalid tar member");
@@ -97,7 +107,8 @@ char *icli_deb_read_json(const char *path, const char *destination) {
     NSMutableArray *controlEntries = [NSMutableArray array];
     NSMutableDictionary *controlTexts = [NSMutableDictionary dictionary];
     NSString *root = destination ? @(destination) : nil;
-    if (archive_read_open_filename(reader, path, 65536) != ARCHIVE_OK) failure = @(archive_error_string(reader) ?: "could not open deb");
+    if (archive_read_open_filename(reader, path, 65536) != ARCHIVE_OK)
+        failure = @(archive_error_string(reader) ?: "could not open deb");
     struct archive_entry *entry;
     int status = ARCHIVE_OK;
     while (!failure && (status = archive_read_next_header(reader, &entry)) == ARCHIVE_OK) {
@@ -105,8 +116,10 @@ char *icli_deb_read_json(const char *path, const char *destination) {
         NSString *name = raw ? @(raw) : @"";
         if ([name hasPrefix:@"debian-binary"]) {
             NSData *body = readMember(reader, entry, &failure);
-            NSString *version = [[[NSString alloc] initWithData:body ?: NSData.data encoding:NSUTF8StringEncoding] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-            if (!failure && ![version isEqualToString:@"2.0"]) failure = [@"unsupported deb format version: " stringByAppendingString:version ?: @""];
+            NSString *version = [[[NSString alloc] initWithData:body ?: NSData.data encoding:NSUTF8StringEncoding]
+                stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (!failure && ![version isEqualToString:@"2.0"])
+                failure = [@"unsupported deb format version: " stringByAppendingString:version ?: @""];
             result[@"format"] = version ?: @"";
         } else if ([name hasPrefix:@"control.tar"]) {
             result[@"control_member"] = name;
@@ -133,7 +146,8 @@ char *icli_deb_read_json(const char *path, const char *destination) {
     if (failure) return icli_json(@{@"error": failure});
     NSMutableArray *order = [NSMutableArray array];
     NSDictionary *fields = parseControl(controlTexts[@"control"], order);
-    if (!fields[@"Package"] || !fields[@"Version"]) return icli_json(@{@"error": @"deb control lacks Package or Version"});
+    if (!fields[@"Package"] || !fields[@"Version"])
+        return icli_json(@{@"error": @"deb control lacks Package or Version"});
     result[@"control"] = fields;
     result[@"control_order"] = order;
     result[@"control_files"] = controlEntries;
@@ -157,7 +171,8 @@ static NSString *recordedPath(const char *raw) {
 
 static NSString *applyEntryMetadata(NSString *destination, struct archive_entry *entry) {
     mode_t mode = archive_entry_perm(entry) & 07777;
-    if (archive_entry_filetype(entry) != AE_IFLNK && chmod(destination.fileSystemRepresentation, mode ?: 0644) != 0) return @(strerror(errno));
+    if (archive_entry_filetype(entry) != AE_IFLNK && chmod(destination.fileSystemRepresentation, mode ?: 0644) != 0)
+        return @(strerror(errno));
     if (geteuid() == 0 && lchown(destination.fileSystemRepresentation, (uid_t)archive_entry_uid(entry), (gid_t)archive_entry_gid(entry)) != 0) return @(strerror(errno));
     return nil;
 }
@@ -176,7 +191,8 @@ char *icli_deb_unpack_json(const char *path, const char *prefix, const char **sk
     struct archive *ar = archive_read_new();
     if (!ar) return icli_json(@{@"error": @"archive allocation failed"});
     archive_read_support_format_ar(ar);
-    if (archive_read_open_filename(ar, path, 65536) != ARCHIVE_OK) failure = @(archive_error_string(ar) ?: "could not open deb");
+    if (archive_read_open_filename(ar, path, 65536) != ARCHIVE_OK)
+        failure = @(archive_error_string(ar) ?: "could not open deb");
     struct archive_entry *member;
     NSData *body = nil;
     while (!failure && !body && archive_read_next_header(ar, &member) == ARCHIVE_OK) {
@@ -203,25 +219,37 @@ char *icli_deb_unpack_json(const char *path, const char *prefix, const char **sk
             // /var and friends are symlinks to directories on iOS; dpkg accepts those too.
             struct stat resolved;
             if (stat(destination.fileSystemRepresentation, &resolved) == 0 && S_ISDIR(resolved.st_mode)) continue;
-            if (exists) { failure = [NSString stringWithFormat:@"%@ exists and is not a directory", destination]; break; }
+            if (exists) {
+                failure = [NSString stringWithFormat:@"%@ exists and is not a directory", destination];
+                break;
+            }
             if (![NSFileManager.defaultManager createDirectoryAtPath:destination withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @(archive_entry_perm(entry) & 07777 ?: 0755)} error:&error]) { failure = error.localizedDescription; break; }
             failure = applyEntryMetadata(destination, entry);
             continue;
         }
-        if (exists && S_ISDIR(existing.st_mode)) { failure = [NSString stringWithFormat:@"%@ is a directory but the package ships a file", destination]; break; }
+        if (exists && S_ISDIR(existing.st_mode)) {
+            failure = [NSString stringWithFormat:@"%@ is a directory but the package ships a file", destination];
+            break;
+        }
         if (![NSFileManager.defaultManager createDirectoryAtPath:destination.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0755} error:&error]) { failure = error.localizedDescription; break; }
         NSString *staging = [destination stringByAppendingString:@".dpkg-new"];
         unlink(staging.fileSystemRepresentation);
         if (type == AE_IFLNK) {
             const char *target = archive_entry_symlink(entry);
-            if (!target || !*target || symlink(target, staging.fileSystemRepresentation) != 0) { failure = [NSString stringWithFormat:@"symlink %@: %s", destination, strerror(errno)]; break; }
+            if (!target || !*target || symlink(target, staging.fileSystemRepresentation) != 0) {
+                failure = [NSString stringWithFormat:@"symlink %@: %s", destination, strerror(errno)];
+                break;
+            }
         } else if (type == AE_IFREG) {
             int fd = open(staging.fileSystemRepresentation, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
             if (fd < 0) { failure = [NSString stringWithFormat:@"%@: %s", destination, strerror(errno)]; break; }
             char buffer[65536];
             la_ssize_t bytes;
             while ((bytes = archive_read_data(tar, buffer, sizeof(buffer))) > 0) {
-                if (write(fd, buffer, (size_t)bytes) != bytes) { failure = [NSString stringWithFormat:@"%@: %s", destination, strerror(errno)]; break; }
+                if (write(fd, buffer, (size_t)bytes) != bytes) {
+                    failure = [NSString stringWithFormat:@"%@: %s", destination, strerror(errno)];
+                    break;
+                }
             }
             if (bytes < 0 && !failure) failure = @(archive_error_string(tar) ?: "deb data could not be read");
             if (!failure && fsync(fd) != 0) failure = @(strerror(errno));
@@ -232,7 +260,8 @@ char *icli_deb_unpack_json(const char *path, const char *prefix, const char **sk
             break;
         }
         failure = applyEntryMetadata(staging, entry);
-        if (!failure && rename(staging.fileSystemRepresentation, destination.fileSystemRepresentation) != 0) failure = [NSString stringWithFormat:@"%@: %s", destination, strerror(errno)];
+        if (!failure && rename(staging.fileSystemRepresentation, destination.fileSystemRepresentation) != 0)
+            failure = [NSString stringWithFormat:@"%@: %s", destination, strerror(errno)];
         if (failure) unlink(staging.fileSystemRepresentation);
     }
     if (!failure && tar && status != ARCHIVE_EOF) failure = @(archive_error_string(tar) ?: "invalid data member");

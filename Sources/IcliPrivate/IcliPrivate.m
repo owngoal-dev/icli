@@ -33,9 +33,46 @@ typedef double IOHIDFloat;
 
 static void *sIOKit;
 
-static IOHIDEventRef (*pIOHIDEventCreateDigitizerEvent)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, Boolean, Boolean, IOOptionBits);
-static IOHIDEventRef (*pIOHIDEventCreateDigitizerFingerEvent)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, IOHIDFloat, Boolean, Boolean, IOOptionBits);
-static IOHIDEventRef (*pIOHIDEventCreateKeyboardEvent)(CFAllocatorRef, uint64_t, uint16_t, uint16_t, Boolean, IOOptionBits);
+static IOHIDEventRef (*pIOHIDEventCreateDigitizerEvent)(
+    CFAllocatorRef,
+    uint64_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    IOHIDFloat,
+    IOHIDFloat,
+    IOHIDFloat,
+    IOHIDFloat,
+    IOHIDFloat,
+    Boolean,
+    Boolean,
+    IOOptionBits
+);
+static IOHIDEventRef (*pIOHIDEventCreateDigitizerFingerEvent)(
+    CFAllocatorRef,
+    uint64_t,
+    uint32_t,
+    uint32_t,
+    uint32_t,
+    IOHIDFloat,
+    IOHIDFloat,
+    IOHIDFloat,
+    IOHIDFloat,
+    IOHIDFloat,
+    Boolean,
+    Boolean,
+    IOOptionBits
+);
+static IOHIDEventRef (*pIOHIDEventCreateKeyboardEvent)(
+    CFAllocatorRef,
+    uint64_t,
+    uint16_t,
+    uint16_t,
+    Boolean,
+    IOOptionBits
+);
 static void (*pIOHIDEventAppendEvent)(IOHIDEventRef, IOHIDEventRef, IOOptionBits);
 static void (*pIOHIDEventSetSenderID)(IOHIDEventRef, uint64_t);
 static void (*pIOHIDEventSetIntegerValue)(IOHIDEventRef, uint32_t, int);
@@ -84,7 +121,10 @@ void icli_private_init(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         sIOKit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
-        void *sbs = dlopen("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices", RTLD_NOW);
+        void *sbs = dlopen(
+            "/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices",
+            RTLD_NOW
+        );
 
 #define SYM(h, p, name) p = (typeof(p))dlsym(h, name)
         if (sIOKit) {
@@ -437,7 +477,11 @@ static bool setCompositorOrientation(int degrees) {
     if (![server respondsToSelector:@selector(setOrientation:)]) {
         return false;
     }
-    ((void (*)(id, SEL, long))objc_msgSend)(server, @selector(setOrientation:), uiInterfaceOrientationForDegrees(degrees));
+    ((void (*)(id, SEL, long))objc_msgSend)(
+        server,
+        @selector(setOrientation:),
+        uiInterfaceOrientationForDegrees(degrees)
+    );
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.3, false);
     invalidateInterfaceGeometry();
     return true;
@@ -850,7 +894,14 @@ bool icli_hid_swipe(double x1, double y1, double x2, double y2, double seconds, 
 bool icli_hid_key(uint16_t usage_page, uint16_t usage, bool down) {
     icli_private_init();
     if (!pIOHIDEventCreateKeyboardEvent) return false;
-    IOHIDEventRef event = pIOHIDEventCreateKeyboardEvent(kCFAllocatorDefault, mach_absolute_time(), usage_page, usage, down, 0);
+    IOHIDEventRef event = pIOHIDEventCreateKeyboardEvent(
+        kCFAllocatorDefault,
+        mach_absolute_time(),
+        usage_page,
+        usage,
+        down,
+        0
+    );
     if (event && pIOHIDEventSetIntegerValue) pIOHIDEventSetIntegerValue(event, 4, 1);
     return dispatchHID(event);
 }
@@ -858,11 +909,25 @@ bool icli_hid_key(uint16_t usage_page, uint16_t usage, bool down) {
 bool icli_hid_text(const char *text) {
     icli_private_init();
     if (!text) return false;
-    IOHIDEventRef (*createUnicode)(CFAllocatorRef, uint64_t, const uint8_t *, uint32_t, uint32_t, IOOptionBits) = sIOKit ? dlsym(sIOKit, "IOHIDEventCreateUnicodeEvent") : NULL;
+    IOHIDEventRef (*createUnicode)(
+        CFAllocatorRef,
+        uint64_t,
+        const uint8_t *,
+        uint32_t,
+        uint32_t,
+        IOOptionBits
+    ) = sIOKit ? dlsym(sIOKit, "IOHIDEventCreateUnicodeEvent") : NULL;
     if (!createUnicode) return false;
     NSData *payload = [@(text) dataUsingEncoding:NSUTF16LittleEndianStringEncoding];
     if (!payload.length || payload.length > UINT32_MAX) return false;
-    IOHIDEventRef event = createUnicode(kCFAllocatorDefault, mach_absolute_time(), payload.bytes, (uint32_t)payload.length, 1, 0);
+    IOHIDEventRef event = createUnicode(
+        kCFAllocatorDefault,
+        mach_absolute_time(),
+        payload.bytes,
+        (uint32_t)payload.length,
+        1,
+        0
+    );
     if (event && pIOHIDEventSetIntegerValue) pIOHIDEventSetIntegerValue(event, 4, 1);
     return dispatchHID(event);
 }

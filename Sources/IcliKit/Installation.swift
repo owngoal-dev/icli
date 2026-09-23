@@ -4,7 +4,9 @@ import IcliPrivate
 import IcliSystem
 
 func validateBundleID(_ bundleID: String) throws {
-    guard bundleID.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{1,200}$", options: .regularExpression) != nil else { throw IcliError.failed("invalid app bundle identifier") }
+    guard bundleID.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{1,200}$", options: .regularExpression) != nil else {
+        throw IcliError.failed("invalid app bundle identifier")
+    }
 }
 
 private func managedAppPath(_ bundleID: String) throws -> String {
@@ -29,7 +31,11 @@ struct StagedIPA {
 func stageIPA(_ path: String) throws -> StagedIPA {
     let manager = FileManager.default
     let stage = JailbreakRoot.current.scratchDirectory() + "/icli-install-" + UUID().uuidString
-    try manager.createDirectory(atPath: stage, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    try manager.createDirectory(
+        atPath: stage,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
     do {
         _ = try decodeBridgeJSON(takeCString(icli_extract_ipa_json(path, stage)), "IPA extraction response")
         let payload = stage + "/Payload"
@@ -40,7 +46,10 @@ func stageIPA(_ path: String) throws -> StagedIPA {
         guard let info = try PropertyListSerialization.propertyList(from: infoData, format: nil) as? [String: Any],
               let bundleID = info["CFBundleIdentifier"] as? String,
               let executable = info["CFBundleExecutable"] as? String, !executable.isEmpty,
-              !executable.contains("/"), executable != ".", executable != ".." else { throw IcliError.failed("IPA has invalid bundle metadata") }
+              !executable.contains("/"), executable != ".", executable != ".."
+        else {
+            throw IcliError.failed("IPA has invalid bundle metadata")
+        }
         _ = try machOInfo(at: source + "/" + executable)
         let bundleRoot = URL(fileURLWithPath: source).resolvingSymlinksInPath().path + "/"
         if let entries = manager.enumerator(at: URL(fileURLWithPath: source), includingPropertiesForKeys: [.isSymbolicLinkKey]) {
@@ -60,7 +69,9 @@ func stageIPA(_ path: String) throws -> StagedIPA {
 }
 
 func installIPA(_ path: String) throws -> [String: Any] {
-    guard geteuid() == 0 else { throw IcliError.failed("IPA installation requires root; run sudo icli app install <file.ipa>") }
+    guard geteuid() == 0 else {
+        throw IcliError.failed("IPA installation requires root; run sudo icli app install <file.ipa>")
+    }
     let manager = FileManager.default
     let staged = try stageIPA(path)
     defer { try? manager.removeItem(atPath: staged.stage) }
@@ -78,8 +89,14 @@ func installIPA(_ path: String) throws -> [String: Any] {
     if upgrading {
         _ = try killApp(bundleID, force: true)
     }
-    try manager.createDirectory(atPath: (receipt as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-    try manager.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+    try manager.createDirectory(
+        atPath: (receipt as NSString).deletingLastPathComponent,
+        withIntermediateDirectories: true
+    )
+    try manager.createDirectory(
+        atPath: (target as NSString).deletingLastPathComponent,
+        withIntermediateDirectories: true
+    )
     let backup = stage + "/previous.app"
     if upgrading {
         try manager.moveItem(atPath: target, toPath: backup)
@@ -88,7 +105,8 @@ func installIPA(_ path: String) throws -> [String: Any] {
         try manager.moveItem(atPath: source, toPath: target)
         try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: target + "/" + executable)
         guard icli_register_app(target) else { throw IcliError.failed("installed app could not be registered") }
-        try JSONSerialization.data(withJSONObject: ["bundle_id": bundleID, "path": target]).write(to: URL(fileURLWithPath: receipt), options: .atomic)
+        try JSONSerialization.data(withJSONObject: ["bundle_id": bundleID, "path": target])
+            .write(to: URL(fileURLWithPath: receipt), options: .atomic)
     } catch {
         _ = icli_unregister_app(target)
         try? manager.removeItem(atPath: target)
@@ -109,7 +127,10 @@ func uninstallManagedApp(_ bundleID: String) throws -> [String: Any]? {
     guard geteuid() == 0 else { throw IcliError.failed("removing an icli-installed IPA requires root") }
     guard let data = manager.contents(atPath: receipt),
           let record = try JSONSerialization.jsonObject(with: data) as? [String: String],
-          record["path"] == target, record["bundle_id"] == bundleID else { throw IcliError.failed("invalid installation receipt") }
+          record["path"] == target, record["bundle_id"] == bundleID
+    else {
+        throw IcliError.failed("invalid installation receipt")
+    }
     _ = try killApp(bundleID, force: true)
     _ = try unregisterApp(target, force: true)
     try manager.removeItem(atPath: target)

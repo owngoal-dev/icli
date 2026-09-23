@@ -9,7 +9,9 @@ public func listDirectory(_ path: String) throws -> [String: Any] {
         .isDirectoryKey, .fileSizeKey, .contentModificationDateKey,
     ])
     let entries: [[String: Any]] = items.sorted { $0.lastPathComponent < $1.lastPathComponent }.map { item in
-        let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .isSymbolicLinkKey, .contentModificationDateKey])
+        let values = try? item.resourceValues(forKeys: [
+            .isDirectoryKey, .fileSizeKey, .isSymbolicLinkKey, .contentModificationDateKey
+        ])
         return [
             "name": item.lastPathComponent,
             "path": item.path,
@@ -88,12 +90,18 @@ public func makeDirectory(_ path: String, mode: String?) throws -> [String: Any]
 public func removePath(_ path: String, recursive: Bool, force: Bool) throws -> [String: Any] {
     guard force else { throw IcliError.forceRequired("remove \(path)") }
     let standardized = (path as NSString).standardizingPath
-    guard standardized.count > 1, !["/var", "/var/jb", "/private/var", JailbreakRoot.current.jbroot].contains(standardized) else { throw IcliError.failed("refusing to remove \(standardized)") }
+    guard standardized.count > 1,
+          !["/var", "/var/jb", "/private/var", JailbreakRoot.current.jbroot].contains(standardized)
+    else {
+        throw IcliError.failed("refusing to remove \(standardized)")
+    }
     var info = stat()
     guard lstat(path, &info) == 0 else { return ["path": path, "removed": false, "message": "path does not exist"] }
     let isDirectory = (info.st_mode & S_IFMT) == S_IFDIR
     if isDirectory, !recursive {
-        guard rmdir(path) == 0 else { throw IcliError.failed("directory not empty or not removable; pass --recursive: \(String(cString: strerror(errno)))") }
+        guard rmdir(path) == 0 else {
+            throw IcliError.failed("directory not empty or not removable; pass --recursive: \(String(cString: strerror(errno)))")
+        }
         return ["path": path, "removed": true, "type": "directory"]
     }
     try FileManager.default.removeItem(atPath: path)
@@ -103,16 +111,24 @@ public func removePath(_ path: String, recursive: Bool, force: Bool) throws -> [
 public func createSymlink(target: String, link: String, replace: Bool) throws -> [String: Any] {
     var info = stat()
     if lstat(link, &info) == 0 {
-        guard replace, (info.st_mode & S_IFMT) == S_IFLNK else { throw IcliError.failed("link path exists; pass --replace to replace an existing symlink: \(link)") }
+        guard replace, (info.st_mode & S_IFMT) == S_IFLNK else {
+            throw IcliError.failed("link path exists; pass --replace to replace an existing symlink: \(link)")
+        }
         try FileManager.default.removeItem(atPath: link)
     }
     try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
-    return ["link": link, "target": target, "resolved": (try? FileManager.default.destinationOfSymbolicLink(atPath: link)) ?? ""]
+    return [
+        "link": link,
+        "target": target,
+        "resolved": (try? FileManager.default.destinationOfSymbolicLink(atPath: link)) ?? ""
+    ]
 }
 
 public func changeMode(_ path: String, mode: String) throws -> [String: Any] {
     let value = try parseMode(mode)
-    guard chmod(path, mode_t(value)) == 0 else { throw IcliError.failed("chmod \(path): \(String(cString: strerror(errno)))") }
+    guard chmod(path, mode_t(value)) == 0 else {
+        throw IcliError.failed("chmod \(path): \(String(cString: strerror(errno)))")
+    }
     return ["path": path, "mode": String(value, radix: 8)]
 }
 
@@ -133,7 +149,9 @@ public func changeOwner(_ path: String, owner: String) throws -> [String: Any] {
         throw IcliError.failed("unknown \(group ? "group" : "user"): \(text)")
     }
     let uid = try resolve(parts[0], group: false), gid = try resolve(parts[1], group: true)
-    guard lchown(path, uid, gid) == 0 else { throw IcliError.failed("chown \(path): \(String(cString: strerror(errno)))") }
+    guard lchown(path, uid, gid) == 0 else {
+        throw IcliError.failed("chown \(path): \(String(cString: strerror(errno)))")
+    }
     return ["path": path, "uid": uid, "gid": gid]
 }
 
@@ -158,10 +176,14 @@ public func movePath(_ source: String, to destination: String) throws -> [String
 public func setPlistValue(_ path: String, key: String, json: String?) throws -> [String: Any] {
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
     var format = PropertyListSerialization.PropertyListFormat.xml
-    guard var plist = try PropertyListSerialization.propertyList(from: data, options: [], format: &format) as? [String: Any] else { throw IcliError.failed("plist root is not a dictionary") }
+    guard var plist = try PropertyListSerialization.propertyList(from: data, options: [], format: &format) as? [String: Any] else {
+        throw IcliError.failed("plist root is not a dictionary")
+    }
     let previous = plist[key]
     if let json {
-        guard let value = try? JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed]) else { throw IcliError.failed("value must be JSON") }
+        guard let value = try? JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed]) else {
+            throw IcliError.failed("value must be JSON")
+        }
         plist[key] = value
     } else {
         plist.removeValue(forKey: key)
@@ -175,11 +197,19 @@ public func setPlistValue(_ path: String, key: String, json: String?) throws -> 
             chown(path, info.st_uid, info.st_gid)
         }
     }
-    return ["path": path, "key": key, "value": plist[key].map(jsonSafe) ?? NSNull(), "previous": previous.map(jsonSafe) ?? NSNull(), "format": format == .binary ? "binary" : "xml"]
+    return [
+        "path": path,
+        "key": key,
+        "value": plist[key].map(jsonSafe) ?? NSNull(),
+        "previous": previous.map(jsonSafe) ?? NSNull(),
+        "format": format == .binary ? "binary" : "xml"
+    ]
 }
 
 private func parseMode(_ text: String) throws -> Int {
-    guard let value = Int(text, radix: 8), (0 ... 0o7777).contains(value) else { throw IcliError.failed("mode must be octal, e.g. 755") }
+    guard let value = Int(text, radix: 8), (0 ... 0o7777).contains(value) else {
+        throw IcliError.failed("mode must be octal, e.g. 755")
+    }
     return value
 }
 

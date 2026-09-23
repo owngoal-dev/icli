@@ -23,7 +23,8 @@ bool icli_uninstall_app(const char *bundle_id) {
 }
 
 static BOOL bundleHasSettingsBundle(NSString *path) {
-    return [NSFileManager.defaultManager fileExistsAtPath:[path stringByAppendingPathComponent:@"Settings.bundle/Root.plist"]];
+    return [NSFileManager.defaultManager
+        fileExistsAtPath:[path stringByAppendingPathComponent:@"Settings.bundle/Root.plist"]];
 }
 
 /// Whether LaunchServices' record is of the build on disk; a build that is
@@ -60,9 +61,11 @@ static BOOL registerAppAtPath(NSString *path) {
     if (!ws || path.length == 0) {
         return NO;
     }
-    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
+    NSDictionary *info = [NSDictionary
+        dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
     BOOL hasSettingsBundle = bundleHasSettingsBundle(path);
-    BOOL registered = [ws respondsToSelector:@selector(registerApplication:)] && [ws registerApplication:[NSURL fileURLWithPath:path]];
+    BOOL registered = [ws respondsToSelector:@selector(registerApplication:)]
+        && [ws registerApplication:[NSURL fileURLWithPath:path]];
     id proxy = registeredAppsByPath()[normalizedAppPath(path)];
     if (proxy ? !recordIsReplaceable(proxy) : registered) {
         return registered;
@@ -125,7 +128,8 @@ static NSString *normalizedAppPath(NSString *path) {
         if (resolved) {
             path = @(resolved);
             free(resolved);
-            for (NSString *component in suffix.reverseObjectEnumerator) path = [path stringByAppendingPathComponent:component];
+            for (NSString *component in suffix.reverseObjectEnumerator)
+                path = [path stringByAppendingPathComponent:component];
             break;
         }
         NSString *parent = ancestor.stringByDeletingLastPathComponent;
@@ -140,7 +144,9 @@ static NSString *normalizedAppPath(NSString *path) {
 /// Registered application proxies keyed by normalized bundle path.
 static NSDictionary<NSString *, id> *registeredAppsByPath(void) {
     id ws = icli_ls_workspace();
-    NSArray *apps = [ws respondsToSelector:@selector(allInstalledApplications)] ? [ws performSelector:@selector(allInstalledApplications)] : nil;
+    NSArray *apps = [ws respondsToSelector:@selector(allInstalledApplications)]
+        ? [ws performSelector:@selector(allInstalledApplications)]
+        : nil;
     if (!apps) return nil;
     NSMutableDictionary *byPath = [NSMutableDictionary dictionary];
     for (id proxy in apps) {
@@ -174,7 +180,8 @@ static NSArray<NSString *> *appBundlesInDirectory(NSString *directory, NSError *
 }
 
 static NSString *proxyBundleID(id proxy) {
-    return icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier")) ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
+    return icli_ls_string(icli_ls_value(proxy, @"applicationIdentifier"))
+        ?: icli_ls_string(icli_ls_value(proxy, @"bundleIdentifier"));
 }
 
 /// Whether `path` is directly inside the directory that `prefix` (ending in "/") names.
@@ -192,23 +199,31 @@ char *icli_apps_refresh_json(const char *directory) {
     if (!directory) return icli_json_or_empty(@{@"error": @"directory required"});
     NSString *root = normalizedAppPath(@(directory));
     BOOL isDirectory = NO;
-    if (![NSFileManager.defaultManager fileExistsAtPath:root isDirectory:&isDirectory] || !isDirectory) return icli_json_or_empty(@{@"error": [@"not a directory: " stringByAppendingString:root]});
+    if (![NSFileManager.defaultManager fileExistsAtPath:root isDirectory:&isDirectory] || !isDirectory)
+        return icli_json_or_empty(@{@"error": [@"not a directory: " stringByAppendingString:root]});
     NSError *error = nil;
     NSArray *paths = appBundlesInDirectory(root, &error);
-    if (!paths) return icli_json_or_empty(@{@"error": error.localizedDescription ?: @"could not list application directory"});
+    if (!paths)
+        return icli_json_or_empty(@{@"error": error.localizedDescription ?: @"could not list application directory"});
     NSDictionary *before = registeredAppsByPath();
     if (!before) return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable"});
     NSMutableDictionary *installed = [NSMutableDictionary dictionary];
     NSMutableDictionary *infos = [NSMutableDictionary dictionary];
     for (NSString *path in paths) {
-        NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
+        NSDictionary *info = [NSDictionary
+            dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
         NSString *bundleID = info[@"CFBundleIdentifier"];
-        if (![bundleID isKindOfClass:NSString.class] || !bundleID.length) return icli_json_or_empty(@{@"error": [@"missing bundle identifier: " stringByAppendingString:path]});
-        if (installed[bundleID]) return icli_json_or_empty(@{@"error": [@"duplicate bundle identifier: " stringByAppendingString:bundleID]});
+        if (![bundleID isKindOfClass:NSString.class] || !bundleID.length)
+            return icli_json_or_empty(@{@"error": [@"missing bundle identifier: " stringByAppendingString:path]});
+        if (installed[bundleID])
+            return icli_json_or_empty(@{@"error": [@"duplicate bundle identifier: " stringByAppendingString:bundleID]});
         installed[bundleID] = path;
         infos[bundleID] = info;
     }
-    NSMutableArray *registered = [NSMutableArray array], *failed = [NSMutableArray array], *unregistered = [NSMutableArray array], *unchanged = [NSMutableArray array];
+    NSMutableArray *registered = [NSMutableArray array],
+        *failed = [NSMutableArray array],
+        *unregistered = [NSMutableArray array],
+        *unchanged = [NSMutableArray array];
     for (NSString *bundleID in [[installed allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
         NSString *path = installed[bundleID];
         id proxy = before[normalizedAppPath(path)];
@@ -222,7 +237,8 @@ char *icli_apps_refresh_json(const char *directory) {
     }
     NSString *prefix = [root stringByAppendingString:@"/"];
     NSDictionary *byPath = registeredAppsByPath();
-    if (!byPath) return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable after registration"});
+    if (!byPath)
+        return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable after registration"});
     for (NSString *path in [[byPath allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
         if (!isDirectChild(path, prefix) || [NSFileManager.defaultManager fileExistsAtPath:path]) continue;
         NSString *bundleID = proxyBundleID(byPath[path]);
@@ -232,7 +248,8 @@ char *icli_apps_refresh_json(const char *directory) {
         else [failed addObject:path];
     }
     NSDictionary *after = registeredAppsByPath();
-    if (!after) return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable during verification"});
+    if (!after)
+        return icli_json_or_empty(@{@"error": @"LaunchServices application list unavailable during verification"});
     NSMutableArray *missing = [NSMutableArray array];
     for (NSString *bundleID in installed) {
         NSString *path = installed[bundleID];
@@ -241,7 +258,14 @@ char *icli_apps_refresh_json(const char *directory) {
         if (![registeredID isEqual:bundleID]) [missing addObject:path];
     }
     for (NSString *path in unregistered) if (after[path]) [missing addObject:path];
-    return icli_json_or_empty(@{@"directory": root, @"registered": registered, @"unchanged": unchanged, @"unregistered": unregistered, @"failed": failed, @"unverified": missing});
+    return icli_json_or_empty(@{
+        @"directory": root,
+        @"registered": registered,
+        @"unchanged": unchanged,
+        @"unregistered": unregistered,
+        @"failed": failed,
+        @"unverified": missing
+    });
 }
 
 /// Unregisters every registered application whose bundle lives directly in `directory`.
@@ -259,5 +283,10 @@ char *icli_apps_unregister_directory_json(const char *directory) {
     NSDictionary *after = registeredAppsByPath();
     NSMutableArray *remaining = [NSMutableArray array];
     for (NSString *path in unregistered) if (after[path]) [remaining addObject:path];
-    return icli_json_or_empty(@{@"directory": root, @"unregistered": unregistered, @"failed": failed, @"unverified": remaining});
+    return icli_json_or_empty(@{
+        @"directory": root,
+        @"unregistered": unregistered,
+        @"failed": failed,
+        @"unverified": remaining
+    });
 }

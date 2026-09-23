@@ -11,7 +11,9 @@ struct Device: ParsableCommand {
 
 extension Device {
     struct Reboot: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Request a full or userspace reboot (root); completion is proven by reconnecting")
+        static var configuration = CommandConfiguration(
+            abstract: "Request a full or userspace reboot (root); completion is proven by reconnecting"
+        )
         @OptionGroup var output: OutputOptions
         @Flag(help: "Restart userspace only (launchd re-exec) instead of the whole device") var userspace = false
         @Flag(help: "Confirm the restart; required to run this command.") var force = false
@@ -21,7 +23,9 @@ extension Device {
     }
 
     struct Bootlogo: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Render a screen-sized JPEG 2000 boot logo from a mark image")
+        static var configuration = CommandConfiguration(
+            abstract: "Render a screen-sized JPEG 2000 boot logo from a mark image"
+        )
         @OptionGroup var output: OutputOptions
         @Option(help: "PNG/JPEG mark image") var mark: String
         @Option(name: .customLong("output"), help: "Destination .jp2 path") var destination: String
@@ -30,7 +34,16 @@ extension Device {
         @Option(help: "Canvas height in pixels (default: native screen)") var height: Int = 0
         @Option(help: "Maximum mark side length in points") var markPoints: Double = 128
         func run() {
-            emit(allowWhenLocked: true, output) { try renderBootLogo(mark: mark, output: destination, dark: dark, width: width, height: height, markPoints: markPoints) }
+            emit(allowWhenLocked: true, output) {
+                try renderBootLogo(
+                    mark: mark,
+                    output: destination,
+                    dark: dark,
+                    width: width,
+                    height: height,
+                    markPoints: markPoints
+                )
+            }
         }
     }
 
@@ -43,7 +56,10 @@ extension Device {
     }
 
     struct Jetsam: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Jetsam bands, jetsam property lists and memory pressure", discussion: "The priority list needs root or com.apple.private.memorystatus; without it the result carries 'priorities_error' and the rest still comes back.")
+        static var configuration = CommandConfiguration(
+            abstract: "Jetsam bands, jetsam property lists and memory pressure",
+            discussion: "The priority list needs root or com.apple.private.memorystatus; without it the result carries 'priorities_error' and the rest still comes back."
+        )
         @OptionGroup var output: OutputOptions
         func run() {
             emit(allowWhenLocked: true, output) { try jetsamSnapshot() }
@@ -110,7 +126,10 @@ extension Device {
 
         struct Set: ParsableCommand {
             @OptionGroup var output: OutputOptions
-            @Argument(help: "Orientation: portrait (0), landscape-left (90), upside-down (180), or landscape-right (270).") var value: String
+            @Argument(
+                help: "Orientation: portrait (0), landscape-left (90), upside-down (180), or landscape-right (270)."
+            )
+            var value: String
             func run() {
                 emit(output) { try setRotation(value) }
             }
@@ -141,7 +160,9 @@ extension Device {
             subcommands: [Get.self, Enable.self]
         )
         struct Get: ParsableCommand {
-            static var configuration = CommandConfiguration(abstract: "Whether Developer Mode is on, armed for the next restart, and changeable")
+            static var configuration = CommandConfiguration(
+                abstract: "Whether Developer Mode is on, armed for the next restart, and changeable"
+            )
             @OptionGroup var output: OutputOptions
             func run() {
                 emit(allowWhenLocked: true, output) { try developerModeStatus() }

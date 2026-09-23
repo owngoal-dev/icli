@@ -46,7 +46,9 @@ public func autoBrightness() -> Bool? {
 }
 
 public func setBrightness(_ value: Double) throws {
-    guard value.isFinite, (0 ... 1).contains(value) else { throw IcliError.failed("brightness must be between 0 and 1") }
+    guard value.isFinite, (0 ... 1).contains(value) else {
+        throw IcliError.failed("brightness must be between 0 and 1")
+    }
     guard icli_brightness_set(value) else { throw IcliError.failed("could not set brightness") }
     Thread.sleep(forTimeInterval: 0.1)
     guard abs(icli_brightness_get() - value) <= 0.02 else {
@@ -150,7 +152,15 @@ public func networkInfo() -> [String: Any] {
         let sa = address.pointee
         if sa.sa_family == UInt8(AF_INET) || sa.sa_family == UInt8(AF_INET6) {
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            getnameinfo(iface.pointee.ifa_addr, socklen_t(sa.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST)
+            getnameinfo(
+                iface.pointee.ifa_addr,
+                socklen_t(sa.sa_len),
+                &host,
+                socklen_t(host.count),
+                nil,
+                0,
+                NI_NUMERICHOST
+            )
             let name = String(cString: iface.pointee.ifa_name)
             let ip = String(cString: host)
             addresses.append("\(name) \(ip)")

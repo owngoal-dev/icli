@@ -9,7 +9,8 @@ struct Screen: ParsableCommand {
     )
 }
 
-private let normalizedHelp: ArgumentHelp = "x and y are 0–1 in the fixed portrait digitizer space instead of UI points."
+private let normalizedHelp: ArgumentHelp =
+    "x and y are 0–1 in the fixed portrait digitizer space instead of UI points."
 
 extension Screen {
     struct Tap: ParsableCommand {
@@ -62,7 +63,10 @@ extension Screen {
         @Option var fromY: Double?
         @Option var toX: Double?
         @Option var toY: Double?
-        @Option(help: "Drag path as a JSON array of {x,y} points; use this option or all four endpoint options, not both.") var points: String?
+        @Option(
+            help: "Drag path as a JSON array of {x,y} points; use this option or all four endpoint options, not both."
+        )
+        var points: String?
         @Option var seconds: Double = 0.3
         @Option var hold: Double = 0.5
         @Option var steps: Int = 20
@@ -70,14 +74,22 @@ extension Screen {
             emit(output) {
                 let path: [(Double, Double)]
                 if let points {
-                    guard fromX == nil, fromY == nil, toX == nil, toY == nil else { throw IcliError.failed("provide points or endpoints, not both") }
-                    guard let rows = try JSONSerialization.jsonObject(with: Data(points.utf8)) as? [[String: Double]] else { throw IcliError.failed("points must be a JSON array of {x,y}") }
+                    guard fromX == nil, fromY == nil, toX == nil, toY == nil else {
+                        throw IcliError.failed("provide points or endpoints, not both")
+                    }
+                    guard let rows = try JSONSerialization.jsonObject(with: Data(points.utf8)) as? [[String: Double]] else {
+                        throw IcliError.failed("points must be a JSON array of {x,y}")
+                    }
                     path = try rows.map { row in
-                        guard let x = row["x"], let y = row["y"] else { throw IcliError.failed("each point needs x and y") }
+                        guard let x = row["x"], let y = row["y"] else {
+                            throw IcliError.failed("each point needs x and y")
+                        }
                         return (x, y)
                     }
                 } else {
-                    guard let fromX, let fromY, let toX, let toY else { throw IcliError.failed("provide points or all four endpoint coordinates") }
+                    guard let fromX, let fromY, let toX, let toY else {
+                        throw IcliError.failed("provide points or all four endpoint coordinates")
+                    }
                     path = [(fromX, fromY), (toX, toY)]
                 }
                 return try drag(points: path, seconds: seconds, hold: hold, steps: steps)
@@ -94,14 +106,19 @@ extension Screen {
         @Flag(help: normalizedHelp) var normalized = false
         func run() {
             emit(output) {
-                guard let phase = TouchPhase(rawValue: phase) else { throw IcliError.failed("phase must be down, move or up") }
+                guard let phase = TouchPhase(rawValue: phase) else {
+                    throw IcliError.failed("phase must be down, move or up")
+                }
                 return try touch(phase, x: x, y: y, normalized: normalized)
             }
         }
     }
 
     struct TouchSequence: ParsableCommand {
-        static var configuration = CommandConfiguration(commandName: "touch-sequence", abstract: "Send several digitizer events from one process.")
+        static var configuration = CommandConfiguration(
+            commandName: "touch-sequence",
+            abstract: "Send several digitizer events from one process."
+        )
         @OptionGroup var output: OutputOptions
         @Option(help: "JSON array of {phase,x,y,delay_ms}; delay_ms is the pause after that event.") var events: String
         @Flag(help: normalizedHelp) var normalized = false
@@ -112,11 +129,15 @@ extension Screen {
 
     struct Shot: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        @Option(name: .customLong("output"), help: "Destination JPEG path; defaults to a temporary file.") var path: String?
-        @Flag(help: "Include the JPEG as Base64 in the result; keep a file only when --output is supplied.") var base64 = false
+        @Option(name: .customLong("output"), help: "Destination JPEG path; defaults to a temporary file.")
+        var path: String?
+        @Flag(help: "Include the JPEG as Base64 in the result; keep a file only when --output is supplied.")
+        var base64 = false
         @Flag var nativeResolution = false
         func run() {
-            emit(allowWhenLocked: true, output) { try takeScreenshot(path: path, base64: base64, nativeResolution: nativeResolution) }
+            emit(allowWhenLocked: true, output) {
+                try takeScreenshot(path: path, base64: base64, nativeResolution: nativeResolution)
+            }
         }
     }
 
@@ -232,7 +253,9 @@ extension Input {
     }
 
     struct HID: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Send a raw HID usage: a press, or only the key going down or up.")
+        static var configuration = CommandConfiguration(
+            abstract: "Send a raw HID usage: a press, or only the key going down or up."
+        )
         @OptionGroup var output: OutputOptions
         @Argument(help: "Usage page, decimal or 0x hex: 7 keyboard, 12 (0x0C) consumer.") var page: String
         @Argument(help: "Usage, decimal or 0x hex.") var usage: String
@@ -259,8 +282,12 @@ struct UI: ParsableCommand {
 }
 
 struct ElementOptions: ParsableArguments {
-    @Argument(help: "Text to match in an element's label, identifier, or value; required unless --identifier is supplied.") var text: String?
-    @Option(help: "Match an exact element identifier or label; takes precedence over the text argument.") var identifier: String?
+    @Argument(
+        help: "Text to match in an element's label, identifier, or value; required unless --identifier is supplied."
+    )
+    var text: String?
+    @Option(help: "Match an exact element identifier or label; takes precedence over the text argument.")
+    var identifier: String?
     @Option var role: String?
     @Option(help: "Text matching mode: contains or exact; both ignore case.") var match: String = "contains"
     @Option(help: "Zero-based index among matching elements; 0 selects the first match.") var index: Int = 0
@@ -277,7 +304,14 @@ extension UI {
         @Flag var includeOffscreen = false
         @Flag var clickableOnly = false
         func run() {
-            emit(output) { try uiElements(maxElements: maxElements, visibleOnly: !includeOffscreen, clickableOnly: clickableOnly, limit: limit) }
+            emit(output) {
+                try uiElements(
+                    maxElements: maxElements,
+                    visibleOnly: !includeOffscreen,
+                    clickableOnly: clickableOnly,
+                    limit: limit
+                )
+            }
         }
     }
 
@@ -304,7 +338,9 @@ extension UI {
         @Option var timeout: Double = 10
         @Option var interval: Double = 0.3
         func run() {
-            emit(output) { try waitForElement(selection.selector(), appear: true, timeout: timeout, interval: interval) }
+            emit(output) {
+                try waitForElement(selection.selector(), appear: true, timeout: timeout, interval: interval)
+            }
         }
     }
 
@@ -315,7 +351,9 @@ extension UI {
         @Option var timeout: Double = 10
         @Option var interval: Double = 0.3
         func run() {
-            emit(output) { try waitForElement(selection.selector(), appear: false, timeout: timeout, interval: interval) }
+            emit(output) {
+                try waitForElement(selection.selector(), appear: false, timeout: timeout, interval: interval)
+            }
         }
     }
 }

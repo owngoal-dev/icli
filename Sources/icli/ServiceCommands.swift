@@ -15,8 +15,10 @@ struct Svc: ParsableCommand {
     )
 }
 
-private let servicePathsHelp: ArgumentHelp = "One or more existing service plist files or directories containing service plists."
-private let serviceLabelHelp: ArgumentHelp = "Service label from its plist's Label key, without a domain prefix; for example, com.example.service."
+private let servicePathsHelp: ArgumentHelp =
+    "One or more existing service plist files or directories containing service plists."
+private let serviceLabelHelp: ArgumentHelp =
+    "Service label from its plist's Label key, without a domain prefix; for example, com.example.service."
 
 extension Svc {
     struct Bootstrap: ParsableCommand {
@@ -76,7 +78,10 @@ extension Svc {
     }
 
     struct Start: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Request that a loaded service start.", discussion: "The service must already be loaded. An accepted request does not guarantee that the process stays running. Use 'icli svc status <label>' to check its state.")
+        static var configuration = CommandConfiguration(
+            abstract: "Request that a loaded service start.",
+            discussion: "The service must already be loaded. An accepted request does not guarantee that the process stays running. Use 'icli svc status <label>' to check its state."
+        )
         @OptionGroup var output: OutputOptions
         @Argument(help: serviceLabelHelp) var label: String
         func run() {
@@ -85,7 +90,10 @@ extension Svc {
     }
 
     struct Stop: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Request that a running service stop.", discussion: "Stopping does not unload or disable the service. launchd may restart it if its KeepAlive conditions apply. Use 'icli svc status <label>' to check its state.")
+        static var configuration = CommandConfiguration(
+            abstract: "Request that a running service stop.",
+            discussion: "Stopping does not unload or disable the service. launchd may restart it if its KeepAlive conditions apply. Use 'icli svc status <label>' to check its state."
+        )
         @OptionGroup var output: OutputOptions
         @Argument(help: serviceLabelHelp) var label: String
         func run() {
@@ -113,7 +121,9 @@ extension Svc {
     }
 
     struct List: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "List services, or show the status of one service by label.")
+        static var configuration = CommandConfiguration(
+            abstract: "List services, or show the status of one service by label."
+        )
         @OptionGroup var output: OutputOptions
         @Argument(help: "Service label without a domain prefix; omit to list all visible services.") var label: String?
         func run() {
@@ -131,7 +141,10 @@ extension Svc {
     }
 
     struct PrintDisabled: ParsableCommand {
-        static var configuration = CommandConfiguration(commandName: "print-disabled", abstract: "Print persistent disabled-service overrides")
+        static var configuration = CommandConfiguration(
+            commandName: "print-disabled",
+            abstract: "Print persistent disabled-service overrides"
+        )
         @OptionGroup var output: OutputOptions
         func run() {
             emit(allowWhenLocked: true, output) { try disabledServiceOverrides() }
@@ -139,7 +152,10 @@ extension Svc {
     }
 
     struct Dump: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Every visible service with launchd's description, in one document.", discussion: "A label launchd refuses to describe is listed in 'errors'; the rest of the document is still returned.")
+        static var configuration = CommandConfiguration(
+            abstract: "Every visible service with launchd's description, in one document.",
+            discussion: "A label launchd refuses to describe is listed in 'errors'; the rest of the document is still returned."
+        )
         @OptionGroup var output: OutputOptions
         func run() {
             emit(allowWhenLocked: true, output) { try servicesDump() }
@@ -156,7 +172,9 @@ extension Svc {
     }
 
     struct Setenv: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Set a launchd environment variable and verify its value.")
+        static var configuration = CommandConfiguration(
+            abstract: "Set a launchd environment variable and verify its value."
+        )
         @OptionGroup var output: OutputOptions
         @Argument(help: "Launchd environment variable name, such as PATH.") var key: String
         @Argument(help: "Value to store; quote values containing spaces.") var value: String
@@ -166,7 +184,9 @@ extension Svc {
     }
 
     struct Unsetenv: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Remove a launchd environment variable and verify removal.")
+        static var configuration = CommandConfiguration(
+            abstract: "Remove a launchd environment variable and verify removal."
+        )
         @OptionGroup var output: OutputOptions
         @Argument(help: "Launchd environment variable name, such as PATH.") var key: String
         func run() {
@@ -175,7 +195,9 @@ extension Svc {
     }
 
     struct Status: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Show whether a service is enabled, loaded, and running.")
+        static var configuration = CommandConfiguration(
+            abstract: "Show whether a service is enabled, loaded, and running."
+        )
         @OptionGroup var output: OutputOptions
         @Argument(help: serviceLabelHelp) var label: String
         func run() {

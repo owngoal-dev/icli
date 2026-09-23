@@ -41,7 +41,10 @@ public struct JailbreakRoot: Equatable {
         let raw = takeCString(icli_bootstrap_json()) ?? "{}"
         let data = Data(raw.utf8)
         let info = (try? JSONSerialization.jsonObject(with: data)) as? [String: String] ?? [:]
-        return JailbreakRoot(layout: Layout(rawValue: info["layout"] ?? "") ?? .rootful,
-                             jbroot: info["jbroot"] ?? "/", source: info["source"] ?? "unavailable")
+        return JailbreakRoot(
+            layout: Layout(rawValue: info["layout"] ?? "") ?? .rootful,
+            jbroot: info["jbroot"] ?? "/",
+            source: info["source"] ?? "unavailable"
+        )
     }
 }

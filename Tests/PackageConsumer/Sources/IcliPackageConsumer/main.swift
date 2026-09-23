@@ -57,7 +57,11 @@ precondition(AppRegistrationType(rawValue: "system") == .system)
 let developerMode = try developerModeStatus()
 let lowPower = try lowPowerMode()
 var rejectsNonPropertyList = false
-do { _ = try writePreference(domain: "dev.owngoal.icli.PackageConsumer", key: "null", value: .plist([NSNull()])) } catch { rejectsNonPropertyList = true }
+do {
+    _ = try writePreference(domain: "dev.owngoal.icli.PackageConsumer", key: "null", value: .plist([NSNull()]))
+} catch {
+    rejectsNonPropertyList = true
+}
 precondition(rejectsNonPropertyList)
 let report: [String: Any] = [
     "library": "IcliKit",

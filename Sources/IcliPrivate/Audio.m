@@ -41,10 +41,12 @@ char *icli_audio_button_json(const char *button) {
     if ([before[key] isEqual:after[key]]) {
         if (mute) {
             SEL toggle = NSSelectorFromString(@"toggleActiveCategoryMuted");
-            if (![controller respondsToSelector:toggle] || !((BOOL(*)(id,SEL))objc_msgSend)(controller,toggle)) return icli_json(@{@"error": @"audio mute control unavailable"});
+            if (![controller respondsToSelector:toggle] || !((BOOL(*)(id,SEL))objc_msgSend)(controller,toggle))
+                return icli_json(@{@"error": @"audio mute control unavailable"});
         } else {
             SEL change = NSSelectorFromString(@"changeActiveCategoryVolume:");
-            if (![controller respondsToSelector:change] || !((BOOL(*)(id,SEL,BOOL))objc_msgSend)(controller,change,up)) return icli_json(@{@"error": @"audio volume control unavailable"});
+            if (![controller respondsToSelector:change] || !((BOOL(*)(id,SEL,BOOL))objc_msgSend)(controller,change,up))
+                return icli_json(@{@"error": @"audio volume control unavailable"});
         }
         method = @"audio_control";
         [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
@@ -52,7 +54,8 @@ char *icli_audio_button_json(const char *button) {
     }
     if (after[@"error"]) return icli_json(after);
     BOOL boundary = !mute && (up ? [before[key] doubleValue] >= 1 : [before[key] doubleValue] <= 0);
-    if (!boundary && [before[key] isEqual:after[key]]) return icli_json(@{@"error": @"system did not apply the requested audio change"});
+    if (!boundary && [before[key] isEqual:after[key]])
+        return icli_json(@{@"error": @"system did not apply the requested audio change"});
     NSMutableDictionary *result = [after mutableCopy];
     result[@"button"] = name; result[@"method"] = method; result[@"before"] = before;
     return icli_json(result);

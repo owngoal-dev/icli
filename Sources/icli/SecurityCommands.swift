@@ -3,7 +3,10 @@ import Foundation
 import IcliKit
 
 struct Sec: ParsableCommand {
-    static var configuration = CommandConfiguration(abstract: "Manage keychain items and check for SSL Kill Switch files.", subcommands: [Keychain.self, SSLKillswitch.self])
+    static var configuration = CommandConfiguration(
+        abstract: "Manage keychain items and check for SSL Kill Switch files.",
+        subcommands: [Keychain.self, SSLKillswitch.self]
+    )
 }
 
 private let defaultKeychainGroup = "icli.test"
@@ -46,7 +49,13 @@ extension Sec {
             @Option var group: String?
             func run() {
                 emit(output) {
-                    try getKeychain(className: `class`, service: service, account: account, server: server, group: group)
+                    try getKeychain(
+                        className: `class`,
+                        service: service,
+                        account: account,
+                        server: server,
+                        group: group
+                    )
                 }
             }
         }
@@ -121,7 +130,10 @@ extension Sec {
     }
 
     struct SSLKillswitch: ParsableCommand {
-        static var configuration = CommandConfiguration(commandName: "ssl-killswitch", abstract: "Check for SSL Kill Switch files in known installation locations.")
+        static var configuration = CommandConfiguration(
+            commandName: "ssl-killswitch",
+            abstract: "Check for SSL Kill Switch files in known installation locations."
+        )
         @OptionGroup var output: OutputOptions
         func run() {
             emit(output) { sslKillswitchStatus() }

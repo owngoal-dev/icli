@@ -42,7 +42,9 @@ public enum PreferenceValue {
             guard let value = Int64(text) else { throw IcliError.failed("not an integer: \(text)") }
             self = .int(value)
         case "float":
-            guard let value = Double(text), value.isFinite else { throw IcliError.failed("not a finite number: \(text)") }
+            guard let value = Double(text), value.isFinite else {
+                throw IcliError.failed("not a finite number: \(text)")
+            }
             self = .float(value)
         case "bool":
             switch text.lowercased() {
@@ -62,7 +64,8 @@ public enum PreferenceValue {
             guard let data = Data(base64Encoded: text) else { throw IcliError.failed("data must be Base64") }
             self = .data(data)
         case "json":
-            guard let value = try? JSONSerialization.jsonObject(with: Data(text.utf8)), value is [Any] || value is [String: Any],
+            guard let value = try? JSONSerialization.jsonObject(with: Data(text.utf8)),
+                  value is [Any] || value is [String: Any],
                   PropertyListSerialization.propertyList(value, isValidFor: .binary)
             else {
                 throw IcliError.failed("json must be an array or object without nulls")
@@ -111,7 +114,13 @@ public func readPreference(domain: String, key: String?, user: PreferenceUser = 
 }
 
 /// Writes through cfprefsd, synchronizes, and returns the value read back.
-public func writePreference(domain: String, key: String, value: PreferenceValue, user: PreferenceUser = .mobile, notify: String? = nil) throws -> [String: Any] {
+public func writePreference(
+    domain: String,
+    key: String,
+    value: PreferenceValue,
+    user: PreferenceUser = .mobile,
+    notify: String? = nil
+) throws -> [String: Any] {
     let domain = try checkedDomain(domain)
     try checkedKey(key)
     // .plist can come from a host's own decoded JSON, not only init(text:type:).
@@ -135,7 +144,12 @@ public func writePreference(domain: String, key: String, value: PreferenceValue,
 
 /// Removes one key and confirms it is gone. `removed` is false when the key
 /// was not set.
-public func deletePreference(domain: String, key: String, user: PreferenceUser = .mobile, notify: String? = nil) throws -> [String: Any] {
+public func deletePreference(
+    domain: String,
+    key: String,
+    user: PreferenceUser = .mobile,
+    notify: String? = nil
+) throws -> [String: Any] {
     let domain = try checkedDomain(domain)
     try checkedKey(key)
     let existed = CFPreferencesCopyValue(key as CFString, domain as CFString, user.cfUser, kCFPreferencesAnyHost) != nil
@@ -145,7 +159,13 @@ public func deletePreference(domain: String, key: String, user: PreferenceUser =
         throw IcliError.unavailable("cfprefsd did not remove \(key) from \(domain) for user \(user.rawValue).")
     }
     postNotification(notify)
-    var result: [String: Any] = ["domain": domain, "key": key, "user": user.rawValue, "removed": existed, "exists": false]
+    var result: [String: Any] = [
+        "domain": domain,
+        "key": key,
+        "user": user.rawValue,
+        "removed": existed,
+        "exists": false
+    ]
     if let notify {
         result["notified"] = notify
     }
@@ -155,7 +175,9 @@ public func deletePreference(domain: String, key: String, user: PreferenceUser =
 private func checkedDomain(_ domain: String) throws -> String {
     guard !domain.isEmpty, !domain.contains("\0") else { throw IcliError.failed("domain must not be empty") }
     guard domain.hasPrefix("/") else { return domain }
-    guard domain.hasSuffix(".plist") else { throw IcliError.failed("a path domain must be an absolute path ending in .plist") }
+    guard domain.hasSuffix(".plist") else {
+        throw IcliError.failed("a path domain must be an absolute path ending in .plist")
+    }
     return domain
 }
 
@@ -171,7 +193,13 @@ private func synchronize(_ domain: String, _ user: PreferenceUser) throws {
 
 private func postNotification(_ name: String?) {
     guard let name, !name.isEmpty else { return }
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true)
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(name as CFString),
+        nil,
+        nil,
+        true
+    )
 }
 
 private func parseISO8601(_ text: String) -> Date? {
@@ -190,7 +218,9 @@ private func describePreference(_ value: CFPropertyList) -> [String: Any] {
     case CFBooleanGetTypeID(): return ["value": CFBooleanGetValue((value as! CFBoolean)), "type": "bool"]
     case CFNumberGetTypeID():
         let number = value as! NSNumber
-        return CFNumberIsFloatType((value as! CFNumber)) ? ["value": number.doubleValue, "type": "float"] : ["value": number.int64Value, "type": "int"]
+        return CFNumberIsFloatType((value as! CFNumber))
+            ? ["value": number.doubleValue, "type": "float"]
+            : ["value": number.int64Value, "type": "int"]
     case CFStringGetTypeID(): return ["value": value as! String, "type": "string"]
     case CFDateGetTypeID(): return ["value": formatDate(value as! Date), "type": "date"]
     case CFDataGetTypeID(): return ["value": (value as! Data).base64EncodedString(), "type": "data"]

@@ -30,8 +30,19 @@ enum {
 
 struct _os_alloc_once_s { long once; void *ptr; };
 extern struct _os_alloc_once_s _os_alloc_once_table[];
-struct xpc_global_data { uint64_t a; uint64_t xpc_flags; mach_port_t task_bootstrap_port; xpc_object_t xpc_bootstrap_pipe; };
-extern int _xpc_pipe_interface_routine(xpc_object_t pipe, uint64_t routine, xpc_object_t message, xpc_object_t *reply, uint64_t flags);
+struct xpc_global_data {
+    uint64_t a;
+    uint64_t xpc_flags;
+    mach_port_t task_bootstrap_port;
+    xpc_object_t xpc_bootstrap_pipe;
+};
+extern int _xpc_pipe_interface_routine(
+    xpc_object_t pipe,
+    uint64_t routine,
+    xpc_object_t message,
+    xpc_object_t *reply,
+    uint64_t flags
+);
 extern const char *xpc_strerror(int error);
 
 static char *launchdJSON(NSDictionary *value) {
@@ -48,12 +59,18 @@ static id objectFromXPC(xpc_object_t value) {
     if (type == XPC_TYPE_BOOL) return @(xpc_bool_get_value(value));
     if (type == XPC_TYPE_ARRAY) {
         NSMutableArray *array = [NSMutableArray array];
-        xpc_array_apply(value, ^bool(size_t index, xpc_object_t item) { [array addObject:objectFromXPC(item)]; return true; });
+        xpc_array_apply(value, ^bool(size_t index, xpc_object_t item) {
+            [array addObject:objectFromXPC(item)];
+            return true;
+        });
         return array;
     }
     if (type == XPC_TYPE_DICTIONARY) {
         NSMutableDictionary *dict = [NSMutableDictionary dictionary];
-        xpc_dictionary_apply(value, ^bool(const char *key, xpc_object_t item) { dict[@(key)] = objectFromXPC(item); return true; });
+        xpc_dictionary_apply(value, ^bool(const char *key, xpc_object_t item) {
+            dict[@(key)] = objectFromXPC(item);
+            return true;
+        });
         return dict;
     }
     return [NSString stringWithFormat:@"<%s>", xpc_type_get_name(type)];
@@ -66,7 +83,13 @@ extern uint64_t xpc_user_sessions_get_foreground_uid(uint64_t);
 enum { DomainSystem = 1, DomainUser = 2, DomainCaller = 7 };
 
 /// Returns 0 or an errno / launchd error code.
-static int launchdRoutine(uint64_t routine, uint64_t domain, uint64_t handle, xpc_object_t message, xpc_object_t *reply) {
+static int launchdRoutine(
+    uint64_t routine,
+    uint64_t domain,
+    uint64_t handle,
+    xpc_object_t message,
+    xpc_object_t *reply
+) {
     struct xpc_global_data *global = _os_alloc_once_table[1].ptr;
     if (!global || !global->xpc_bootstrap_pipe) return ENXIO;
     xpc_dictionary_set_uint64(message, "type", domain);
@@ -167,11 +190,14 @@ char *icli_launchd_disabled_json(void) {
     NSMutableDictionary *overrides = [NSMutableDictionary dictionary];
     if (status == 0 && reply) {
         uint64_t written = xpc_dictionary_get_uint64(reply, "bytes-written");
-        NSString *text = [[NSString alloc] initWithBytes:(void *)address length:MIN(written, size) encoding:NSUTF8StringEncoding] ?: @"";
+        NSString *text = [[NSString alloc] initWithBytes:(void *)address
+                                                  length:MIN(written, size)
+                                                encoding:NSUTF8StringEncoding] ?: @"";
         for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
             NSArray *parts = [line componentsSeparatedByString:@"\" => "];
             if (parts.count != 2) continue;
-            NSString *name = [parts[0] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\t \""]];
+            NSString *name =
+                [parts[0] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\t \""]];
             NSString *state = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
             overrides[name] = @([state isEqualToString:@"disabled"]);
         }
@@ -242,9 +268,16 @@ char *icli_launchd_print_json(const char *label) {
         written = status == 0 && reply ? xpc_dictionary_get_uint64(reply, "bytes-written") : 0;
         domainName = domainNames[i];
     }
-    NSString *text = [[NSString alloc] initWithBytes:(void *)address length:MIN(written, size) encoding:NSUTF8StringEncoding] ?: @"";
+    NSString *text = [[NSString alloc] initWithBytes:(void *)address
+                                              length:MIN(written, size)
+                                            encoding:NSUTF8StringEncoding] ?: @"";
     vm_deallocate(mach_task_self(), address, size);
-    return launchdJSON(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"domain": domainName, @"description": text});
+    return launchdJSON(@{
+        @"status": @(status),
+        @"message": @(xpc_strerror(status)),
+        @"domain": domainName,
+        @"description": text
+    });
 }
 
 char *icli_launchd_getenv_json(const char *key) {
@@ -253,7 +286,11 @@ char *icli_launchd_getenv_json(const char *key) {
     xpc_object_t reply = NULL;
     int status = launchdRoutine(RoutineGetEnvironment, DomainCaller, 0, message, &reply);
     const char *value = status == 0 && reply ? xpc_dictionary_get_string(reply, "value") : NULL;
-    NSMutableDictionary *result = [@{@"status": @(status), @"message": @(xpc_strerror(status)), @"exists": @(value != NULL)} mutableCopy];
+    NSMutableDictionary *result = [@{
+        @"status": @(status),
+        @"message": @(xpc_strerror(status)),
+        @"exists": @(value != NULL)
+    } mutableCopy];
     if (value) result[@"value"] = @(value);
     return launchdJSON(result);
 }

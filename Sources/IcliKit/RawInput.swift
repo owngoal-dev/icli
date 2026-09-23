@@ -38,7 +38,9 @@ public struct TouchEvent {
                 throw IcliError.failed("each event needs numeric x and y")
             }
             let delay = row["delay_ms"] ?? 0
-            guard let delayMS = (delay as? NSNumber)?.doubleValue else { throw IcliError.failed("delay_ms must be a number") }
+            guard let delayMS = (delay as? NSNumber)?.doubleValue else {
+                throw IcliError.failed("delay_ms must be a number")
+            }
             return TouchEvent(phase: phase, x: x, y: y, delayMS: delayMS)
         }
     }

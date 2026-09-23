@@ -35,13 +35,17 @@ private func processMatchesApp(_ process: [String: Any], _ app: [String: Any]) -
     guard let bundle = app["bundle_path"] as? String,
           let executable = Bundle(path: bundle)?.executablePath,
           let processPath = process["executable"] as? String, !processPath.isEmpty else { return false }
-    return URL(fileURLWithPath: executable).resolvingSymlinksInPath().path == URL(fileURLWithPath: processPath).resolvingSymlinksInPath().path
+    return URL(fileURLWithPath: executable).resolvingSymlinksInPath().path
+        == URL(fileURLWithPath: processPath).resolvingSymlinksInPath().path
 }
 
 func frontmostPID() throws -> Int32 {
     let bundleID = frontmostApp()["bundle_id"] as? String ?? "com.apple.springboard"
     let processes = try listProcesses(filter: nil)["processes"] as? [[String: Any]] ?? []
-    if bundleID == "com.apple.springboard", let process = processes.first(where: { $0["name"] as? String == "SpringBoard" }), let pid = process["pid"] as? Int {
+    if bundleID == "com.apple.springboard",
+       let process = processes.first(where: { $0["name"] as? String == "SpringBoard" }),
+       let pid = process["pid"] as? Int
+    {
         return Int32(pid)
     }
     let app = try appInfo(bundleID)
@@ -110,10 +114,16 @@ public func killApp(_ bundleID: String, force: Bool) throws -> [String: Any] {
 
 /// Installs a .deb, registers a .app, or installs an .ipa into the
 /// bootstrap's /Applications or, with `container`, into its own app container.
-public func installPackage(_ path: String, container: Bool = false, registration: AppRegistrationType = .user) throws -> [String: Any] {
+public func installPackage(
+    _ path: String,
+    container: Bool = false,
+    registration: AppRegistrationType = .user
+) throws -> [String: Any] {
     guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package not found: \(path)") }
     if container {
-        guard path.lowercased().hasSuffix(".ipa") else { throw IcliError.failed("--container installs only .ipa files") }
+        guard path.lowercased().hasSuffix(".ipa") else {
+            throw IcliError.failed("--container installs only .ipa files")
+        }
         return try installIPAInContainer(path, registration: registration)
     }
     if path.lowercased().hasSuffix(".deb") {
@@ -151,10 +161,14 @@ public func appRegistration(_ path: String) throws -> [String: Any] {
 }
 
 public func registerApp(_ path: String) throws -> [String: Any] {
-    guard FileManager.default.fileExists(atPath: path + "/Info.plist") else { throw IcliError.failed("not an app bundle: \(path)") }
+    guard FileManager.default.fileExists(atPath: path + "/Info.plist") else {
+        throw IcliError.failed("not an app bundle: \(path)")
+    }
     guard icli_register_app(path) else { throw IcliError.failed("register failed: \(path)") }
     var record = try appRegistration(path)
-    guard record["registered"] as? Bool == true else { throw IcliError.failed("LaunchServices did not list the app after registration: \(path)") }
+    guard record["registered"] as? Bool == true else {
+        throw IcliError.failed("LaunchServices did not list the app after registration: \(path)")
+    }
     record["path"] = path
     return record
 }
@@ -164,9 +178,13 @@ public func unregisterApp(_ path: String, force: Bool) throws -> [String: Any] {
         throw IcliError.forceRequired("unregister \(path)")
     }
     let before = try appRegistration(path)
-    guard before["registered"] as? Bool == true else { return ["unregistered": false, "path": path, "message": "app is not registered"] }
+    guard before["registered"] as? Bool == true else {
+        return ["unregistered": false, "path": path, "message": "app is not registered"]
+    }
     guard icli_unregister_app(path) else { throw IcliError.failed("unregister failed: \(path)") }
-    guard try appRegistration(path)["registered"] as? Bool == false else { throw IcliError.failed("LaunchServices still lists the app after unregistration: \(path)") }
+    guard try appRegistration(path)["registered"] as? Bool == false else {
+        throw IcliError.failed("LaunchServices still lists the app after unregistration: \(path)")
+    }
     return ["unregistered": true, "path": path, "bundle_id": before["bundle_id"] ?? ""]
 }
 
@@ -179,7 +197,12 @@ public func refreshApps(directory: String?) throws -> [String: Any] {
     let result = try decodeBridgeJSON(takeCString(icli_apps_refresh_json(root)), "application response")
     let failed = result["failed"] as? [String] ?? []
     let unverified = result["unverified"] as? [String] ?? []
-    guard failed.isEmpty, unverified.isEmpty else { throw IcliError.commandFailed(result.merging(["error": "refresh_incomplete", "message": "\(failed.count) failed, \(unverified.count) unverified"]) { $1 }) }
+    guard failed.isEmpty, unverified.isEmpty else {
+        throw IcliError.commandFailed(result.merging([
+            "error": "refresh_incomplete",
+            "message": "\(failed.count) failed, \(unverified.count) unverified"
+        ]) { $1 })
+    }
     return result
 }
 
@@ -187,10 +210,18 @@ public func unregisterAppsInDirectory(_ directory: String, force: Bool) throws -
     if !force {
         throw IcliError.forceRequired("unregister every app in \(directory)")
     }
-    let result = try decodeBridgeJSON(takeCString(icli_apps_unregister_directory_json(directory)), "application response")
+    let result = try decodeBridgeJSON(
+        takeCString(icli_apps_unregister_directory_json(directory)),
+        "application response"
+    )
     let failed = result["failed"] as? [String] ?? []
     let unverified = result["unverified"] as? [String] ?? []
-    guard failed.isEmpty, unverified.isEmpty else { throw IcliError.commandFailed(result.merging(["error": "unregister_incomplete", "message": "\(failed.count) failed, \(unverified.count) unverified"]) { $1 }) }
+    guard failed.isEmpty, unverified.isEmpty else {
+        throw IcliError.commandFailed(result.merging([
+            "error": "unregister_incomplete",
+            "message": "\(failed.count) failed, \(unverified.count) unverified"
+        ]) { $1 })
+    }
     return result
 }
 

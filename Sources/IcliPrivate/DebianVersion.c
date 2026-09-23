@@ -14,7 +14,9 @@ static int sign(int value) { return (value > 0) - (value < 0); }
 static int isBlank(unsigned char c) { return c == ' ' || c == '\t'; }
 static int isDigit(unsigned char c) { return c >= '0' && c <= '9'; }
 static int isAlpha(unsigned char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-static unsigned char at(VersionPart part, size_t index) { return index < part.length ? (unsigned char)part.bytes[index] : '\0'; }
+static unsigned char at(VersionPart part, size_t index) {
+    return index < part.length ? (unsigned char)part.bytes[index] : '\0';
+}
 
 static size_t find(VersionPart part, unsigned char c) {
     for (size_t i = 0; i < part.length; i++) if ((unsigned char)part.bytes[i] == c) return i;

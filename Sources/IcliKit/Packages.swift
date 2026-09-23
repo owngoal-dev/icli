@@ -11,12 +11,16 @@ import IcliSystem
 // registered natively instead.
 
 private func validPackageName(_ name: String) throws {
-    guard name.range(of: "^[a-z0-9][a-z0-9+.-]+$", options: .regularExpression) != nil else { throw IcliError.failed("invalid package identifier") }
+    guard name.range(of: "^[a-z0-9][a-z0-9+.-]+$", options: .regularExpression) != nil else {
+        throw IcliError.failed("invalid package identifier")
+    }
 }
 
 /// Control metadata, maintainer scripts and the file list of a .deb, read without dpkg.
 public func readDeb(_ path: String) throws -> [String: Any] {
-    guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package file not found: \(path)") }
+    guard FileManager.default.fileExists(atPath: path) else {
+        throw IcliError.failed("package file not found: \(path)")
+    }
     var result = try decodeBridgeJSON(takeCString(icli_deb_read_json(path, nil)), "package response")
     result.removeValue(forKey: "control_texts")
     return result
@@ -24,10 +28,16 @@ public func readDeb(_ path: String) throws -> [String: Any] {
 
 /// Unpacks control files to `<destination>/DEBIAN` and payload files below `destination`.
 public func extractDeb(_ path: String, to destination: String) throws -> [String: Any] {
-    guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package file not found: \(path)") }
+    guard FileManager.default.fileExists(atPath: path) else {
+        throw IcliError.failed("package file not found: \(path)")
+    }
     let existing = (try? FileManager.default.contentsOfDirectory(atPath: destination)) ?? []
     guard existing.isEmpty else { throw IcliError.failed("destination must be empty or absent: \(destination)") }
-    try FileManager.default.createDirectory(atPath: destination, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+    try FileManager.default.createDirectory(
+        atPath: destination,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o755]
+    )
     var result = try decodeBridgeJSON(takeCString(icli_deb_read_json(path, destination)), "package response")
     result.removeValue(forKey: "control_texts")
     return result
@@ -35,8 +45,15 @@ public func extractDeb(_ path: String, to destination: String) throws -> [String
 
 public func compareDebianVersions(_ left: String, _ right: String) throws -> [String: Any] {
     var comparison: Int32 = 0
-    guard icli_compare_debian_versions(left, right, &comparison) != 0 else { throw IcliError.failed("invalid Debian version string") }
-    return ["left": left, "right": right, "comparison": Int(comparison), "relation": comparison < 0 ? "lt" : comparison > 0 ? "gt" : "eq"]
+    guard icli_compare_debian_versions(left, right, &comparison) != 0 else {
+        throw IcliError.failed("invalid Debian version string")
+    }
+    return [
+        "left": left,
+        "right": right,
+        "comparison": Int(comparison),
+        "relation": comparison < 0 ? "lt" : comparison > 0 ? "gt" : "eq"
+    ]
 }
 
 // MARK: dpkg database
@@ -69,7 +86,11 @@ private struct Stanza {
         self.order = order
     }
 
-    static let preferredOrder = ["Package", "Status", "Priority", "Section", "Installed-Size", "Maintainer", "Architecture", "Multi-Arch", "Source", "Version", "Replaces", "Provides", "Depends", "Pre-Depends", "Recommends", "Suggests", "Breaks", "Conflicts", "Conffiles", "Description"]
+    static let preferredOrder = [
+        "Package", "Status", "Priority", "Section", "Installed-Size", "Maintainer", "Architecture", "Multi-Arch",
+        "Source", "Version", "Replaces", "Provides", "Depends", "Pre-Depends", "Recommends", "Suggests", "Breaks",
+        "Conflicts", "Conffiles", "Description"
+    ]
 
     /// dpkg's field order: the well-known fields first, then everything else as it appeared.
     static func compose(_ fields: [String: String], order: [String]) -> Stanza {
@@ -102,7 +123,10 @@ private struct DpkgDatabase {
         directory = JailbreakRoot.current.jbrootPath("/var/lib/dpkg")
         let path = directory + "/status"
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { throw IcliError.missing(path) }
-        stanzas = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .newlines) }.filter { !$0.isEmpty }.map(Stanza.init(raw:))
+        stanzas = text.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .newlines) }
+            .filter { !$0.isEmpty }
+            .map(Stanza.init(raw:))
     }
 
     func stanza(_ name: String) -> Stanza? {
@@ -209,7 +233,9 @@ private func infoPath(_ database: DpkgDatabase, _ name: String, _ suffix: String
 }
 
 private func fileList(_ database: DpkgDatabase, _ name: String) -> [String] {
-    ((try? String(contentsOfFile: infoPath(database, name, "list"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+    ((try? String(contentsOfFile: infoPath(database, name, "list"), encoding: .utf8)) ?? "")
+        .split(separator: "\n")
+        .map(String.init)
 }
 
 private func conffileList(_ text: String) -> [String] {
@@ -224,7 +250,9 @@ private enum Deletion { case removed, skipped, failed }
 private func deletePackagePath(_ full: String) -> Deletion {
     var info = stat(), resolved = stat()
     guard lstat(full, &info) == 0 else { return .skipped }
-    if (info.st_mode & S_IFMT) == S_IFDIR || (stat(full, &resolved) == 0 && (resolved.st_mode & S_IFMT) == S_IFDIR && (info.st_mode & S_IFMT) == S_IFLNK) {
+    if (info.st_mode & S_IFMT) == S_IFDIR
+        || (stat(full, &resolved) == 0 && (resolved.st_mode & S_IFMT) == S_IFDIR && (info.st_mode & S_IFMT) == S_IFLNK)
+    {
         return (info.st_mode & S_IFMT) == S_IFDIR && rmdir(full) == 0 ? .removed : .skipped
     }
     return unlink(full) == 0 ? .removed : .failed
@@ -248,7 +276,9 @@ private func registerBundles(_ paths: [String]) -> ([String], [String]) {
     for path in paths where path.hasSuffix(".app") {
         let bundle = installPrefix + path
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: bundle + "/Info.plist"), FileManager.default.fileExists(atPath: bundle, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+        guard FileManager.default.fileExists(atPath: bundle + "/Info.plist"),
+              FileManager.default.fileExists(atPath: bundle, isDirectory: &isDirectory),
+              isDirectory.boolValue else { continue }
         if icli_register_app(bundle), (try? appRegistration(bundle))?["registered"] as? Bool == true {
             registered.append(bundle)
         } else {
@@ -259,7 +289,9 @@ private func registerBundles(_ paths: [String]) -> ([String], [String]) {
 }
 
 private func unregisterBundles(_ paths: [String]) -> [String] {
-    paths.filter { $0.hasSuffix(".app") }.map { installPrefix + $0 }.filter { (try? appRegistration($0))?["registered"] as? Bool == true && icli_unregister_app($0) }
+    paths.filter { $0.hasSuffix(".app") }
+        .map { installPrefix + $0 }
+        .filter { (try? appRegistration($0))?["registered"] as? Bool == true && icli_unregister_app($0) }
 }
 
 /// Installed packages from the status database.
@@ -267,8 +299,17 @@ public func listPackages(filter: String?) throws -> [String: Any] {
     let database = try DpkgDatabase()
     var rows: [[String: Any]] = []
     for stanza in database.stanzas where stanza.installed {
-        let row: [String: Any] = ["package": stanza.package ?? "", "name": stanza.fields["Name"] ?? "", "version": stanza.fields["Version"] ?? "", "architecture": stanza.fields["Architecture"] ?? "", "section": stanza.fields["Section"] ?? "", "status": stanza.fields["Status"] ?? ""]
-        if let filter, !(row["package"] as! String).localizedCaseInsensitiveContains(filter), !(row["name"] as! String).localizedCaseInsensitiveContains(filter) {
+        let row: [String: Any] = [
+            "package": stanza.package ?? "",
+            "name": stanza.fields["Name"] ?? "",
+            "version": stanza.fields["Version"] ?? "",
+            "architecture": stanza.fields["Architecture"] ?? "",
+            "section": stanza.fields["Section"] ?? "",
+            "status": stanza.fields["Status"] ?? ""
+        ]
+        if let filter, !(row["package"] as! String).localizedCaseInsensitiveContains(filter),
+           !(row["name"] as! String).localizedCaseInsensitiveContains(filter)
+        {
             continue
         }
         rows.append(row)
@@ -281,7 +322,16 @@ public func packageStatus(_ name: String) throws -> [String: Any] {
     try validPackageName(name)
     let database = try DpkgDatabase()
     guard let stanza = database.stanza(name) else { return ["package": name, "known": false, "installed": false] }
-    return ["package": name, "known": true, "installed": stanza.installed, "status": stanza.fields["Status"] ?? "", "version": stanza.fields["Version"] ?? "", "architecture": stanza.fields["Architecture"] ?? "", "fields": stanza.fields, "files": fileList(database, name)]
+    return [
+        "package": name,
+        "known": true,
+        "installed": stanza.installed,
+        "status": stanza.fields["Status"] ?? "",
+        "version": stanza.fields["Version"] ?? "",
+        "architecture": stanza.fields["Architecture"] ?? "",
+        "fields": stanza.fields,
+        "files": fileList(database, name)
+    ]
 }
 
 /// Native install of a local .deb: dependency and architecture checks, files
@@ -289,20 +339,31 @@ public func packageStatus(_ name: String) throws -> [String: Any] {
 /// previous version's stale files removed, dpkg's database updated, and app
 /// bundles registered. Maintainer scripts are recorded, not run.
 public func installDebFile(_ path: String, ignoreDependencies: Bool = false) throws -> [String: Any] {
-    guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package file not found: \(path)") }
+    guard FileManager.default.fileExists(atPath: path) else {
+        throw IcliError.failed("package file not found: \(path)")
+    }
     let metadata = try decodeBridgeJSON(takeCString(icli_deb_read_json(path, nil)), "package response")
     let control = metadata["control"] as? [String: String] ?? [:]
     var texts = metadata["control_texts"] as? [String: String] ?? [:]
-    guard let name = control["Package"], let version = control["Version"] else { throw IcliError.failed("deb control lacks Package or Version") }
+    guard let name = control["Package"], let version = control["Version"] else {
+        throw IcliError.failed("deb control lacks Package or Version")
+    }
     try validPackageName(name)
     let architecture = control["Architecture"] ?? ""
-    guard acceptedArchitectures().contains(architecture) else { throw IcliError.failed("package architecture \(architecture) does not match the \(JailbreakRoot.current.layout.rawValue) bootstrap") }
+    guard acceptedArchitectures().contains(architecture) else {
+        throw IcliError.failed("package architecture \(architecture) does not match the \(JailbreakRoot.current.layout.rawValue) bootstrap")
+    }
     var database = try DpkgDatabase()
     try database.acquireLock()
     defer { database.releaseLock() }
     let unmet = unmetDependencies(control, database: database)
     if !unmet.isEmpty && !ignoreDependencies {
-        throw IcliError.commandFailed(["package": name, "error": "unmet_dependencies", "message": "dependencies not installed: " + unmet.joined(separator: ", "), "unmet": unmet])
+        throw IcliError.commandFailed([
+            "package": name,
+            "error": "unmet_dependencies",
+            "message": "dependencies not installed: " + unmet.joined(separator: ", "),
+            "unmet": unmet
+        ])
     }
     let previous = database.stanza(name)
     let previousVersion = previous?.installed == true ? previous?.fields["Version"] : nil
@@ -311,7 +372,12 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     let keep = conffiles.filter { FileManager.default.fileExists(atPath: installPrefix + $0) }
     var keepPointers = keep.map { UnsafePointer<CChar>(strdup($0)) }
     defer { keepPointers.forEach { free(UnsafeMutablePointer(mutating: $0)) } }
-    let unpacked = try decodeBridgeJSON(keepPointers.withUnsafeMutableBufferPointer { buffer in takeCString(icli_deb_unpack_json(path, installPrefix, buffer.baseAddress, Int32(buffer.count))) }, "package response")
+    let unpacked = try decodeBridgeJSON(
+        keepPointers.withUnsafeMutableBufferPointer { buffer in
+            takeCString(icli_deb_unpack_json(path, installPrefix, buffer.baseAddress, Int32(buffer.count)))
+        },
+        "package response"
+    )
     let installed = unpacked["installed"] as? [String] ?? []
 
     // Files that belonged to the previous version and are gone from this one.
@@ -324,12 +390,15 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
 
     let infoDirectory = database.directory + "/info"
     try FileManager.default.createDirectory(atPath: infoDirectory, withIntermediateDirectories: true)
-    try (installed.joined(separator: "\n") + "\n").write(toFile: infoPath(database, name, "list"), atomically: true, encoding: .utf8)
+    try (installed.joined(separator: "\n") + "\n")
+        .write(toFile: infoPath(database, name, "list"), atomically: true, encoding: .utf8)
     if texts["md5sums"] == nil {
         // dpkg generates md5sums for packages that ship none.
         texts["md5sums"] = installed.compactMap { path -> String? in
             var info = stat()
-            guard path != "/.", !conffiles.contains(path), lstat(installPrefix + path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, let digest = takeCString(icli_file_md5(installPrefix + path)) else { return nil }
+            guard path != "/.", !conffiles.contains(path), lstat(installPrefix + path, &info) == 0,
+                  (info.st_mode & S_IFMT) == S_IFREG,
+                  let digest = takeCString(icli_file_md5(installPrefix + path)) else { return nil }
             return "\(digest)  \(path.dropFirst())"
         }.joined(separator: "\n") + "\n"
     }
@@ -351,7 +420,9 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     fields["Status"] = "install ok installed"
     if !conffiles.isEmpty {
         // dpkg writes "Conffiles:" followed by one indented " path md5" line per file.
-        fields["Conffiles"] = "\n" + conffiles.map { "\($0) \(takeCString(icli_file_md5(installPrefix + $0)) ?? "newconffile")" }.joined(separator: "\n")
+        fields["Conffiles"] = "\n" + conffiles.map {
+            "\($0) \(takeCString(icli_file_md5(installPrefix + $0)) ?? "newconffile")"
+        }.joined(separator: "\n")
     }
     let order = (metadata["control_order"] as? [String]) ?? Array(control.keys)
     let stanza = Stanza.compose(fields, order: order)
@@ -364,15 +435,34 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
 
     let (registered, registrationFailed) = registerBundles(installed)
     let verification = try packageStatus(name)
-    guard verification["installed"] as? Bool == true, verification["version"] as? String == version else { throw IcliError.failed("status database does not show \(name) \(version) installed after the transaction") }
+    guard verification["installed"] as? Bool == true, verification["version"] as? String == version else {
+        throw IcliError.failed("status database does not show \(name) \(version) installed after the transaction")
+    }
     var result: String
     if let previousVersion {
         var comparison: Int32 = 0
-        result = icli_compare_debian_versions(previousVersion, version, &comparison) == 0 ? "installed" : comparison == 0 ? "reinstalled" : comparison < 0 ? "upgraded" : "downgraded"
+        result = icli_compare_debian_versions(previousVersion, version, &comparison) == 0
+            ? "installed"
+            : comparison == 0 ? "reinstalled" : comparison < 0 ? "upgraded" : "downgraded"
     } else {
         result = "installed"
     }
-    var payload: [String: Any] = ["package": name, "version": version, "architecture": architecture, "path": path, "result": result, "previous_version": previousVersion ?? "", "status": verification["status"] ?? "", "files": installed.count, "kept_conffiles": unpacked["kept"] ?? [], "removed_stale_files": removedStale, "scripts_not_run": scripts.sorted(), "registered_apps": registered, "unmet_dependencies": unmet, "completion": scripts.isEmpty && registrationFailed.isEmpty ? "complete" : "partial"]
+    var payload: [String: Any] = [
+        "package": name,
+        "version": version,
+        "architecture": architecture,
+        "path": path,
+        "result": result,
+        "previous_version": previousVersion ?? "",
+        "status": verification["status"] ?? "",
+        "files": installed.count,
+        "kept_conffiles": unpacked["kept"] ?? [],
+        "removed_stale_files": removedStale,
+        "scripts_not_run": scripts.sorted(),
+        "registered_apps": registered,
+        "unmet_dependencies": unmet,
+        "completion": scripts.isEmpty && registrationFailed.isEmpty ? "complete" : "partial"
+    ]
     if !registrationFailed.isEmpty {
         payload["registration_failed"] = registrationFailed
     }
@@ -384,11 +474,15 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
 public func removeDeb(_ name: String, purge: Bool = false) throws -> [String: Any] {
     try validPackageName(name)
     var database = try DpkgDatabase()
-    guard let stanza = database.stanza(name), stanza.installed || purge else { return ["package": name, "removed": false, "message": "package is not installed"] }
+    guard let stanza = database.stanza(name), stanza.installed || purge else {
+        return ["package": name, "removed": false, "message": "package is not installed"]
+    }
     try database.acquireLock()
     defer { database.releaseLock() }
     let files = fileList(database, name)
-    let conffiles = purge ? [] : conffileList((try? String(contentsOfFile: infoPath(database, name, "conffiles"), encoding: .utf8)) ?? "")
+    let conffiles = purge
+        ? []
+        : conffileList((try? String(contentsOfFile: infoPath(database, name, "conffiles"), encoding: .utf8)) ?? "")
     let scripts = ["prerm", "postrm"].filter { FileManager.default.fileExists(atPath: infoPath(database, name, $0)) }
     let unregistered = unregisterBundles(files)
     var removed: [String] = [], failed: [String] = []
@@ -399,9 +493,17 @@ public func removeDeb(_ name: String, purge: Bool = false) throws -> [String: An
         case .skipped: break
         }
     }
-    guard failed.isEmpty else { throw IcliError.commandFailed(["package": name, "error": "remove_failed", "message": "could not delete \(failed.count) file(s)", "failed": failed]) }
+    guard failed.isEmpty else {
+        throw IcliError.commandFailed([
+            "package": name,
+            "error": "remove_failed",
+            "message": "could not delete \(failed.count) file(s)",
+            "failed": failed
+        ])
+    }
     let infoDirectory = database.directory + "/info/"
-    let infoFiles = ((try? FileManager.default.contentsOfDirectory(atPath: infoDirectory)) ?? []).filter { $0.hasPrefix(name + ".") }
+    let infoFiles = ((try? FileManager.default.contentsOfDirectory(atPath: infoDirectory)) ?? [])
+        .filter { $0.hasPrefix(name + ".") }
     if conffiles.isEmpty {
         for file in infoFiles {
             try? FileManager.default.removeItem(atPath: infoDirectory + file)
@@ -411,7 +513,8 @@ public func removeDeb(_ name: String, purge: Bool = false) throws -> [String: An
         for file in infoFiles where !["list", "conffiles", "postrm", "md5sums"].contains(String(file.dropFirst(name.count + 1))) {
             try? FileManager.default.removeItem(atPath: infoDirectory + file)
         }
-        try (conffiles.joined(separator: "\n") + "\n").write(toFile: infoPath(database, name, "list"), atomically: true, encoding: .utf8)
+        try (conffiles.joined(separator: "\n") + "\n")
+            .write(toFile: infoPath(database, name, "list"), atomically: true, encoding: .utf8)
         var fields = stanza.fields
         fields["Status"] = "deinstall ok config-files"
         if let index = database.stanzas.firstIndex(where: { $0.package == name }) {
@@ -420,6 +523,18 @@ public func removeDeb(_ name: String, purge: Bool = false) throws -> [String: An
     }
     try database.save()
     let after = try packageStatus(name)
-    guard after["installed"] as? Bool == false else { throw IcliError.failed("status database still shows \(name) installed") }
-    return ["package": name, "removed": true, "previous_version": stanza.fields["Version"] ?? "", "status": after["status"] ?? "not-installed", "files_removed": removed.count, "kept_conffiles": conffiles, "unregistered_apps": unregistered, "scripts_not_run": scripts, "completion": scripts.isEmpty ? "complete" : "partial"]
+    guard after["installed"] as? Bool == false else {
+        throw IcliError.failed("status database still shows \(name) installed")
+    }
+    return [
+        "package": name,
+        "removed": true,
+        "previous_version": stanza.fields["Version"] ?? "",
+        "status": after["status"] ?? "not-installed",
+        "files_removed": removed.count,
+        "kept_conffiles": conffiles,
+        "unregistered_apps": unregistered,
+        "scripts_not_run": scripts,
+        "completion": scripts.isEmpty ? "complete" : "partial"
+    ]
 }

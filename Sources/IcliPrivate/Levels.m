@@ -38,7 +38,9 @@ static id brightnessClient(void) {
 
 int icli_auto_brightness(void) {
     id client = brightnessClient();
-    id value = client ? ((id (*)(id, SEL, id))objc_msgSend)(client, @selector(copyPropertyForKey:), @"DisplayBrightnessAuto") : nil;
+    id value = client
+        ? ((id (*)(id, SEL, id))objc_msgSend)(client, @selector(copyPropertyForKey:), @"DisplayBrightnessAuto")
+        : nil;
     return [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : -1;
 }
 
@@ -52,7 +54,12 @@ static bool setUserBrightness(double value) {
         return false;
     }
     NSDictionary *request = @{@"Brightness": @(value), @"Commit": @YES};
-    return ((BOOL (*)(id, SEL, id, id))objc_msgSend)(client, @selector(setProperty:forKey:), request, @"DisplayBrightness");
+    return ((BOOL (*)(id, SEL, id, id))objc_msgSend)(
+        client,
+        @selector(setProperty:forKey:),
+        request,
+        @"DisplayBrightness"
+    );
 }
 
 // backboardd honours BKSDisplayBrightnessSet only from clients holding

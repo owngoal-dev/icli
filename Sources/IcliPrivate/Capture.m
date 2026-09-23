@@ -50,7 +50,8 @@ static bool parseFilter(const char *text, CaptureFilter *filter) {
     filter->protocol = -1;
     filter->port = filter->srcPort = filter->dstPort = -1;
     if (!text || !*text) return true;
-    NSArray *tokens = [[@(text) componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet] filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
+    NSArray *tokens = [[@(text) componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet]
+        filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
     int direction = 0; // 0 either, 1 src, 2 dst
     for (NSUInteger i = 0; i < tokens.count; i++) {
         NSString *token = [tokens[i] lowercaseString];
@@ -68,7 +69,11 @@ static bool parseFilter(const char *text, CaptureFilter *filter) {
             *(direction == 1 ? &filter->srcPort : direction == 2 ? &filter->dstPort : &filter->port) = port;
         } else if ([token isEqualToString:@"host"]) {
             if (value.length >= 64) return false;
-            strlcpy(direction == 1 ? filter->srcHost : direction == 2 ? filter->dstHost : filter->host, value.UTF8String, 64);
+            strlcpy(
+                direction == 1 ? filter->srcHost : direction == 2 ? filter->dstHost : filter->host,
+                value.UTF8String,
+                64
+            );
         } else {
             return false;
         }
@@ -120,14 +125,21 @@ static void parsePacket(const unsigned char *bytes, size_t length, unsigned dlt,
 }
 
 static bool matchesFilter(const PacketSummary *summary, const CaptureFilter *filter) {
-    bool any = filter->protocol < 0 && filter->port < 0 && filter->srcPort < 0 && filter->dstPort < 0 && !filter->host[0] && !filter->srcHost[0] && !filter->dstHost[0];
+    bool any = filter->protocol < 0
+        && filter->port < 0
+        && filter->srcPort < 0
+        && filter->dstPort < 0
+        && !filter->host[0]
+        && !filter->srcHost[0]
+        && !filter->dstHost[0];
     if (any) return true;
     if (!summary->family) return false;
     if (filter->protocol >= 0 && summary->protocol != filter->protocol) return false;
     if (filter->port >= 0 && summary->srcPort != filter->port && summary->dstPort != filter->port) return false;
     if (filter->srcPort >= 0 && summary->srcPort != filter->srcPort) return false;
     if (filter->dstPort >= 0 && summary->dstPort != filter->dstPort) return false;
-    if (filter->host[0] && strcmp(summary->src, filter->host) != 0 && strcmp(summary->dst, filter->host) != 0) return false;
+    if (filter->host[0] && strcmp(summary->src, filter->host) != 0 && strcmp(summary->dst, filter->host) != 0)
+        return false;
     if (filter->srcHost[0] && strcmp(summary->src, filter->srcHost) != 0) return false;
     if (filter->dstHost[0] && strcmp(summary->dst, filter->dstHost) != 0) return false;
     return true;
@@ -135,13 +147,31 @@ static bool matchesFilter(const PacketSummary *summary, const CaptureFilter *fil
 
 static NSDictionary *summaryDictionary(const PacketSummary *summary, uint32_t length) {
     if (!summary->family) return @{@"protocol": @"other", @"bytes": @(length)};
-    NSString *protocol = summary->protocol == IPPROTO_TCP ? @"tcp" : summary->protocol == IPPROTO_UDP ? @"udp" : summary->protocol == IPPROTO_ICMP ? @"icmp" : summary->protocol == IPPROTO_ICMPV6 ? @"icmpv6" : [NSString stringWithFormat:@"ip-%d", summary->protocol];
-    return @{@"protocol": protocol, @"src": @(summary->src), @"dst": @(summary->dst), @"src_port": @(summary->srcPort), @"dst_port": @(summary->dstPort), @"bytes": @(length)};
+    NSString *protocol = summary->protocol == IPPROTO_TCP ? @"tcp"
+        : summary->protocol == IPPROTO_UDP ? @"udp"
+        : summary->protocol == IPPROTO_ICMP ? @"icmp"
+        : summary->protocol == IPPROTO_ICMPV6 ? @"icmpv6"
+        : [NSString stringWithFormat:@"ip-%d", summary->protocol];
+    return @{
+        @"protocol": protocol,
+        @"src": @(summary->src),
+        @"dst": @(summary->dst),
+        @"src_port": @(summary->srcPort),
+        @"dst_port": @(summary->dstPort),
+        @"bytes": @(length)
+    };
 }
 
-char *icli_capture_packets_json(const char *interface, const char *filter_text, double seconds, const char *output_path) {
+char *icli_capture_packets_json(
+    const char *interface,
+    const char *filter_text,
+    double seconds,
+    const char *output_path
+) {
     CaptureFilter filter;
-    if (!parseFilter(filter_text, &filter)) return icli_json(@{@"error": @"unsupported filter; use [tcp|udp|icmp] [src|dst] port N [src|dst] host A joined by and"});
+    if (!parseFilter(filter_text, &filter)) return icli_json(@{
+        @"error": @"unsupported filter; use [tcp|udp|icmp] [src|dst] port N [src|dst] host A joined by and"
+    });
     int fd = -1;
     for (int i = 0; i < 256 && fd < 0; i++) {
         char device[32];
@@ -149,17 +179,25 @@ char *icli_capture_packets_json(const char *interface, const char *filter_text, 
         fd = open(device, O_RDWR);
         if (fd < 0 && errno != EBUSY) break;
     }
-    if (fd < 0) return icli_json(@{@"error": [NSString stringWithFormat:@"no BPF device available: %s (root required)", strerror(errno)]});
+    if (fd < 0) return icli_json(@{
+        @"error": [NSString stringWithFormat:@"no BPF device available: %s (root required)", strerror(errno)]
+    });
     struct ifreq request = {0};
     strlcpy(request.ifr_name, interface, sizeof(request.ifr_name));
     unsigned immediate = 1, bufferLength = 0, dlt = 0;
     if (ioctl(fd, BIOCSETIF, &request) < 0 || ioctl(fd, BIOCIMMEDIATE, &immediate) < 0 || ioctl(fd, BIOCGBLEN, &bufferLength) < 0 || ioctl(fd, BIOCGDLT, &dlt) < 0) {
         int error = errno;
         close(fd);
-        return icli_json(@{@"error": [NSString stringWithFormat:@"BPF setup failed for %s: %s", interface, strerror(error)]});
+        return icli_json(@{
+            @"error": [NSString stringWithFormat:@"BPF setup failed for %s: %s", interface, strerror(error)]
+        });
     }
     FILE *output = fopen(output_path, "wb");
-    if (!output) { int error = errno; close(fd); return icli_json(@{@"error": [NSString stringWithFormat:@"cannot write %s: %s", output_path, strerror(error)]}); }
+    if (!output) {
+        int error = errno;
+        close(fd);
+        return icli_json(@{@"error": [NSString stringWithFormat:@"cannot write %s: %s", output_path, strerror(error)]});
+    }
     // pcap magic, version 2.4, time zone, sigfigs, snap length, link type.
     uint32_t header[6] = {0xa1b2c3d4, 0x00040002, 0, 0, 65535, dlt};
     fwrite(header, sizeof(header), 1, output);
@@ -179,7 +217,12 @@ char *icli_capture_packets_json(const char *interface, const char *filter_text, 
             PacketSummary summary;
             parsePacket(packet, record->bh_caplen, dlt, &summary);
             if (matchesFilter(&summary, &filter)) {
-                uint32_t recordHeader[4] = {(uint32_t)record->bh_tstamp.tv_sec, (uint32_t)record->bh_tstamp.tv_usec, record->bh_caplen, record->bh_datalen};
+                uint32_t recordHeader[4] = {
+                    (uint32_t)record->bh_tstamp.tv_sec,
+                    (uint32_t)record->bh_tstamp.tv_usec,
+                    record->bh_caplen,
+                    record->bh_datalen
+                };
                 fwrite(recordHeader, sizeof(recordHeader), 1, output);
                 fwrite(packet, record->bh_caplen, 1, output);
                 count++;
@@ -192,7 +235,18 @@ char *icli_capture_packets_json(const char *interface, const char *filter_text, 
     free(buffer);
     close(fd);
     bool flushed = fclose(output) == 0;
-    NSString *linkType = dlt == DLT_NULL ? @"null" : dlt == DLT_EN10MB ? @"ethernet" : dlt == DLT_RAW ? @"raw" : [NSString stringWithFormat:@"dlt-%u", dlt];
+    NSString *linkType = dlt == DLT_NULL ? @"null"
+        : dlt == DLT_EN10MB ? @"ethernet"
+        : dlt == DLT_RAW ? @"raw"
+        : [NSString stringWithFormat:@"dlt-%u", dlt];
     if (!flushed) return icli_json(@{@"error": @"capture file could not be written"});
-    return icli_json(@{@"path": @(output_path), @"interface": @(interface), @"link_type": linkType, @"filter": filter_text ? @(filter_text) : @"", @"packets": @(count), @"bytes": @(bytes), @"summary": packets});
+    return icli_json(@{
+        @"path": @(output_path),
+        @"interface": @(interface),
+        @"link_type": linkType,
+        @"filter": filter_text ? @(filter_text) : @"",
+        @"packets": @(count),
+        @"bytes": @(bytes),
+        @"summary": packets
+    });
 }

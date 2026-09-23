@@ -21,7 +21,9 @@ public func listTweaks() throws -> [String: Any] {
     var dylibs: [String] = []
     for dir in dirs {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-        dylibs.append(contentsOf: names.filter { $0.hasSuffix(".dylib") }.map { (dir as NSString).appendingPathComponent($0) })
+        dylibs.append(
+            contentsOf: names.filter { $0.hasSuffix(".dylib") }.map { (dir as NSString).appendingPathComponent($0) }
+        )
     }
     return ["tweaks": dylibs]
 }

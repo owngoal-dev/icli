@@ -25,7 +25,9 @@ public func launchdStatusError(_ result: [String: Any], _ action: String) -> Icl
 /// form that iOS gives app processes, so `:` and brackets are part of a valid
 /// label; whitespace, slashes and control bytes are not.
 public func validateServiceLabel(_ label: String) throws {
-    guard label.range(of: "^[A-Za-z0-9][A-Za-z0-9._:\\[\\]-]{0,200}$", options: .regularExpression) != nil else { throw IcliError.failed("invalid service label") }
+    guard label.range(of: "^[A-Za-z0-9][A-Za-z0-9._:\\[\\]-]{0,200}$", options: .regularExpression) != nil else {
+        throw IcliError.failed("invalid service label")
+    }
 }
 
 public func validateEnvironmentKey(_ key: String) throws {
@@ -85,7 +87,13 @@ public func serviceStatus(_ label: String) throws -> [String: Any] {
     }
     let overrides = disabled["disabled"] as? [String: Bool] ?? [:]
     let listed = try decodeBridgeJSON(takeCString(icli_launchd_service_json(label)), "launchd response")
-    var payload: [String: Any] = ["label": label, "enabled": !(overrides[label] ?? false), "override": overrides[label] != nil, "loaded": false, "running": false]
+    var payload: [String: Any] = [
+        "label": label,
+        "enabled": !(overrides[label] ?? false),
+        "override": overrides[label] != nil,
+        "loaded": false,
+        "running": false
+    ]
     var domains: [String] = []
     try forEachLaunchdDomain(in: listed) { domain, record in
         let service = record["service"] as? [String: Any] ?? [:]

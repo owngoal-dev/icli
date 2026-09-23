@@ -30,7 +30,9 @@ func machOInfo(at path: String) throws -> [String: Any] {
     guard try u32(base) == 0xFEED_FACF else { throw IcliError.failed("expected a 64-bit Mach-O") }
     let count = try Int(u32(base + 16)), bytes = try Int(u32(base + 20))
     var offset = base + 32
-    guard bytes <= data.count - offset, count <= bytes / 8 else { throw IcliError.failed("invalid Mach-O load commands") }
+    guard bytes <= data.count - offset, count <= bytes / 8 else {
+        throw IcliError.failed("invalid Mach-O load commands")
+    }
     let end = offset + bytes
     var encrypted = false
     var entitlements: [String: Any] = [:]
@@ -45,11 +47,15 @@ func machOInfo(at path: String) throws -> [String: Any] {
         if command == 0x1D {
             guard size >= 16 else { throw IcliError.failed("invalid signature command") }
             let signature = try base + Int(u32(offset + 8)), length = try Int(u32(offset + 12))
-            guard length >= 12, signature <= data.count - length else { throw IcliError.failed("invalid signature bounds") }
+            guard length >= 12, signature <= data.count - length else {
+                throw IcliError.failed("invalid signature bounds")
+            }
             if try u32(signature, bigEndian: true) == 0xFADE_0CC0 {
                 let blobLength = try Int(u32(signature + 4, bigEndian: true))
                 let slots = try Int(u32(signature + 8, bigEndian: true))
-                guard blobLength <= length, blobLength >= 12, slots <= (blobLength - 12) / 8 else { throw IcliError.failed("invalid signature index") }
+                guard blobLength <= length, blobLength >= 12, slots <= (blobLength - 12) / 8 else {
+                    throw IcliError.failed("invalid signature index")
+                }
                 for i in 0 ..< slots {
                     let entry = signature + 12 + i * 8
                     if try u32(entry, bigEndian: true) != 5 {
@@ -60,8 +66,13 @@ func machOInfo(at path: String) throws -> [String: Any] {
                     let blob = signature + relative
                     guard try u32(blob, bigEndian: true) == 0xFADE_7171 else { continue }
                     let size = try Int(u32(blob + 4, bigEndian: true))
-                    guard size >= 8, size <= blobLength - relative else { throw IcliError.failed("invalid entitlement size") }
-                    entitlements = try PropertyListSerialization.propertyList(from: data.subdata(in: blob + 8 ..< blob + size), format: nil) as? [String: Any] ?? [:]
+                    guard size >= 8, size <= blobLength - relative else {
+                        throw IcliError.failed("invalid entitlement size")
+                    }
+                    entitlements = try PropertyListSerialization.propertyList(
+                        from: data.subdata(in: blob + 8 ..< blob + size),
+                        format: nil
+                    ) as? [String: Any] ?? [:]
                 }
             }
         }

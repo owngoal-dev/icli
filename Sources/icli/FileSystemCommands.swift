@@ -11,7 +11,10 @@ struct FS: ParsableCommand {
 
 extension FS {
     struct PlistSet: ParsableCommand {
-        static var configuration = CommandConfiguration(commandName: "plist-set", abstract: "Set (JSON value) or remove (--remove) one top-level plist key")
+        static var configuration = CommandConfiguration(
+            commandName: "plist-set",
+            abstract: "Set (JSON value) or remove (--remove) one top-level plist key"
+        )
         @OptionGroup var output: OutputOptions
         @Argument var path: String
         @Argument var key: String
@@ -45,7 +48,9 @@ extension FS {
     }
 
     struct Link: ParsableCommand {
-        static var configuration = CommandConfiguration(abstract: "Create a symbolic link at <link> pointing to <target>")
+        static var configuration = CommandConfiguration(
+            abstract: "Create a symbolic link at <link> pointing to <target>"
+        )
         @OptionGroup var output: OutputOptions
         @Argument var target: String
         @Argument var link: String

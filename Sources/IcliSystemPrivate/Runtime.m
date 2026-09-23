@@ -23,8 +23,12 @@ static char *runtimeJSON(NSDictionary *value) {
 static void resolveBootstrap(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        NSArray *libraries = @[@"@executable_path/../lib/libroot.dylib",
-            @"@executable_path/.jbroot/usr/lib/libroot.dylib", @"/var/jb/usr/lib/libroot.dylib", @"/usr/lib/libroot.dylib"];
+        NSArray *libraries = @[
+            @"@executable_path/../lib/libroot.dylib",
+            @"@executable_path/.jbroot/usr/lib/libroot.dylib",
+            @"/var/jb/usr/lib/libroot.dylib",
+            @"/usr/lib/libroot.dylib"
+        ];
         for (NSString *path in libraries) {
             void *handle = dlopen(path.UTF8String, RTLD_NOW | RTLD_LOCAL);
             if (!handle) continue;
@@ -59,7 +63,8 @@ static void resolveBootstrap(void) {
             char executable[PATH_MAX];
             uint32_t size = sizeof(executable);
             if (_NSGetExecutablePath(executable, &size) == 0) {
-                NSString *link = [[@(executable) stringByDeletingLastPathComponent] stringByAppendingPathComponent:@".jbroot"];
+                NSString *link =
+                    [[@(executable) stringByDeletingLastPathComponent] stringByAppendingPathComponent:@".jbroot"];
                 char resolved[PATH_MAX];
                 if (realpath(link.fileSystemRepresentation, resolved)) {
                     bootstrapPrefix = @(resolved);
@@ -79,8 +84,15 @@ static void resolveBootstrap(void) {
 
 char *icli_bootstrap_json(void) {
     resolveBootstrap();
-    NSString *layout = [rootfsPrefix isEqual:@"/rootfs"] || [bootstrapPrefix containsString:@".jbroot-"] ? @"roothide" : ([bootstrapPrefix isEqual:@"/"] ? @"rootful" : @"rootless");
-    return runtimeJSON(@{@"jbroot": bootstrapPrefix, @"rootfs": rootfsPrefix, @"layout": layout, @"source": bootstrapSource});
+    NSString *layout = [rootfsPrefix isEqual:@"/rootfs"] || [bootstrapPrefix containsString:@".jbroot-"]
+        ? @"roothide"
+        : ([bootstrapPrefix isEqual:@"/"] ? @"rootful" : @"rootless");
+    return runtimeJSON(@{
+        @"jbroot": bootstrapPrefix,
+        @"rootfs": rootfsPrefix,
+        @"layout": layout,
+        @"source": bootstrapSource
+    });
 }
 
 char *icli_jbroot_path(const char *path) {
@@ -121,7 +133,10 @@ char *icli_processes_json(void) {
         pid_t pid = processes[i].kp_proc.p_pid;
         char path[4096] = {0};
         if (pidPath) pidPath(pid, path, sizeof(path));
-        NSString *name = [[NSString alloc] initWithBytes:processes[i].kp_proc.p_comm length:strnlen(processes[i].kp_proc.p_comm, sizeof(processes[i].kp_proc.p_comm)) encoding:NSUTF8StringEncoding];
+        NSString *name =
+            [[NSString alloc] initWithBytes:processes[i].kp_proc.p_comm
+                                     length:strnlen(processes[i].kp_proc.p_comm, sizeof(processes[i].kp_proc.p_comm))
+                                   encoding:NSUTF8StringEncoding];
         [rows addObject:@{@"pid": @(pid), @"name": name ?: @"", @"executable": @(path)}];
     }
     free(processes);

@@ -68,10 +68,18 @@ static NSDictionary *serializeElement(AXElement element, BOOL fixedSpace) {
     id text = attribute(element, 2006);
     id identifier = attribute(element, 5019);
     id traitsValue = attribute(element, 2004);
-    uint64_t traits = [traitsValue respondsToSelector:@selector(unsignedLongLongValue)] ? [traitsValue unsignedLongLongValue] : 0;
+    uint64_t traits = [traitsValue respondsToSelector:@selector(unsignedLongLongValue)]
+        ? [traitsValue unsignedLongLongValue]
+        : 0;
     BOOL enabled = (traits & UIAccessibilityTraitNotEnabled) == 0;
-    BOOL clickable = enabled && frame.size.width > 0 && frame.size.height > 0 && ((traits & (UIAccessibilityTraitButton | UIAccessibilityTraitLink | UIAccessibilityTraitAdjustable)) != 0 || (traits & UIAccessibilityTraitStaticText) == 0);
-    NSString *role = (traits & UIAccessibilityTraitButton) ? @"button" : ((traits & UIAccessibilityTraitStaticText) ? @"text" : @"element");
+    BOOL clickable = enabled
+        && frame.size.width > 0
+        && frame.size.height > 0
+        && ((traits & (UIAccessibilityTraitButton | UIAccessibilityTraitLink | UIAccessibilityTraitAdjustable)) != 0
+            || (traits & UIAccessibilityTraitStaticText) == 0);
+    NSString *role = (traits & UIAccessibilityTraitButton)
+        ? @"button"
+        : ((traits & UIAccessibilityTraitStaticText) ? @"text" : @"element");
     IcliScreenMetrics metrics = icli_screen_metrics();
     CGRect screen = CGRectMake(0, 0, metrics.width, metrics.height);
     CGPoint point = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
@@ -87,10 +95,19 @@ static NSDictionary *serializeElement(AXElement element, BOOL fixedSpace) {
         @"label": [label isKindOfClass:NSString.class] ? label : @"",
         @"identifier": [identifier isKindOfClass:NSString.class] ? identifier : @"",
         @"value": [text isKindOfClass:NSString.class] || [text isKindOfClass:NSNumber.class] ? text : @"",
-        @"role": role, @"traits": @(traits), @"enabled": @(enabled), @"clickable": @(clickable),
+        @"role": role,
+        @"traits": @(traits),
+        @"enabled": @(enabled),
+        @"clickable": @(clickable),
         @"visible": @(!CGRectIsEmpty(CGRectIntersection(frame, screen))),
-        @"frame": @{@"x": @(frame.origin.x), @"y": @(frame.origin.y), @"width": @(frame.size.width), @"height": @(frame.size.height)},
-        @"x": @(point.x), @"y": @(point.y)
+        @"frame": @{
+            @"x": @(frame.origin.x),
+            @"y": @(frame.origin.y),
+            @"width": @(frame.size.width),
+            @"height": @(frame.size.height)
+        },
+        @"x": @(point.x),
+        @"y": @(point.y)
     };
 }
 
@@ -105,7 +122,10 @@ char *icli_ax_elements_json(int pid, int max_elements) {
     CFRelease(root);
     if (error || !value || CFGetTypeID(value) != CFArrayGetTypeID()) {
         if (value) CFRelease(value);
-        return icli_json(@{@"error": [NSString stringWithFormat:@"AX element query failed (%d)", error], @"pid": @(pid)});
+        return icli_json(@{
+            @"error": [NSString stringWithFormat:@"AX element query failed (%d)", error],
+            @"pid": @(pid)
+        });
     }
     NSArray *elements = CFBridgingRelease(value);
     NSMutableArray *rows = [NSMutableArray array];
@@ -113,11 +133,20 @@ char *icli_ax_elements_json(int pid, int max_elements) {
     NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 5;
     BOOL truncated = NO;
     for (id element in elements) {
-        if (rows.count >= (NSUInteger)max_elements || NSProcessInfo.processInfo.systemUptime >= deadline) { truncated = YES; break; }
+        if (rows.count >= (NSUInteger)max_elements || NSProcessInfo.processInfo.systemUptime >= deadline) {
+            truncated = YES;
+            break;
+        }
         NSDictionary *node = serializeElement((__bridge AXElement)element, fixedSpace);
         if (node) [rows addObject:node];
     }
-    return icli_json(@{@"source": @"ax", @"pid": @(pid), @"elements": rows, @"count": @(rows.count), @"truncated": @(truncated)});
+    return icli_json(@{
+        @"source": @"ax",
+        @"pid": @(pid),
+        @"elements": rows,
+        @"count": @(rows.count),
+        @"truncated": @(truncated)
+    });
 }
 
 char *icli_ax_element_at_json(int pid, double x, double y) {
@@ -129,7 +158,10 @@ char *icli_ax_element_at_json(int pid, double x, double y) {
     icli_screen_point_to_fixed(x, y, &fx, &fy);
     int error = hitTest(root, &hit, (float)fx, (float)fy);
     CFRelease(root);
-    if (error) { if (hit) CFRelease(hit); return icli_json(@{@"error": [NSString stringWithFormat:@"AX hit testing failed (%d)", error]}); }
+    if (error) {
+        if (hit) CFRelease(hit);
+        return icli_json(@{@"error": [NSString stringWithFormat:@"AX hit testing failed (%d)", error]});
+    }
     NSDictionary *node = hit ? serializeElement(hit, framesInFixedSpace(pid)) : nil;
     if (hit) CFRelease(hit);
     return icli_json(@{@"source": @"ax", @"element": node ?: @{}, @"x": @(x), @"y": @(y)});

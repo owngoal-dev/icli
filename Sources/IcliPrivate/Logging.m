@@ -40,25 +40,41 @@ char *icli_syslog_json(double seconds, const char *process, const char *level, i
         if ([levelFilter isEqual:@"fault"] && type != 0x11) return;
         SEL pidSelector = NSSelectorFromString(@"processIdentifier");
         int pid = ((int (*)(id, SEL))objc_msgSend)(event, pidSelector);
-        NSString *severity = @{@0: @"notice", @1: @"info", @2: @"debug", @16: @"error", @17: @"fault"}[@(type)] ?: @"default";
+        NSString *severity = @{@0: @"notice", @1: @"info", @2: @"debug", @16: @"error", @17: @"fault"}[@(type)]
+            ?: @"default";
         id date = logProperty(event, @"date");
         [lock lock];
         if (entries.count >= (NSUInteger)max_lines) { truncated = YES; [lock unlock]; return; }
-        [entries addObject:@{@"process": name ?: @"", @"pid": @(pid), @"message": message,
-            @"subsystem": logProperty(event, @"subsystem") ?: @"", @"category": logProperty(event, @"category") ?: @"",
-            @"level": severity, @"date": [date isKindOfClass:NSDate.class] ? [formatter stringFromDate:date] : @""}];
+        [entries addObject:@{
+            @"process": name ?: @"",
+            @"pid": @(pid),
+            @"message": message,
+            @"subsystem": logProperty(event, @"subsystem") ?: @"",
+            @"category": logProperty(event, @"category") ?: @"",
+            @"level": severity,
+            @"date": [date isKindOfClass:NSDate.class] ? [formatter stringFromDate:date] : @""
+        }];
         [lock unlock];
     };
     ((void (*)(id, SEL, id))objc_msgSend)(stream, setHandler, handler);
     ((void (*)(id, SEL))objc_msgSend)(stream, activate);
     NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + seconds;
     while (NSProcessInfo.processInfo.systemUptime < deadline) {
-        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:MIN(0.1, deadline - NSProcessInfo.processInfo.systemUptime)]];
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:MIN(
+            0.1,
+            deadline - NSProcessInfo.processInfo.systemUptime
+        )]];
     }
     ((void (*)(id, SEL))objc_msgSend)(stream, invalidate);
     [lock lock];
     NSArray *snapshot = [entries copy];
     BOOL wasTruncated = truncated;
     [lock unlock];
-    return icli_json(@{@"entries": snapshot, @"count": @(snapshot.count), @"truncated": @(wasTruncated), @"source": @"unified_log", @"seconds": @(seconds)});
+    return icli_json(@{
+        @"entries": snapshot,
+        @"count": @(snapshot.count),
+        @"truncated": @(wasTruncated),
+        @"source": @"unified_log",
+        @"seconds": @(seconds)
+    });
 }

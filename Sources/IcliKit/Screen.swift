@@ -4,10 +4,16 @@ import IcliSystem
 import UIKit
 import Vision
 
-public func takeScreenshot(path requestedPath: String? = nil, base64: Bool = false, nativeResolution: Bool = false) throws -> [String: Any] {
+public func takeScreenshot(
+    path requestedPath: String? = nil,
+    base64: Bool = false,
+    nativeResolution: Bool = false
+) throws -> [String: Any] {
     icli_private_init()
     let path = requestedPath ?? (JailbreakRoot.current.scratchDirectory() + "/icli-\(UUID().uuidString).jpg")
-    guard icli_screenshot_jpeg(path, 0.8, 800_000, nativeResolution) else { throw IcliError.failed("screenshot failed") }
+    guard icli_screenshot_jpeg(path, 0.8, 800_000, nativeResolution) else {
+        throw IcliError.failed("screenshot failed")
+    }
     defer {
         if base64, requestedPath == nil {
             try? FileManager.default.removeItem(atPath: path)
@@ -47,7 +53,14 @@ public func longPress(x: Double, y: Double, seconds: Double) throws -> [String: 
     return ["x": x, "y": y, "seconds": seconds]
 }
 
-public func swipe(x1: Double, y1: Double, x2: Double, y2: Double, seconds: Double, steps: Int = 20) throws -> [String: Any] {
+public func swipe(
+    x1: Double,
+    y1: Double,
+    x2: Double,
+    y2: Double,
+    seconds: Double,
+    steps: Int = 20
+) throws -> [String: Any] {
     try validatePoint(x1, y1)
     try validatePoint(x2, y2)
     try validateDuration(seconds, name: "seconds")
@@ -56,8 +69,15 @@ public func swipe(x1: Double, y1: Double, x2: Double, y2: Double, seconds: Doubl
     return ["from": [x1, y1], "to": [x2, y2]]
 }
 
-public func drag(points: [(Double, Double)], seconds: Double, hold: Double = 0.5, steps: Int = 20) throws -> [String: Any] {
-    guard (2 ... 1000).contains(points.count), (points.count - 1 ... 2000).contains(steps) else { throw IcliError.failed("drag needs 2–1000 points and steps >= segments, up to 2000") }
+public func drag(
+    points: [(Double, Double)],
+    seconds: Double,
+    hold: Double = 0.5,
+    steps: Int = 20
+) throws -> [String: Any] {
+    guard (2 ... 1000).contains(points.count), (points.count - 1 ... 2000).contains(steps) else {
+        throw IcliError.failed("drag needs 2–1000 points and steps >= segments, up to 2000")
+    }
     for (x, y) in points {
         try validatePoint(x, y)
     }
@@ -102,7 +122,9 @@ public func pressKey(_ name: String) throws -> [String: Any] {
                                   "tab": 0x2B, "escape": 0x29, "space": 0x2C, "up": 0x52, "down": 0x51, "left": 0x50,
                                   "right": 0x4F, "home": 0x4A, "end": 0x4D, "pageup": 0x4B, "pagedown": 0x4E]
     let parts = name.lowercased().split(separator: "+").map(String.init)
-    let modifierKeys: [String: UInt16] = ["cmd": 0xE3, "command": 0xE3, "ctrl": 0xE0, "control": 0xE0, "shift": 0xE1, "alt": 0xE2, "option": 0xE2]
+    let modifierKeys: [String: UInt16] = [
+        "cmd": 0xE3, "command": 0xE3, "ctrl": 0xE0, "control": 0xE0, "shift": 0xE1, "alt": 0xE2, "option": 0xE2
+    ]
     var modifiers: [UInt16] = []
     for part in parts.dropLast() {
         guard let key = modifierKeys[part] else { throw IcliError.failed("unknown modifier: \(part)") }
@@ -125,7 +147,9 @@ public func pressKey(_ name: String) throws -> [String: Any] {
 }
 
 public func pasteText(_ text: String) throws -> [String: Any] {
-    guard !text.isEmpty, text.utf8.count <= 64 * 1024 else { throw IcliError.failed("text must contain 1–65536 bytes") }
+    guard !text.isEmpty, text.utf8.count <= 64 * 1024 else {
+        throw IcliError.failed("text must contain 1–65536 bytes")
+    }
     guard icli_hid_text(text) else { throw IcliError.failed("Unicode HID input unavailable") }
     return ["sent": text.count, "method": "unicode_hid"]
 }
@@ -146,21 +170,36 @@ public func recognizeScreen(languages: [String], minConfidence: Float) throws ->
 }
 
 private func recognizeImage(path: String, languages: [String], minConfidence: Float) throws -> [String: Any] {
-    guard let image = UIImage(contentsOfFile: path), let cgImage = image.cgImage else { throw IcliError.failed("OCR image missing") }
+    guard let image = UIImage(contentsOfFile: path), let cgImage = image.cgImage else {
+        throw IcliError.failed("OCR image missing")
+    }
     let pointSize = pointSizeMatching(image: cgImage)
     do {
-        let blocks = try visionBlocks(in: downsampledCGImage(image, maxEdge: 1600) ?? cgImage, languages: languages, minConfidence: minConfidence, pointSize: pointSize)
+        let blocks = try visionBlocks(
+            in: downsampledCGImage(image, maxEdge: 1600) ?? cgImage,
+            languages: languages,
+            minConfidence: minConfidence,
+            pointSize: pointSize
+        )
         return ["blocks": blocks, "count": blocks.count, "engine": "vision"]
     } catch {
         throw IcliError.unavailable("System text recognition is unavailable on this device.")
     }
 }
 
-public func uiElements(maxElements: Int = 250, visibleOnly: Bool = true, clickableOnly: Bool = false, limit: Int? = nil) throws -> [String: Any] {
+public func uiElements(
+    maxElements: Int = 250,
+    visibleOnly: Bool = true,
+    clickableOnly: Bool = false,
+    limit: Int? = nil
+) throws -> [String: Any] {
     guard (1 ... 2000).contains(maxElements), limit == nil || (limit! > 0 && limit! <= 2000) else {
         throw IcliError.failed("element limits must be between 1 and 2000")
     }
-    var result = try decodeBridgeJSON(takeCString(icli_ax_elements_json(frontmostPID(), Int32(maxElements))), "AX response")
+    var result = try decodeBridgeJSON(
+        takeCString(icli_ax_elements_json(frontmostPID(), Int32(maxElements))),
+        "AX response"
+    )
     var elements = result["elements"] as? [[String: Any]] ?? []
     if visibleOnly {
         elements = elements.filter { $0["visible"] as? Bool == true }
@@ -179,16 +218,34 @@ public func uiElements(maxElements: Int = 250, visibleOnly: Bool = true, clickab
 public func describeScreen() throws -> [String: Any] {
     let frontmost = frontmostApp()
     let path = JailbreakRoot.current.scratchDirectory() + "/icli-describe-\(UUID().uuidString).jpg"
-    guard icli_screenshot_jpeg(path, 0.9, 0, true), let image = UIImage(contentsOfFile: path), let original = image.cgImage else { throw IcliError.failed("screen capture failed") }
+    guard icli_screenshot_jpeg(path, 0.9, 0, true), let image = UIImage(contentsOfFile: path),
+          let original = image.cgImage
+    else {
+        throw IcliError.failed("screen capture failed")
+    }
     defer { try? FileManager.default.removeItem(atPath: path) }
     let pointSize = pointSizeMatching(image: original)
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     format.opaque = true
-    let resized = UIGraphicsImageRenderer(size: pointSize, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: pointSize)) }
-    guard let jpeg = resized.jpegData(compressionQuality: 0.8) else { throw IcliError.failed("snapshot JPEG encoding failed") }
-    var payload: [String: Any] = ["frontmost": frontmost, "screen": screenInfo(),
-                                  "screenshot": ["data": jpeg.base64EncodedString(), "mime_type": "image/jpeg", "width": pointSize.width, "height": pointSize.height, "coordinate_scale": 1, "bytes": jpeg.count]]
+    let resized = UIGraphicsImageRenderer(size: pointSize, format: format).image { _ in
+        image.draw(in: CGRect(origin: .zero, size: pointSize))
+    }
+    guard let jpeg = resized.jpegData(compressionQuality: 0.8) else {
+        throw IcliError.failed("snapshot JPEG encoding failed")
+    }
+    var payload: [String: Any] = [
+        "frontmost": frontmost,
+        "screen": screenInfo(),
+        "screenshot": [
+            "data": jpeg.base64EncodedString(),
+            "mime_type": "image/jpeg",
+            "width": pointSize.width,
+            "height": pointSize.height,
+            "coordinate_scale": 1,
+            "bytes": jpeg.count
+        ]
+    ]
     do { payload["elements"] = try uiElements() }
     catch { payload["elements"] = ["error": error.localizedDescription] }
     do { payload["ocr"] = try recognizeImage(path: path, languages: ["zh-Hans", "en-US"], minConfidence: 0.3) }
@@ -210,8 +267,16 @@ public struct ElementSelector {
     public let match: String
     public let index: Int
 
-    public init(text: String?, identifier: String? = nil, role: String? = nil, match: String = "contains", index: Int = 0) throws {
-        guard text?.isEmpty == false || identifier?.isEmpty == false, ["contains", "exact"].contains(match), index >= 0 else {
+    public init(
+        text: String?,
+        identifier: String? = nil,
+        role: String? = nil,
+        match: String = "contains",
+        index: Int = 0
+    ) throws {
+        guard text?.isEmpty == false || identifier?.isEmpty == false, ["contains", "exact"].contains(match),
+              index >= 0
+        else {
             throw IcliError.failed("provide text or identifier, match contains/exact, and a nonnegative index")
         }
         self.text = text; self.identifier = identifier; self.role = role; self.match = match; self.index = index
@@ -233,14 +298,18 @@ public struct ElementSelector {
         guard let text else { return false }
         return ["label", "identifier", "value"].contains { key in
             let value = element[key] as? String ?? ""
-            return match == "exact" ? value.compare(text, options: .caseInsensitive) == .orderedSame : value.localizedCaseInsensitiveContains(text)
+            return match == "exact"
+                ? value.compare(text, options: .caseInsensitive) == .orderedSame
+                : value.localizedCaseInsensitiveContains(text)
         }
     }
 }
 
 private func selectedElements(_ selector: ElementSelector) throws -> [[String: Any]] {
     let result = try uiElements(maxElements: 2000)
-    guard result["truncated"] as? Bool != true else { throw IcliError.failed("AX query was truncated; narrow the screen before selecting an element") }
+    guard result["truncated"] as? Bool != true else {
+        throw IcliError.failed("AX query was truncated; narrow the screen before selecting an element")
+    }
     return (result["elements"] as? [[String: Any]] ?? []).filter(selector.matches)
 }
 
@@ -248,12 +317,19 @@ public func tapElement(_ selector: ElementSelector) throws -> [String: Any] {
     let hits = try selectedElements(selector)
     guard hits.indices.contains(selector.index) else { throw IcliError.failed("element not found") }
     let hit = hits[selector.index]
-    guard let x = hit["x"] as? Double, let y = hit["y"] as? Double else { throw IcliError.failed("element has no tap point") }
+    guard let x = hit["x"] as? Double, let y = hit["y"] as? Double else {
+        throw IcliError.failed("element has no tap point")
+    }
     _ = try tap(x: x, y: y)
     return ["tapped": true, "element": hit]
 }
 
-public func waitForElement(_ selector: ElementSelector, appear: Bool, timeout: TimeInterval, interval: TimeInterval = 0.3) throws -> [String: Any] {
+public func waitForElement(
+    _ selector: ElementSelector,
+    appear: Bool,
+    timeout: TimeInterval,
+    interval: TimeInterval = 0.3
+) throws -> [String: Any] {
     guard timeout.isFinite, (0 ... 60).contains(timeout), interval.isFinite, (0.1 ... 5).contains(interval) else {
         throw IcliError.failed("timeout must be 0–60 seconds and interval 0.1–5 seconds")
     }
@@ -262,7 +338,12 @@ public func waitForElement(_ selector: ElementSelector, appear: Bool, timeout: T
         let hits = try selectedElements(selector)
         let present = hits.indices.contains(selector.index)
         if present == appear {
-            return ["found": present, "disappeared": !present, "waited_ms": Int((ProcessInfo.processInfo.systemUptime - start) * 1000), "element": present ? hits[selector.index] : [:]]
+            return [
+                "found": present,
+                "disappeared": !present,
+                "waited_ms": Int((ProcessInfo.processInfo.systemUptime - start) * 1000),
+                "element": present ? hits[selector.index] : [:]
+            ]
         }
         let remaining = timeout - (ProcessInfo.processInfo.systemUptime - start)
         if remaining <= 0 {
@@ -280,14 +361,21 @@ func validatePoint(_ x: Double, _ y: Double) throws {
     }
 }
 
-private func visionBlocks(in image: CGImage, languages: [String], minConfidence: Float, pointSize: CGSize) throws -> [[String: Any]] {
+private func visionBlocks(
+    in image: CGImage,
+    languages: [String],
+    minConfidence: Float,
+    pointSize: CGSize
+) throws -> [[String: Any]] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     request.usesLanguageCorrection = false
     request.recognitionLanguages = languages
     try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
     return (request.results ?? []).compactMap { observation in
-        guard let candidate = observation.topCandidates(1).first, candidate.confidence >= minConfidence else { return nil }
+        guard let candidate = observation.topCandidates(1).first, candidate.confidence >= minConfidence else {
+            return nil
+        }
         let box = observation.boundingBox
         return ["text": candidate.string, "confidence": candidate.confidence,
                 "x": box.midX * pointSize.width, "y": (1 - box.midY) * pointSize.height,

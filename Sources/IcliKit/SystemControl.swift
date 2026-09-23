@@ -23,19 +23,36 @@ public func systemAppsVisibility(set visible: Bool?) throws -> [String: Any] {
     try decodeBridgeJSON(takeCString(icli_system_apps_visible_json(visible.map { $0 ? 1 : 0 } ?? -1)), "response")
 }
 
-public func renderBootLogo(mark: String, output: String, dark: Bool, width: Int, height: Int, markPoints: Double) throws -> [String: Any] {
+public func renderBootLogo(
+    mark: String,
+    output: String,
+    dark: Bool,
+    width: Int,
+    height: Int,
+    markPoints: Double
+) throws -> [String: Any] {
     guard FileManager.default.fileExists(atPath: mark) else { throw IcliError.failed("mark image not found: \(mark)") }
     guard width >= 0, height >= 0, markPoints >= 0 else { throw IcliError.failed("sizes must not be negative") }
-    return try decodeBridgeJSON(takeCString(icli_bootlogo_render_json(mark, output, dark, Int32(width), Int32(height), markPoints)), "response")
+    return try decodeBridgeJSON(
+        takeCString(icli_bootlogo_render_json(mark, output, dark, Int32(width), Int32(height), markPoints)),
+        "response"
+    )
 }
 
 /// Replaces the bootstrap account's password hash in master.passwd and the
 /// spwd.db lookup database. The password itself never appears in argv.
 public func setAccountPassword(user: String, password: String) throws -> [String: Any] {
-    guard user.range(of: "^[a-z_][a-z0-9_-]{0,31}$", options: .regularExpression) != nil else { throw IcliError.failed("invalid account name") }
-    guard !password.isEmpty, password.utf8.count <= 256, !password.contains("\n"), !password.contains(":") else { throw IcliError.failed("password must be 1-256 bytes without newlines or colons") }
+    guard user.range(of: "^[a-z_][a-z0-9_-]{0,31}$", options: .regularExpression) != nil else {
+        throw IcliError.failed("invalid account name")
+    }
+    guard !password.isEmpty, password.utf8.count <= 256, !password.contains("\n"), !password.contains(":") else {
+        throw IcliError.failed("password must be 1-256 bytes without newlines or colons")
+    }
     guard geteuid() == 0 else { throw IcliError.failed("changing an account password requires root") }
-    return try decodeBridgeJSON(takeCString(icli_account_set_password_json(JailbreakRoot.current.jbrootPath("/etc"), user, password)), "response")
+    return try decodeBridgeJSON(
+        takeCString(icli_account_set_password_json(JailbreakRoot.current.jbrootPath("/etc"), user, password)),
+        "response"
+    )
 }
 
 /// Structured runtime capabilities: layout, markers, platform services and
@@ -53,13 +70,23 @@ public func environmentReport() throws -> [String: Any] {
     if let systemHook {
         if let symbol = dlsym(systemHook, "get_jbroot") {
             typealias GetRoot = @convention(c) () -> UnsafePointer<CChar>?
-            roothideRuntime = unsafeBitCast(symbol, to: GetRoot.self)().map { String(cString: $0) }.map { !$0.isEmpty } ?? false
+            roothideRuntime = unsafeBitCast(symbol, to: GetRoot.self)().map { String(cString: $0) }
+                .map { !$0.isEmpty } ?? false
         }
         dlclose(systemHook)
     }
-    let markers = [".installed_dopamine", ".installed_relaxin", ".installed_palera1n", ".procursus_strapped", "basebin/.version", "basebin/.safe_mode"].filter(present)
-    let basebinVersion = (try? String(contentsOfFile: root.jbrootPath("/basebin/.version"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let tools = ["dpkg", "apt-get", "tcpdump", "sudo", "launchctl", "uicache", "sbreload", "jbctl"].reduce(into: [String: Bool]()) { $0[$1] = manager.isExecutableFile(atPath: root.binary($1)) }
+    let markers = [
+        ".installed_dopamine",
+        ".installed_relaxin",
+        ".installed_palera1n",
+        ".procursus_strapped",
+        "basebin/.version",
+        "basebin/.safe_mode"
+    ].filter(present)
+    let basebinVersion = (try? String(contentsOfFile: root.jbrootPath("/basebin/.version"), encoding: .utf8))?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let tools = ["dpkg", "apt-get", "tcpdump", "sudo", "launchctl", "uicache", "sbreload", "jbctl"]
+        .reduce(into: [String: Bool]()) { $0[$1] = manager.isExecutableFile(atPath: root.binary($1)) }
     let version = ProcessInfo.processInfo.operatingSystemVersion
     return [
         "layout": root.layout.rawValue,
@@ -75,7 +102,25 @@ public func environmentReport() throws -> [String: Any] {
         "bootstrap_tools_present": tools,
         "spawns_processes": false,
         "external_tools_used": [String: String](),
-        "native": ["app registration and refresh", "launchd services", "respring", "reboot", "account password", "deb read/extract/install/remove with dpkg database", "package status and version comparison", "app network policy", "system app visibility", "boot logo", "packet capture", "filesystem maintenance", "location simulation", "low power mode", "developer mode", "preferences", "container app installation"],
+        "native": [
+            "app registration and refresh",
+            "launchd services",
+            "respring",
+            "reboot",
+            "account password",
+            "deb read/extract/install/remove with dpkg database",
+            "package status and version comparison",
+            "app network policy",
+            "system app visibility",
+            "boot logo",
+            "packet capture",
+            "filesystem maintenance",
+            "location simulation",
+            "low power mode",
+            "developer mode",
+            "preferences",
+            "container app installation"
+        ],
         "maintainer_scripts": "never executed; reported per transaction",
         "executable": Bundle.main.executablePath ?? "",
     ]
@@ -85,11 +130,19 @@ public func environmentReport() throws -> [String: Any] {
 /// inside a bundled archive. Either side may be absent.
 public func compareBaseBin(bundled archive: String?) throws -> [String: Any] {
     let installedPath = JailbreakRoot.current.jbrootPath("/basebin/.version")
-    let installed = (try? String(contentsOfFile: installedPath, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-    var payload: [String: Any] = ["installed_path": installedPath, "installed": installed ?? "", "installed_present": installed != nil]
+    let installed = (try? String(contentsOfFile: installedPath, encoding: .utf8))?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    var payload: [String: Any] = [
+        "installed_path": installedPath,
+        "installed": installed ?? "",
+        "installed_present": installed != nil
+    ]
     if let archive {
-        guard FileManager.default.fileExists(atPath: archive) else { throw IcliError.failed("archive not found: \(archive)") }
-        let bundled = takeCString(icli_tar_entry_text(archive, "basebin/.version"))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard FileManager.default.fileExists(atPath: archive) else {
+            throw IcliError.failed("archive not found: \(archive)")
+        }
+        let bundled = takeCString(icli_tar_entry_text(archive, "basebin/.version"))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         payload["bundled"] = bundled ?? ""
         payload["bundled_present"] = bundled != nil
         payload["matches"] = installed != nil && bundled != nil && installed == bundled

@@ -10,11 +10,18 @@
 // itself.
 
 @interface NSObject (IcliMCM)
-+ (id)containerWithIdentifier:(NSString *)identifier createIfNecessary:(BOOL)create existed:(BOOL *)existed error:(NSError **)error;
++ (id)containerWithIdentifier:(NSString *)identifier
+            createIfNecessary:(BOOL)create
+                      existed:(BOOL *)existed
+                        error:(NSError **)error;
 - (NSURL *)url;
 - (id)destroyContainerWithCompletion:(void (^)(id))completion;
 - (BOOL)registerApplicationDictionary:(NSDictionary *)dict;
-- (BOOL)registerContainerizedApplicationWithInfoDictionaries:(NSArray *)infos operationUUID:(NSUUID *)uuid requestContext:(id)context saveObserver:(id)observer registrationError:(NSError **)error;
+- (BOOL)registerContainerizedApplicationWithInfoDictionaries:(NSArray *)infos
+                                               operationUUID:(NSUUID *)uuid
+                                              requestContext:(id)context
+                                                saveObserver:(id)observer
+                                           registrationError:(NSError **)error;
 @end
 
 static Class containerClass(const char *kind) {
@@ -63,7 +70,8 @@ char *icli_container_destroy_json(const char *kind, const char *identifier) {
     id container = lookupContainer(cls, @(identifier), NO, NULL, &error);
     if (error) return icli_json_or_empty(@{@"error": error.localizedDescription ?: @"container lookup failed"});
     if (!container) return icli_json_or_empty(@{@"missing": @YES});
-    if (![container respondsToSelector:@selector(destroyContainerWithCompletion:)]) return icli_json_or_empty(@{@"error": @"container deletion is unavailable"});
+    if (![container respondsToSelector:@selector(destroyContainerWithCompletion:)])
+        return icli_json_or_empty(@{@"error": @"container deletion is unavailable"});
     NSString *path = [container url].path ?: @"";
     // The completion's arguments are not relied on: the result is read back.
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
@@ -71,9 +79,11 @@ char *icli_container_destroy_json(const char *kind, const char *identifier) {
         (void)ignored;
         dispatch_semaphore_signal(done);
     }];
-    if ([failure isKindOfClass:NSError.class]) return icli_json_or_empty(@{@"error": [failure localizedDescription] ?: @"container deletion failed"});
+    if ([failure isKindOfClass:NSError.class])
+        return icli_json_or_empty(@{@"error": [failure localizedDescription] ?: @"container deletion failed"});
     dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC));
-    if (lookupContainer(cls, @(identifier), NO, NULL, &error)) return icli_json_or_empty(@{@"error": @"container still exists after deletion", @"path": path});
+    if (lookupContainer(cls, @(identifier), NO, NULL, &error))
+        return icli_json_or_empty(@{@"error": @"container still exists after deletion", @"path": path});
     return icli_json_or_empty(@{@"destroyed": @YES, @"path": path});
 }
 
@@ -84,13 +94,18 @@ bool icli_register_app_dictionary(const char *plist_xml) {
     NSDictionary *dict = [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:nil];
     id ws = icli_ls_workspace();
     if (![dict isKindOfClass:NSDictionary.class] || !ws) return false;
-    if ([ws respondsToSelector:@selector(registerApplicationDictionary:)] && [ws registerApplicationDictionary:dict]) return true;
+    if ([ws respondsToSelector:@selector(registerApplicationDictionary:)] && [ws registerApplicationDictionary:dict])
+        return true;
     // Newer LaunchServices refuse the call above and take the containerized
     // form, which answers NO even when it succeeds; the caller reads the
     // registration back either way.
     SEL containerized = @selector(registerContainerizedApplicationWithInfoDictionaries:operationUUID:requestContext:saveObserver:registrationError:);
     if (![ws respondsToSelector:containerized]) return false;
     NSError *error = nil;
-    [ws registerContainerizedApplicationWithInfoDictionaries:@[dict] operationUUID:[NSUUID UUID] requestContext:nil saveObserver:nil registrationError:&error];
+    [ws registerContainerizedApplicationWithInfoDictionaries:@[dict]
+                                               operationUUID:[NSUUID UUID]
+                                              requestContext:nil
+                                                saveObserver:nil
+                                           registrationError:&error];
     return error == nil;
 }

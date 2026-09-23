@@ -8,7 +8,8 @@ struct Tests: ParsableCommand {
     )
     @OptionGroup var output: OutputOptions
     @Option(help: "Require this bootstrap layout: rootless, roothide, or rootful") var expectLayout: String?
-    @Option(help: "Path to the signed SelfTestFixture.app from scripts/build-install-fixtures.sh") var registrationFixture: String?
+    @Option(help: "Path to the signed SelfTestFixture.app from scripts/build-install-fixtures.sh")
+    var registrationFixture: String?
 
     func validate() throws {
         if let expectLayout, JailbreakRoot.Layout(rawValue: expectLayout) == nil {

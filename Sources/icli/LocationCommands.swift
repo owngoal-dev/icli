@@ -17,7 +17,13 @@ struct Location: ParsableCommand {
         @OptionGroup var output: OutputOptions
         // Captures values such as -33.8688 that would otherwise parse as
         // options; it captures --help too, so validate() hands that back.
-        @Argument(parsing: .allUnrecognized, help: ArgumentHelp("Latitude (-90 to 90) and longitude (-180 to 180) in degrees.", valueName: "latitude longitude"))
+        @Argument(
+            parsing: .allUnrecognized,
+            help: ArgumentHelp(
+                "Latitude (-90 to 90) and longitude (-180 to 180) in degrees.",
+                valueName: "latitude longitude"
+            )
+        )
         var coordinate: [String]
         @Option(help: "Altitude in metres.") var altitude: Double = 0
         @Option(help: "Horizontal accuracy in metres.") var horizontalAccuracy: Double = 5
@@ -33,8 +39,18 @@ struct Location: ParsableCommand {
         func run() {
             emit(allowWhenLocked: true, output) {
                 let degrees = coordinate.compactMap(Double.init)
-                guard coordinate.count == 2, degrees.count == 2 else { throw IcliError.failed("pass a latitude and a longitude in degrees") }
-                return try simulateLocation(latitude: degrees[0], longitude: degrees[1], altitude: altitude, horizontalAccuracy: horizontalAccuracy, verticalAccuracy: verticalAccuracy, speed: speed, course: course)
+                guard coordinate.count == 2, degrees.count == 2 else {
+                    throw IcliError.failed("pass a latitude and a longitude in degrees")
+                }
+                return try simulateLocation(
+                    latitude: degrees[0],
+                    longitude: degrees[1],
+                    altitude: altitude,
+                    horizontalAccuracy: horizontalAccuracy,
+                    verticalAccuracy: verticalAccuracy,
+                    speed: speed,
+                    course: course
+                )
             }
         }
     }

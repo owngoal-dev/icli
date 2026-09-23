@@ -14,13 +14,16 @@ private func decode(_ raw: String?) throws -> [String: Any] {
 /// that launchd rejects are reported per path; nothing is guessed.
 public func loadServices(_ paths: [String], load: Bool, override: Bool) throws -> [String: Any] {
     guard !paths.isEmpty else { throw IcliError.failed("at least one plist or directory path is required") }
-    let absolute = paths.map { ($0 as NSString).standardizingPath }.map { $0.hasPrefix("/") ? $0 : FileManager.default.currentDirectoryPath + "/" + $0 }
+    let absolute = paths.map { ($0 as NSString).standardizingPath }
+        .map { $0.hasPrefix("/") ? $0 : FileManager.default.currentDirectoryPath + "/" + $0 }
     for path in absolute where !FileManager.default.fileExists(atPath: path) {
         throw IcliError.failed("path not found: \(path)")
     }
     var cStrings = absolute.map { UnsafePointer<CChar>(strdup($0)) }
     defer { cStrings.forEach { free(UnsafeMutablePointer(mutating: $0)) } }
-    let result = try decode(cStrings.withUnsafeMutableBufferPointer { buffer in takeCString(icli_launchd_load_json(buffer.baseAddress, Int32(buffer.count), load, override)) })
+    let result = try decode(cStrings.withUnsafeMutableBufferPointer { buffer in
+        takeCString(icli_launchd_load_json(buffer.baseAddress, Int32(buffer.count), load, override))
+    })
     if let error = launchdStatusError(result, load ? "load" : "unload") {
         throw error
     }
@@ -35,11 +38,19 @@ public func loadServices(_ paths: [String], load: Bool, override: Bool) throws -
         }
     }
     let unexpected = services.filter { ($0["loaded"] as? Bool) != load }
-    var payload: [String: Any] = ["paths": absolute, "loaded": load, "services": services, "errors": errors, "verified": true]
+    var payload: [String: Any] = [
+        "paths": absolute,
+        "loaded": load,
+        "services": services,
+        "errors": errors,
+        "verified": true
+    ]
     if !errors.isEmpty {
         // launchd reports EEXIST/EALREADY (load) or 113 ENOSERVICE (unload) when a
         // service was already in the requested state.
-        let benign = errors.values.allSatisfy { (($0 as? [String: Any])?["code"] as? Int).map { load ? $0 == EEXIST || $0 == EALREADY : $0 == 113 } ?? false }
+        let benign = errors.values.allSatisfy {
+            (($0 as? [String: Any])?["code"] as? Int).map { load ? $0 == EEXIST || $0 == EALREADY : $0 == 113 } ?? false
+        }
         if !benign {
             throw IcliError.failed("launchd rejected \(errors.count) path(s): \(errors)")
         }
@@ -73,7 +84,9 @@ public func setServiceEnabled(_ label: String, enabled: Bool) throws -> [String:
         throw error
     }
     let after = try serviceStatus(label)
-    guard after["enabled"] as? Bool == enabled else { throw IcliError.failed("launchd accepted the request but the override did not change") }
+    guard after["enabled"] as? Bool == enabled else {
+        throw IcliError.failed("launchd accepted the request but the override did not change")
+    }
     return ["label": label, "enabled": enabled, "changed": true]
 }
 
@@ -208,7 +221,9 @@ public func respring() throws -> [String: Any] {
     if pid == nil {
         method = "launchd_stop"
         let status = icli_launchd_stop("com.apple.SpringBoard")
-        guard status == 0 else { throw IcliError.failed("relaunch action ignored and launchd stop failed: \(status) \(String(cString: icli_launchd_strerror(status)))") }
+        guard status == 0 else {
+            throw IcliError.failed("relaunch action ignored and launchd stop failed: \(status) \(String(cString: icli_launchd_strerror(status)))")
+        }
         pid = try wait(seconds: 15, before: before)
     }
     guard let pid else { throw IcliError.failed("SpringBoard did not restart") }

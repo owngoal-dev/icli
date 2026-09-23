@@ -48,13 +48,15 @@ char *icli_sha512_crypt(const char *key, const char *salt) {
     for (size_t i = 0; i < keyLength; i++) CC_SHA512_Update(&alt, key, (CC_LONG)keyLength);
     CC_SHA512_Final(digestP, &alt);
     unsigned char *pBytes = malloc(keyLength ?: 1);
-    for (size_t copied = 0; copied < keyLength; copied += 64) memcpy(pBytes + copied, digestP, MIN((size_t)64, keyLength - copied));
+    for (size_t copied = 0; copied < keyLength; copied += 64)
+        memcpy(pBytes + copied, digestP, MIN((size_t)64, keyLength - copied));
 
     CC_SHA512_Init(&alt);
     for (int i = 0; i < 16 + digestA[0]; i++) CC_SHA512_Update(&alt, salt, (CC_LONG)saltLength);
     CC_SHA512_Final(digestS, &alt);
     unsigned char sBytes[16];
-    for (size_t copied = 0; copied < saltLength; copied += 64) memcpy(sBytes + copied, digestS, MIN((size_t)64, saltLength - copied));
+    for (size_t copied = 0; copied < saltLength; copied += 64)
+        memcpy(sBytes + copied, digestS, MIN((size_t)64, saltLength - copied));
 
     unsigned char digestC[64];
     memcpy(digestC, digestA, 64);
@@ -71,7 +73,29 @@ char *icli_sha512_crypt(const char *key, const char *salt) {
     free(pBytes);
 
     NSMutableString *out = [NSMutableString stringWithFormat:@"$6$%.*s$", (int)saltLength, salt];
-    static const int order[21][3] = {{0, 21, 42}, {22, 43, 1}, {44, 2, 23}, {3, 24, 45}, {25, 46, 4}, {47, 5, 26}, {6, 27, 48}, {28, 49, 7}, {50, 8, 29}, {9, 30, 51}, {31, 52, 10}, {53, 11, 32}, {12, 33, 54}, {34, 55, 13}, {56, 14, 35}, {15, 36, 57}, {37, 58, 16}, {59, 17, 38}, {18, 39, 60}, {40, 61, 19}, {62, 20, 41}};
+    static const int order[21][3] = {
+        {0, 21, 42},
+        {22, 43, 1},
+        {44, 2, 23},
+        {3, 24, 45},
+        {25, 46, 4},
+        {47, 5, 26},
+        {6, 27, 48},
+        {28, 49, 7},
+        {50, 8, 29},
+        {9, 30, 51},
+        {31, 52, 10},
+        {53, 11, 32},
+        {12, 33, 54},
+        {34, 55, 13},
+        {56, 14, 35},
+        {15, 36, 57},
+        {37, 58, 16},
+        {59, 17, 38},
+        {18, 39, 60},
+        {40, 61, 19},
+        {62, 20, 41}
+    };
     for (int i = 0; i < 21; i++) cryptBase64(out, digestC[order[i][0]], digestC[order[i][1]], digestC[order[i][2]], 4);
     cryptBase64(out, 0, 0, digestC[63], 2);
     return strdup(out.UTF8String);
@@ -95,7 +119,8 @@ static NSString *replaceFile(NSString *path, NSData *data, struct stat *original
     if (!failure && fchown(fd, original->st_uid, original->st_gid) != 0) failure = @(strerror(errno));
     if (!failure && fsync(fd) != 0) failure = @(strerror(errno));
     close(fd);
-    if (!failure && rename(temporary.fileSystemRepresentation, path.fileSystemRepresentation) != 0) failure = @(strerror(errno));
+    if (!failure && rename(temporary.fileSystemRepresentation, path.fileSystemRepresentation) != 0)
+        failure = @(strerror(errno));
     if (failure) unlink(temporary.fileSystemRepresentation);
     return failure;
 }
@@ -110,7 +135,10 @@ static NSString *updateHashDatabase(NSString *path, NSString *user, NSString *ha
     NSString *failure = replaceFile(temporary, contents, &original);
     if (failure) return failure;
     DB *db = dbopen(temporary.fileSystemRepresentation, O_RDWR, 0, DB_HASH, NULL);
-    if (!db) { unlink(temporary.fileSystemRepresentation); return [@"dbopen: " stringByAppendingString:@(strerror(errno))]; }
+    if (!db) {
+        unlink(temporary.fileSystemRepresentation);
+        return [@"dbopen: " stringByAppendingString:@(strerror(errno))];
+    }
     NSMutableArray *keys = [NSMutableArray array];
     NSMutableArray *values = [NSMutableArray array];
     DBT key, value;
@@ -138,7 +166,8 @@ static NSString *updateHashDatabase(NSString *path, NSString *user, NSString *ha
     if (!failure && db->sync(db, 0) != 0) failure = @(strerror(errno));
     if (db->close(db) != 0 && !failure) failure = @(strerror(errno));
     if (!failure && keys.count == 0) failure = @"user has no database record";
-    if (!failure && rename(temporary.fileSystemRepresentation, path.fileSystemRepresentation) != 0) failure = @(strerror(errno));
+    if (!failure && rename(temporary.fileSystemRepresentation, path.fileSystemRepresentation) != 0)
+        failure = @(strerror(errno));
     if (failure) unlink(temporary.fileSystemRepresentation);
     *updated = keys.count;
     return failure;
@@ -150,7 +179,8 @@ char *icli_account_set_password_json(const char *etc_directory, const char *user
     NSString *masterPath = [etc stringByAppendingPathComponent:@"master.passwd"];
     NSString *databasePath = [etc stringByAppendingPathComponent:@"spwd.db"];
     struct stat original;
-    if (stat(masterPath.fileSystemRepresentation, &original) != 0) return icli_json(@{@"error": [@"master.passwd: " stringByAppendingString:@(strerror(errno))]});
+    if (stat(masterPath.fileSystemRepresentation, &original) != 0)
+        return icli_json(@{@"error": [@"master.passwd: " stringByAppendingString:@(strerror(errno))]});
     NSString *text = [NSString stringWithContentsOfFile:masterPath encoding:NSUTF8StringEncoding error:nil];
     if (!text) return icli_json(@{@"error": @"master.passwd unreadable (root required)"});
     NSString *salt = randomSalt();
@@ -170,11 +200,26 @@ char *icli_account_set_password_json(const char *etc_directory, const char *user
         lines[i] = [fields componentsJoinedByString:@":"];
         matches++;
     }
-    if (matches == 0) return icli_json(@{@"error": [NSString stringWithFormat:@"user not found in master.passwd: %s", user]});
+    if (matches == 0)
+        return icli_json(@{@"error": [NSString stringWithFormat:@"user not found in master.passwd: %s", user]});
     NSUInteger updated = 0;
     NSString *failure = updateHashDatabase(databasePath, @(user), hash, &updated);
     if (failure) return icli_json(@{@"error": [@"spwd.db: " stringByAppendingString:failure]});
-    failure = replaceFile(masterPath, [[lines componentsJoinedByString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding], &original);
-    if (failure) return icli_json(@{@"error": [@"master.passwd: " stringByAppendingString:failure], @"spwd_db_updated": @YES});
-    return icli_json(@{@"user": @(user), @"scheme": @"sha512crypt", @"salt": salt, @"master_passwd_entries": @(matches), @"spwd_db_records": @(updated), @"files": @[masterPath, databasePath]});
+    failure = replaceFile(
+        masterPath,
+        [[lines componentsJoinedByString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding],
+        &original
+    );
+    if (failure) return icli_json(@{
+        @"error": [@"master.passwd: " stringByAppendingString:failure],
+        @"spwd_db_updated": @YES
+    });
+    return icli_json(@{
+        @"user": @(user),
+        @"scheme": @"sha512crypt",
+        @"salt": salt,
+        @"master_passwd_entries": @(matches),
+        @"spwd_db_records": @(updated),
+        @"files": @[masterPath, databasePath]
+    });
 }

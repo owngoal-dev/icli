@@ -59,7 +59,9 @@ private func appPlugIns(of app: String, owner: String) throws -> [PlugIn] {
               let bundleID = info["CFBundleIdentifier"] as? String,
               let executable = info["CFBundleExecutable"] as? String, !executable.isEmpty, !executable.contains("/"),
               FileManager.default.fileExists(atPath: path + "/" + executable) else { return nil }
-        guard bundleID.hasPrefix(owner + ".") else { throw IcliError.failed("plug-in \(bundleID) does not extend the app identifier \(owner)") }
+        guard bundleID.hasPrefix(owner + ".") else {
+            throw IcliError.failed("plug-in \(bundleID) does not extend the app identifier \(owner)")
+        }
         return PlugIn(path: path, bundleID: bundleID, executable: executable)
     }
 }
@@ -75,14 +77,20 @@ private func fixPermissions(_ app: String) throws {
     }
     for path in paths {
         var status = stat()
-        guard lstat(path, &status) == 0 else { throw IcliError.failed("could not read \(path): \(String(cString: strerror(errno)))") }
-        guard lchown(path, 33, 33) == 0 else { throw IcliError.failed("could not change the owner of \(path): \(String(cString: strerror(errno)))") }
+        guard lstat(path, &status) == 0 else {
+            throw IcliError.failed("could not read \(path): \(String(cString: strerror(errno)))")
+        }
+        guard lchown(path, 33, 33) == 0 else {
+            throw IcliError.failed("could not change the owner of \(path): \(String(cString: strerror(errno)))")
+        }
         let kind = status.st_mode & S_IFMT
         if kind == S_IFLNK {
             continue
         }
         let executable = kind == S_IFDIR || isMachO(path)
-        guard chmod(path, executable ? 0o755 : 0o644) == 0 else { throw IcliError.failed("could not change the mode of \(path): \(String(cString: strerror(errno)))") }
+        guard chmod(path, executable ? 0o755 : 0o644) == 0 else {
+            throw IcliError.failed("could not change the mode of \(path): \(String(cString: strerror(errno)))")
+        }
     }
 }
 
@@ -90,14 +98,21 @@ private func isMachO(_ path: String) -> Bool {
     guard let handle = FileHandle(forReadingAtPath: path) else { return false }
     defer { try? handle.close() }
     let magic = handle.readData(ofLength: 4)
-    return magic.count == 4 && [0xFEED_FACF, 0xCFFA_EDFE, 0xCAFE_BABE, 0xBEBA_FECA].contains(magic.withUnsafeBytes { $0.load(as: UInt32.self) })
+    return magic.count == 4
+        && [0xFEED_FACF, 0xCFFA_EDFE, 0xCAFE_BABE, 0xBEBA_FECA]
+            .contains(magic.withUnsafeBytes { $0.load(as: UInt32.self) })
 }
 
 /// The part of a LaunchServices registration an app and its plug-ins share,
 /// in the shape installd records: entitlements, data container, group
 /// containers and sandbox environment. Containers created for it are added
 /// to `created`.
-private func registrationRecord(bundleID: String, executable: String, dataKind: String, created: inout [CreatedContainer]) throws -> [String: Any] {
+private func registrationRecord(
+    bundleID: String,
+    executable: String,
+    dataKind: String,
+    created: inout [CreatedContainer]
+) throws -> [String: Any] {
     let entitlements = try machOInfo(at: executable)["entitlements"] as? [String: Any] ?? [:]
     let containerized = entitlements["com.apple.private.security.no-container"] as? Bool != true
         && entitlements["com.apple.private.security.container-required"] as? Bool != false
@@ -114,7 +129,11 @@ private func registrationRecord(bundleID: String, executable: String, dataKind: 
         "CompatibilityState": 0,
         "IsContainerized": containerized,
         "Container": dataPath,
-        "EnvironmentVariables": ["CFFIXED_USER_HOME": home, "HOME": home, "TMPDIR": containerized ? dataPath + "/tmp" : "/var/tmp"],
+        "EnvironmentVariables": [
+            "CFFIXED_USER_HOME": home,
+            "HOME": home,
+            "TMPDIR": containerized ? dataPath + "/tmp" : "/var/tmp"
+        ],
         "Entitlements": entitlements,
         "SignerOrganization": "Apple Inc.",
         "SignatureVersion": 132_352,
@@ -145,10 +164,20 @@ private func registrationRecord(bundleID: String, executable: String, dataKind: 
 
 /// Registers a container app and its plug-ins, then reads the record back,
 /// adding the data container and whether the app is sandboxed in it.
-private func registerContainerApp(_ app: String, bundleID: String, executable: String, plugIns: [PlugIn],
-                                  registration: AppRegistrationType, created: inout [CreatedContainer]) throws -> [String: Any]
-{
-    var record = try registrationRecord(bundleID: bundleID, executable: app + "/" + executable, dataKind: "data", created: &created)
+private func registerContainerApp(
+    _ app: String,
+    bundleID: String,
+    executable: String,
+    plugIns: [PlugIn],
+    registration: AppRegistrationType,
+    created: inout [CreatedContainer]
+) throws -> [String: Any] {
+    var record = try registrationRecord(
+        bundleID: bundleID,
+        executable: app + "/" + executable,
+        dataKind: "data",
+        created: &created
+    )
     record["ApplicationType"] = registration == .system ? "System" : "User"
     record["Path"] = app
     record["IsDeletable"] = true
@@ -160,7 +189,12 @@ private func registerContainerApp(_ app: String, bundleID: String, executable: S
     record["IsOnDemandInstallCapable"] = 0
     var bundlePlugIns: [String: Any] = [:]
     for plugIn in plugIns {
-        var plugInRecord = try registrationRecord(bundleID: plugIn.bundleID, executable: plugIn.path + "/" + plugIn.executable, dataKind: "plugin", created: &created)
+        var plugInRecord = try registrationRecord(
+            bundleID: plugIn.bundleID,
+            executable: plugIn.path + "/" + plugIn.executable,
+            dataKind: "plugin",
+            created: &created
+        )
         plugInRecord["ApplicationType"] = "PluginKitPlugin"
         plugInRecord["Path"] = plugIn.path
         plugInRecord["PluginOwnerBundleID"] = bundleID
@@ -168,9 +202,13 @@ private func registerContainerApp(_ app: String, bundleID: String, executable: S
     }
     record["_LSBundlePlugins"] = bundlePlugIns
     let plist = try PropertyListSerialization.data(fromPropertyList: record, format: .xml, options: 0)
-    guard let xml = String(data: plist, encoding: .utf8), icli_register_app_dictionary(xml) else { throw IcliError.failed("LaunchServices refused the app registration") }
+    guard let xml = String(data: plist, encoding: .utf8), icli_register_app_dictionary(xml) else {
+        throw IcliError.failed("LaunchServices refused the app registration")
+    }
     var registered = try appRegistration(app)
-    guard registered["registered"] as? Bool == true else { throw IcliError.failed("LaunchServices did not list the app after registration: \(app)") }
+    guard registered["registered"] as? Bool == true else {
+        throw IcliError.failed("LaunchServices did not list the app after registration: \(app)")
+    }
     registered["data_container"] = record["Container"]
     registered["containerized"] = record["IsContainerized"]
     return registered
@@ -184,7 +222,9 @@ private func registerContainerApp(_ app: String, bundleID: String, executable: S
 /// this way is upgraded in place; any other app with the identifier is left
 /// alone. A failed install removes what it added and restores an upgraded app.
 public func installIPAInContainer(_ path: String, registration: AppRegistrationType = .user) throws -> [String: Any] {
-    guard geteuid() == 0 else { throw IcliError.failed("container installation requires root; run sudo icli app install <file.ipa> --container") }
+    guard geteuid() == 0 else {
+        throw IcliError.failed("container installation requires root; run sudo icli app install <file.ipa> --container")
+    }
     guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package not found: \(path)") }
     let manager = FileManager.default
     let staged = try stageIPA(path)
@@ -233,7 +273,14 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
             throw IcliError.failed("could not mark the app container as installed by icli")
         }
         try fixPermissions(target)
-        let record = try registerContainerApp(target, bundleID: bundleID, executable: staged.executable, plugIns: plugIns, registration: registration, created: &created)
+        let record = try registerContainerApp(
+            target,
+            bundleID: bundleID,
+            executable: staged.executable,
+            plugIns: plugIns,
+            registration: registration,
+            created: &created
+        )
         try? manager.removeItem(atPath: backup)
         return [
             "bundle_id": bundleID,
@@ -251,13 +298,19 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
             _ = icli_unregister_app(target)
         }
         try? manager.removeItem(atPath: target)
-        if let previous, manager.fileExists(atPath: backup), (try? manager.moveItem(atPath: backup, toPath: previous)) != nil,
+        if let previous, manager.fileExists(atPath: backup),
+           (try? manager.moveItem(atPath: backup, toPath: previous)) != nil,
            let executable = NSDictionary(contentsOfFile: previous + "/Info.plist")?["CFBundleExecutable"] as? String
         {
             var ignored: [CreatedContainer] = []
-            _ = try? registerContainerApp(previous, bundleID: bundleID, executable: executable,
-                                          plugIns: (try? appPlugIns(of: previous, owner: bundleID)) ?? [],
-                                          registration: previousType == "System" ? .system : .user, created: &ignored)
+            _ = try? registerContainerApp(
+                previous,
+                bundleID: bundleID,
+                executable: executable,
+                plugIns: (try? appPlugIns(of: previous, owner: bundleID)) ?? [],
+                registration: previousType == "System" ? .system : .user,
+                created: &ignored
+            )
         }
         if !markerExisted {
             try? manager.removeItem(atPath: marker)
@@ -276,7 +329,8 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
 /// a data container named by a custom container-required entitlement are
 /// kept. Returns nil for any other app.
 func uninstallContainerApp(_ bundleID: String) throws -> [String: Any]? {
-    guard let bundleContainer = try container("app", bundleID, create: false)["path"] as? String, isManaged(bundleContainer) else { return nil }
+    guard let bundleContainer = try container("app", bundleID, create: false)["path"] as? String,
+          isManaged(bundleContainer) else { return nil }
     guard geteuid() == 0 else { throw IcliError.failed("removing an app icli installed in a container requires root") }
     let app = appBundle(in: bundleContainer)
     let plugIns = app.flatMap { try? appPlugIns(of: $0, owner: bundleID) } ?? []

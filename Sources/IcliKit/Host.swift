@@ -43,12 +43,15 @@ public func crashLogs(bundleID: String?) throws -> [String: Any] {
         "/var/mobile/Library/Logs/CrashReporter/Retired",
     ]
     var files: [(String, Date)] = []
-    let appName = bundleID.flatMap { try? appInfo($0)["executable"] as? String }.map { ($0 as NSString).lastPathComponent }
+    let appName = bundleID.flatMap { try? appInfo($0)["executable"] as? String }
+        .map { ($0 as NSString).lastPathComponent }
     for dir in dirs {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
         for name in names {
             guard name.hasSuffix(".ips") || name.hasSuffix(".crash") else { continue }
-            if let bundleID, !name.localizedCaseInsensitiveContains(bundleID), appName.map({ name.localizedCaseInsensitiveContains($0) }) != true {
+            if let bundleID, !name.localizedCaseInsensitiveContains(bundleID),
+               appName.map({ name.localizedCaseInsensitiveContains($0) }) != true
+            {
                 continue
             }
             let path = (dir as NSString).appendingPathComponent(name)
@@ -61,15 +64,27 @@ public func crashLogs(bundleID: String?) throws -> [String: Any] {
 
 public func readCrashLog(_ path: String) throws -> [String: Any] {
     let data = try Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)
-    guard let text = String(data: data, encoding: .utf8) else { throw IcliError.failed("crash report is not UTF-8 text") }
+    guard let text = String(data: data, encoding: .utf8) else {
+        throw IcliError.failed("crash report is not UTF-8 text")
+    }
     return ["path": path, "content": text, "size": data.count, "encoding": "utf8", "truncated": false]
 }
 
-public func captureSyslog(seconds: TimeInterval, process: String? = nil, level: String = "all", maxLines: Int = 500) throws -> [String: Any] {
-    guard seconds.isFinite, (0.1 ... 60).contains(seconds), ["all", "error", "fault"].contains(level), (1 ... 5000).contains(maxLines) else {
+public func captureSyslog(
+    seconds: TimeInterval,
+    process: String? = nil,
+    level: String = "all",
+    maxLines: Int = 500
+) throws -> [String: Any] {
+    guard seconds.isFinite, (0.1 ... 60).contains(seconds), ["all", "error", "fault"].contains(level),
+          (1 ... 5000).contains(maxLines)
+    else {
         throw IcliError.failed("seconds must be 0.1–60, level all/error/fault, and max-lines 1–5000")
     }
-    return try decodeBridgeJSON(takeCString(icli_syslog_json(seconds, process, level, Int32(maxLines))), "unified log response")
+    return try decodeBridgeJSON(
+        takeCString(icli_syslog_json(seconds, process, level, Int32(maxLines))),
+        "unified log response"
+    )
 }
 
 public func dumpKeychain() throws -> [String: Any] {
@@ -110,7 +125,13 @@ public func listKeychain(
     return ["items": items, "count": items.count]
 }
 
-public func getKeychain(className: String, service: String?, account: String?, server: String?, group: String?) throws -> [String: Any] {
+public func getKeychain(
+    className: String,
+    service: String?,
+    account: String?,
+    server: String?,
+    group: String?
+) throws -> [String: Any] {
     let listed = try listKeychain(
         className: className,
         service: service,
@@ -183,7 +204,13 @@ public func updateKeychain(
     group: String?,
     data: String
 ) throws -> [String: Any] {
-    let query = try keychainQuery(secClass(named: className), service: service, account: account, server: server, group: group)
+    let query = try keychainQuery(
+        secClass(named: className),
+        service: service,
+        account: account,
+        server: server,
+        group: group
+    )
     try throwIfKeychain(
         SecItemUpdate(query as CFDictionary, [kSecValueData as String: Data(data.utf8)] as CFDictionary),
         action: "update"
@@ -191,8 +218,20 @@ public func updateKeychain(
     return try getKeychain(className: className, service: service, account: account, server: server, group: group)
 }
 
-public func deleteKeychain(className: String, service: String?, account: String?, server: String?, group: String?) throws -> [String: Any] {
-    let query = try keychainQuery(secClass(named: className), service: service, account: account, server: server, group: group)
+public func deleteKeychain(
+    className: String,
+    service: String?,
+    account: String?,
+    server: String?,
+    group: String?
+) throws -> [String: Any] {
+    let query = try keychainQuery(
+        secClass(named: className),
+        service: service,
+        account: account,
+        server: server,
+        group: group
+    )
     let status = SecItemDelete(query as CFDictionary)
     if status == errSecItemNotFound {
         return ["deleted": false, "message": "keychain item not found"]
@@ -231,7 +270,13 @@ private func secClass(named name: String) throws -> CFString {
     }
 }
 
-private func keychainQuery(_ secClass: CFString, service: String?, account: String?, server: String?, group: String?) -> [String: Any] {
+private func keychainQuery(
+    _ secClass: CFString,
+    service: String?,
+    account: String?,
+    server: String?,
+    group: String?
+) -> [String: Any] {
     var query: [String: Any] = [kSecClass as String: secClass]
     if let service, !service.isEmpty {
         query[kSecAttrService as String] = service
@@ -299,7 +344,12 @@ public func sslKillswitchStatus() -> [String: Any] {
 /// Captures from the interface's BPF device (root) into a pcap file and
 /// returns a summary of the first packets. Filters accept
 /// `[tcp|udp|icmp] [src|dst] port N [src|dst] host A`, joined with `and`.
-public func capturePackets(seconds: TimeInterval, interface: String = "en0", filter: String? = nil, output: String? = nil) throws -> [String: Any] {
+public func capturePackets(
+    seconds: TimeInterval,
+    interface: String = "en0",
+    filter: String? = nil,
+    output: String? = nil
+) throws -> [String: Any] {
     guard seconds.isFinite, (1 ... 60).contains(seconds) else {
         throw IcliError.failed("Capture duration must be between 1 and 60 seconds.")
     }
@@ -310,7 +360,10 @@ public func capturePackets(seconds: TimeInterval, interface: String = "en0", fil
     }
     let out = output ?? JailbreakRoot.current.scratchDirectory() + "/icli-\(UUID().uuidString).pcap"
     guard let raw = takeCString(icli_capture_packets_json(interface, filter, seconds, out)),
-          let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid capture response") }
+          let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
+    else {
+        throw IcliError.failed("invalid capture response")
+    }
     if let error = result["error"] as? String {
         try? FileManager.default.removeItem(atPath: out)
         throw IcliError.failed(error)
