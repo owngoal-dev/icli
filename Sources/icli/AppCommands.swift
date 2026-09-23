@@ -1,6 +1,8 @@
 import ArgumentParser
 import Foundation
 import IcliKit
+extension AppRegistrationType: ExpressibleByArgument {}
+
 struct App: ParsableCommand {
     static var configuration = CommandConfiguration(
         abstract: "Installed apps",
@@ -81,14 +83,23 @@ extension App {
         func run() { emit(output) { try killApp(bundleID, force: force) } }
     }
     struct Install: ParsableCommand {
+        static var configuration = CommandConfiguration(
+            abstract: "Install a .deb, an .ipa or a .app bundle",
+            discussion: "An .ipa goes into the bootstrap's /Applications, or with --container into its own app container under /var/containers/Bundle/Application with a data container, like an App Store app. icli does not re-sign the app, so the IPA must already be signed so that this device can run it."
+        )
         @OptionGroup var output: OutputOptions
         @Argument var path: String
-        func run() { emit(output) { try installPackage(path) } }
+        @Flag(help: "Install the .ipa into its own app container; reinstalling an app icli installed this way upgrades it in place.") var container = false
+        @Option(help: "How LaunchServices lists a --container app: user or system (default: user).") var registration: AppRegistrationType?
+        func run() { emit(output) {
+            guard container || registration == nil else { throw IcliError.failed("--registration applies only with --container") }
+            return try installPackage(path, container: container, registration: registration ?? .user)
+        } }
     }
     struct Uninstall: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @Argument var bundleID: String
-        @Flag var force = false
+        @Flag(help: "Required. Removes an app icli installed from an IPA, including its app and data containers for a --container install.") var force = false
         @Flag(help: "Treat <bundle-id> as an installed Debian package identifier and remove that package; requires --force.") var package = false
         func run() { emit(output) {
             if package {

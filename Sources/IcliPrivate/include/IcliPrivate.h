@@ -90,6 +90,16 @@ char *icli_apps_refresh_json(const char *directory);
 char *icli_apps_unregister_directory_json(const char *directory);
 char *icli_app_registration_json(const char *path);
 
+/// A MobileContainerManager container; kind is app, data, plugin, group or
+/// system-group. Returns {"path", "existed"}, {"missing": true} when create is
+/// false and there is none, or {"error"}.
+char *icli_container_json(const char *kind, const char *identifier, bool create);
+/// Deletes a container through containermanagerd and reads the result back:
+/// {"destroyed": true, "path"}, {"missing": true} or {"error"}.
+char *icli_container_destroy_json(const char *kind, const char *identifier);
+/// Registers an app from a LaunchServices registration dictionary (XML plist).
+bool icli_register_app_dictionary(const char *plist_xml);
+
 bool icli_springboard_relaunch(void);
 
 char *icli_sha512_crypt(const char *key, const char *salt);

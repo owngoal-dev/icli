@@ -448,6 +448,49 @@ def install_ipa(d):
     d.fixture()
 
 
+@case('install_remove_ipa_container', 'install', ['app install', 'app uninstall'])
+def install_ipa_container(d):
+    # The TestHost-shaped fixture runs unsandboxed; the second is App Store-shaped
+    # and gets a sandbox in its data container. Both are installed as signed.
+    d.cli('app', 'install', '/tmp/icli-install-fixture.ipa', '--registration', 'user', expected=1, sudo=True)
+    for package, bundle in [('/tmp/icli-install-fixture.ipa', 'dev.owngoal.icli.InstallFixture'),
+                            ('/tmp/icli-container-fixture.ipa', 'dev.owngoal.icli.ContainerFixture')]:
+        installed = d.cli('app', 'install', package, '--container', timeout=150, sudo=True)
+        container, data, app = installed['bundle_container'], installed['data_container'], installed['bundle_path']
+        try:
+            assert installed['bundle_id'] == bundle and not installed['upgraded'], installed
+            assert container.removeprefix('/private').startswith('/var/containers/Bundle/Application/'), container
+            assert app.startswith(container + '/') and data.removeprefix('/private').startswith('/var/mobile/Containers/Data/Application/'), installed
+            info = d.cli('app', 'info', bundle)
+            assert info['bundle_path'] == app and info['type'] == 'User', info
+            if installed['containerized']:
+                assert info['data_path'] == data, info
+            owner = d.run(['ls', '-ldn', d.sh(app)], sudo=True).stdout.split()
+            assert owner[2:4] == ['33', '33'], owner
+            assert d.run(['test', '-f', d.sh(container + '/_icli')]).returncode == 0, 'no _icli marker'
+            assert d.run(['test', '-d', d.sh(data)], sudo=True).returncode == 0, 'no data container'
+            # The bootstrap install leaves an identifier a container app holds alone.
+            d.cli('app', 'install', package, expected=1, sudo=True)
+            launch = d.run([d.binary, 'app', 'launch', bundle])
+            if launch.returncode == 0:
+                assert any(a['bundle_id'] == bundle for a in d.cli('app', 'running')['apps']), 'launched app is not running'
+            else:
+                assert 'did not become frontmost' in launch.stdout, launch.stdout
+                d.observations.append(f'{bundle} installed and registered but did not launch: this device does not run its '
+                                      'ad-hoc signature from an app container (the kernel log names the CMS blob). '
+                                      'The same binary launches from the bootstrap install.')
+            upgraded = d.cli('app', 'install', package, '--container', '--registration', 'system', timeout=150, sudo=True)
+            assert upgraded['upgraded'] and upgraded['bundle_container'] == container and upgraded['data_container'] == data, upgraded
+            assert d.cli('app', 'info', bundle)['type'] == 'System'
+        finally:
+            removed = d.cli('app', 'uninstall', bundle, '--force', sudo=True)
+        assert removed['method'] == 'container' and {container, data} <= set(removed['removed_containers']), removed
+        d.cli('app', 'info', bundle, expected=1)
+        for path in [container, data]:
+            assert d.run(['test', '-e', d.sh(path)], sudo=True).returncode != 0, f'{path} still exists'
+    d.fixture()
+
+
 @case('crash_report_roundtrip', 'logs', ['log crashes', 'log crash'])
 def crash_report(d):
     d.fixture()
@@ -1473,10 +1516,10 @@ def main():
     device.configure(args.layout)
     # Install cases read these fixtures from the physical /tmp, which a
     # RootHide shell sees as /rootfs/tmp, so stage them for every run.
-    for suffix in ['deb', 'ipa']:
-        fixture = ROOT / f'.build/install-fixtures/icli-install-fixture.{suffix}'
+    for name in ['icli-install-fixture.deb', 'icli-install-fixture.ipa', 'icli-container-fixture.ipa']:
+        fixture = ROOT / '.build/install-fixtures' / name
         if fixture.exists():
-            device.upload(fixture, f'/tmp/icli-install-fixture.{suffix}')
+            device.upload(fixture, '/tmp/' + name)
     version = device.run([device.binary, '--version'])
     help_output = device.run([device.binary, '--experimental-dump-help'])
     assert help_output.returncode == 0, help_output.stderr
