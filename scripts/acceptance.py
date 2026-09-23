@@ -285,21 +285,26 @@ def unicode_input(d):
 
 @case('clipboard_roundtrip', 'input', ['clipboard get', 'clipboard set'])
 def clipboard(d):
-    d.fixture('clipboard-set')
-    assert d.cli('clipboard', 'get')['text'] == 'TestHost clipboard 中文 🌱'
-    assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
-    for text in ['clipboard 中文 🌱', '']:
-        d.cli('clipboard', 'set', text)
-        assert d.cli('clipboard', 'get')['text'] == text
+    # The clipboard may be shared with the owner's other devices; put their text back.
+    original = d.cli('clipboard', 'get')['text']
+    try:
+        d.fixture('clipboard-set')
+        assert d.cli('clipboard', 'get')['text'] == 'TestHost clipboard 中文 🌱'
         assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
-        time.sleep(0.3)
-        d.fixture()
-        d.cli('url', 'open', 'icli-test://focus')
-        time.sleep(0.4)
-        d.cli('input', 'key', 'cmd+v')
-        time.sleep(0.3)
-        assert d.state()['text'] == text
-        d.cli('url', 'open', 'icli-test://blur')
+        for text in ['clipboard 中文 🌱', '']:
+            d.cli('clipboard', 'set', text)
+            assert d.cli('clipboard', 'get')['text'] == text
+            assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
+            time.sleep(0.3)
+            d.fixture()
+            d.cli('url', 'open', 'icli-test://focus')
+            time.sleep(0.4)
+            d.cli('input', 'key', 'cmd+v')
+            time.sleep(0.3)
+            assert d.state()['text'] == text
+            d.cli('url', 'open', 'icli-test://blur')
+    finally:
+        d.cli('clipboard', 'set', original)
 
 
 def make_png(width, height):
