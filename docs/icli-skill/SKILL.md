@@ -12,7 +12,7 @@ The tables below mark each command with two properties:
 - **Root**: `required` means icli refuses to run without root (use `sudo icli …`). `usually` means the command runs, but the files or launchd domain it changes normally need root. `no` means it works as the mobile user.
 - **Screen**: `unlocked` means the command exits with code 2 (`device_locked`) while the device is locked or its screen is off. `any` means it also runs while the device is locked.
 
-Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, button, clipboard), [device](reference/device.md), [apps](reference/apps.md) (app, url, sb), [files and logs](reference/files-logs.md) (fs, log), [packages](reference/packages.md) (pkg), [system](reference/system.md) (svc, account, env, proc, sec, net, tests).
+Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, button, clipboard), [device](reference/device.md), [apps](reference/apps.md) (app, url, sb), [files and logs](reference/files-logs.md) (fs, log), [packages](reference/packages.md) (pkg), [system](reference/system.md) (svc, prefs, account, env, proc, sec, net, tests).
 
 ## Quick index
 
@@ -36,7 +36,8 @@ Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, bu
 | Type text into the focused field | `icli input paste 'text'` (fast, Unicode) or `icli input type 'text'` |
 | Press Return, Tab, arrows or a shortcut | `icli input key return` / `icli input key cmd+a` |
 | Press Home, lock the screen or change volume | `icli button home` / `button power` / `button volume-up` |
-| Read or set the clipboard | `icli clipboard get` / `icli clipboard set 'text'` |
+| Read or set the clipboard | `icli clipboard get` / `icli clipboard set 'text'` / `clipboard set --image <file>` |
+| Save the clipboard image | `icli clipboard get --image-output /tmp/clip.png` |
 | Take a screenshot | `icli screen shot --output /tmp/s.jpg` or `--base64` |
 | Read the text on screen | `icli screen ocr` |
 | Get a screenshot, OCR and elements together | `icli screen describe` |
@@ -45,6 +46,7 @@ Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, bu
 | Rotate the screen or lock rotation | `icli device rotation set landscape-left` / `rotation lock set on` |
 | Read, write or list files | `icli fs read <p>` / `fs write <p> <text>` / `fs ls <dir>` |
 | Read or edit a plist | `icli fs plist <p>` / `icli fs plist-set <p> <key> '<json>'` |
+| Read or change preferences (like `defaults`) | `icli prefs read <domain> [<key>]` / `prefs write <domain> <key> <value> --type int` / `prefs delete <domain> <key>` |
 | Capture live logs | `icli log syslog --seconds 5 --process <name> --level error` |
 | Find and read crash reports | `icli log crashes --bundle-id <id>` then `icli log crash <path>` |
 | Install a .deb or .ipa | `sudo icli app install /tmp/x.deb` (or `.ipa`) |

@@ -1,4 +1,4 @@
-# System: svc, account, env, proc, sec, net, tests
+# System: svc, prefs, account, env, proc, sec, net, tests
 
 ## svc (launchd)
 
@@ -21,6 +21,18 @@ Label commands take the plist's `Label` value without a domain prefix, for examp
 | `svc remove <label>` | Remove a loaded service | | required |
 | `svc getenv <key>` | Read a launchd environment variable | | no |
 | `svc setenv <key> <value>` / `svc unsetenv <key>` | Change it and verify | | required |
+
+## prefs (cfprefsd, like `defaults`)
+
+`<domain>` is a preference domain such as `com.apple.springboard`, or an absolute physical path ending in `.plist`. Every prefs command runs while the device is locked. `--user` picks whose preferences: `mobile` (default, also under sudo; what apps and Settings use), `root`, `current` (the caller) or `any` (`/var/preferences`; writing it needs root).
+
+| Command | Purpose | Key flags | Root |
+| --- | --- | --- | --- |
+| `prefs read <domain> [<key>]` | One key as `value`, `type`, `exists`, or the whole domain as `values: {key: {value, type}}` and `count` | `--user` | no |
+| `prefs write <domain> <key> <value>` | Write through cfprefsd, synchronize, return the value read back | `--type string\|int\|float\|bool\|date\|data\|json`, `--user`, `--notify <darwin-notification>` | no |
+| `prefs delete <domain> <key>` | Remove the key and confirm it is gone; `removed` is false if it was not set | `--user`, `--notify` | no |
+
+Types on read are `string`, `int`, `float`, `bool`, `date` (ISO-8601), `data` (Base64), `array` and `dictionary`. On write, `date` takes ISO-8601 or epoch seconds, `data` takes Base64, `json` takes an array or object (no nulls). Put `--` before a negative number: `icli prefs write --type int <domain> <key> -- -7`. cfprefsd writes the plist to disk a few seconds after the command returns. On RootHide, a jailbroken process's non-Apple domains are kept in the jbroot (the shell's `/var/mobile/Library/Preferences`), while `com.apple.*` domains use the system's own file.
 
 ## account, env, proc
 

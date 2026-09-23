@@ -56,7 +56,10 @@ After `button power`, only lock-exempt commands work until `button wake`. If the
 
 ## clipboard
 
-| Command | Purpose | Root | Screen |
-| --- | --- | --- | --- |
-| `clipboard get` | Read the general pasteboard's text | no | unlocked |
-| `clipboard set <text>` | Replace the pasteboard text | no | unlocked |
+| Command | Purpose | Key flags | Root | Screen |
+| --- | --- | --- | --- | --- |
+| `clipboard get` | Text (`""` when there is none), `change_count`, `types`, `items`, `has_text`, `has_image`, and `image` (`width`, `height` in pixels, `scale`) when it holds an image | `--image-output <file.png>` also writes the image as PNG and adds `image_path`, `image_bytes`; fails when there is no image | no | unlocked |
+| `clipboard set <text>` | Replace the clipboard with text and read it back | | no | unlocked |
+| `clipboard set --image <file>` | Replace the clipboard with a PNG, JPEG or HEIC image and check its pixel size | | no | unlocked |
+
+Both `set` forms return the new `get` output; `change_count` rises with every change. Paths are physical: on RootHide, `/tmp/x.png` for icli is `/rootfs/tmp/x.png` in the shell.
