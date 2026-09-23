@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.5.2_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.6.0_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 
@@ -48,13 +48,14 @@ The DEB installs a command-line executable and license notices. The executable i
 
 ## Features
 
-- **Touch and keyboard**: Tap, swipe, press and hold, drag along a path, enter Unicode text, and send keyboard shortcuts.
+- **Touch and keyboard**: Tap, swipe, press and hold, drag along a path, enter Unicode text, and send keyboard shortcuts. Send single touch down, move and up events, or raw HID key events.
 - **Accessibility**: Read the UI tree, find elements by text, identifier, or role, tap a match, and wait for an element to appear or disappear.
 - **Screenshots and OCR**: Save JPEG screenshots, return images as Base64, recognize text, or collect an image, OCR results, and accessibility elements together.
-- **Apps**: List, launch, inspect, register, unregister, and refresh apps; inspect or repair their network policy. Install and remove local DEB packages or compatible IPA files.
+- **Apps**: List, launch, inspect, register, unregister, and refresh apps; inspect or repair their network policy. Install and remove local DEB packages or compatible IPA files, in the bootstrap or in their own app container.
 - **Files and logs**: Read, write, copy, move, link, and remove files; change permissions and ownership; read and edit property lists; capture live logs and read crash reports.
-- **Device controls**: Adjust brightness, volume, and rotation; use hardware button actions and the clipboard; request userspace or full reboots; render boot logos.
+- **Device controls**: Adjust brightness, volume, and rotation; use hardware button actions and the clipboard, including images; switch Low Power Mode; read and enable Developer Mode; simulate a location; request userspace or full reboots; render boot logos.
 - **System**: Manage launchd services, local DEB packages and repository source files, compare Debian and BaseBin versions, set account passwords through stdin, control system app visibility, restart SpringBoard, capture packets, and store test credentials in the `icli.test` Keychain access group.
+- **Preferences**: Read, write, and delete typed preference values like `defaults`, for mobile, root, or a plist path.
 - **System state**: Dump every service with launchd's own description, and read the kernel's jetsam bands, jetsam property lists, and memory pressure levels.
 
 OCR uses Apple's Vision framework. If system text recognition is unavailable, the command returns an `unavailable` error. A successful scan with no recognized text returns an empty result.
@@ -94,7 +95,19 @@ icli input key cmd+a
 icli input type 'Hello!' --delay-ms 30
 ```
 
-`input paste` sends Unicode keyboard events; it does not read the clipboard. `input type` sends one grapheme at a time. Use `icli clipboard get` and `icli clipboard set 'shared text'` for clipboard text. icli reads and writes the system pasteboard without a prompt. When another app later reads that text programmatically, iOS may show its standard paste permission prompt for that app; user-initiated pastes such as `icli input key cmd+v` are not prompted.
+For input that needs exact control, send one event at a time. A finger that goes down stays down until an `up`, even across separate icli runs. `--normalized` takes 0…1 coordinates in the digitizer's fixed portrait space instead of points. `input hid` sends a raw HID usage: page 7 is the keyboard page, 12 the consumer page.
+
+```sh
+icli screen touch down 100 245
+icli screen touch move 160 245
+icli screen touch up 160 245
+icli screen touch-sequence --events '[{"phase":"down","x":100,"y":245,"delay_ms":800},{"phase":"up","x":100,"y":245}]'
+icli input hid 7 0xE1 --down
+icli input hid 7 4
+icli input hid 7 0xE1 --up
+```
+
+`input paste` sends Unicode keyboard events; it does not read the clipboard. `input type` sends one grapheme at a time. Use `icli clipboard get` and `icli clipboard set 'shared text'` for clipboard text. `clipboard get` also reports the pasteboard types, change count and any image; `--image-output /tmp/clip.png` saves the image, and `clipboard set --image /tmp/photo.png` copies one. icli reads and writes the system pasteboard without a prompt. When another app later reads that text programmatically, iOS may show its standard paste permission prompt for that app; user-initiated pastes such as `icli input key cmd+v` are not prompted.
 
 ### Capture the Screen
 
@@ -128,9 +141,10 @@ Upload a package before installing it:
 ```sh
 sudo icli app install /tmp/example.deb
 sudo icli app install /tmp/example.ipa
+sudo icli app install /tmp/example.ipa --container
 ```
 
-DEB operations read archives and update the bootstrap's dpkg database directly. IPA installation validates archive paths and app metadata, preserves the app's signature, and requires the bootstrap to support running it. This IPA installation path does not overwrite apps installed outside icli. Use `icli app uninstall --help` for removal options.
+DEB operations read archives and update the bootstrap's dpkg database directly. IPA installation validates archive paths and app metadata, preserves the app's signature, and requires the bootstrap to support running it. This IPA installation path does not overwrite apps installed outside icli. With `--container`, the app is installed into its own app container under `/var/containers/Bundle/Application`, with a data container, and registered as a User app (`--registration system` for a System app); reinstalling upgrades it in place and `app uninstall --force` removes both containers. icli does not re-sign apps, so the IPA must already carry a signature the device accepts; on a stock-kernel jailbreak, CoreTrust rejects ad-hoc signatures for apps in a container. Use `icli app uninstall --help` for removal options.
 
 `sudo icli pkg install /tmp/example.deb` installs a local archive and checks architecture and installed dependencies; installing the same version reinstalls it. Package identifiers and repository downloads are not supported. `pkg info`, `pkg extract`, `pkg status`, and `pkg compare` expose metadata, extraction, installed state, and Debian version comparison. `pkg remove` keeps configuration files unless `--purge` is supplied. `pkg repos` and `pkg add-repo` inspect and edit repository source files.
 
@@ -160,6 +174,21 @@ Registration asks LaunchServices to read the bundle, then reads the record back.
 `svc bootstrap`/`svc bootout` expose the modern launchctl names; `svc load`/`svc unload` retain the legacy names and their persistent `--enable`/`--disable` overrides. Path commands accept multiple plists or directories. Label commands include `list`, `status`, `print`, `enable`, `disable`, `start`, `stop`, `kill`, and `remove`; `print-disabled` reports persistent overrides. `svc dump` returns every visible service with its status and launchd's description in one document and lists the labels launchd refused to describe under `errors`. `device jetsam` reports every process's jetsam band and memory limit, the OS's `com.apple.jetsamproperties.*` property lists, and the memory pressure sysctls; the band list needs root or `com.apple.private.memorystatus` and is replaced by `priorities_error` otherwise. `getenv`, `setenv`, and `unsetenv` operate on launchd's domain environment. Mutating service and environment commands require launchd permission and normally root. `account set-password <user>` reads the new password from stdin and requires root; keep passwords out of command arguments and shell history.
 
 `sudo icli device reboot --force` requests a full reboot; add `--userspace` for a userspace restart. SSH may disconnect before a JSON response arrives; a disconnect alone does not prove success. Verify completion after reconnecting: a userspace restart replaces system and UI service processes while kernel boot time and boot session UUID remain unchanged; a full reboot changes the kernel boot time and session UUID. The acceptance runner records these before/after values.
+
+### Location, Power, and Preferences
+
+```sh
+icli location set 37.3349 -122.0090
+icli location get
+icli location clear
+icli device low-power set on
+icli device devmode get
+icli prefs read com.apple.springboard SBShowBatteryPercentage
+icli prefs write example.domain Enabled true --type bool
+icli prefs delete example.domain Enabled
+```
+
+A simulated location applies to every app and stays on after icli exits, until `location clear`. `device devmode enable` asks the system to turn Developer Mode on after the next restart and does nothing when it is already on. `prefs` commands use mobile's preferences by default, including under `sudo`; `--user root`, `current` or `any` choose another set, and a `.plist` path works as a domain. Writes go through cfprefsd, so running apps see them.
 
 ### Output and Device State
 

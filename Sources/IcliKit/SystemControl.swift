@@ -79,7 +79,7 @@ public func environmentReport() throws -> [String: Any] {
         "bootstrap_tools_present": tools,
         "spawns_processes": false,
         "external_tools_used": [String: String](),
-        "native": ["app registration and refresh", "launchd services", "respring", "reboot", "account password", "deb read/extract/install/remove with dpkg database", "package status and version comparison", "app network policy", "system app visibility", "boot logo", "packet capture", "filesystem maintenance"],
+        "native": ["app registration and refresh", "launchd services", "respring", "reboot", "account password", "deb read/extract/install/remove with dpkg database", "package status and version comparison", "app network policy", "system app visibility", "boot logo", "packet capture", "filesystem maintenance", "location simulation", "low power mode", "developer mode", "preferences", "container app installation"],
         "maintainer_scripts": "never executed; reported per transaction",
         "executable": Bundle.main.executablePath ?? "",
     ]
