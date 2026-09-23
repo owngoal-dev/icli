@@ -47,7 +47,8 @@ bool icli_hid_double_tap(double x, double y, double interval);
 bool icli_hid_long_press(double x, double y, double seconds);
 bool icli_hid_swipe(double x1, double y1, double x2, double y2, double seconds, int steps);
 bool icli_hid_drag(const double *xs, const double *ys, int count, double hold, double seconds, int steps);
-/// One digitizer event at 0…1 digitizer coordinates. Phase: 0 down, 1 move, 2 up.
+/// One digitizer event at 0…1 digitizer coordinates. Phase uses UITouchPhase
+/// numbers, as vphoned's protocol does: 0 down, 1 move, 3 up.
 bool icli_hid_touch(int phase, double nx, double ny);
 bool icli_hid_key(uint16_t usage_page, uint16_t usage, bool down);
 bool icli_hid_text(const char *text);

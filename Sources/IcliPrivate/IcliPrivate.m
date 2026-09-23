@@ -839,8 +839,13 @@ static bool hidTouch(double x, double y, IcliTouchPhase phase) {
 
 bool icli_hid_touch(int phase, double nx, double ny) {
     icli_private_init();
-    if (phase < IcliTouchBegan || phase > IcliTouchEnded) return false;
-    return dispatchHID(createDigitizerEvent(nx, ny, (IcliTouchPhase)phase, hidNow()));
+    // UITouchPhase numbering, which vphoned's host protocol also uses.
+    switch (phase) {
+    case 0: return dispatchHID(createDigitizerEvent(nx, ny, IcliTouchBegan, hidNow()));
+    case 1: return dispatchHID(createDigitizerEvent(nx, ny, IcliTouchMoved, hidNow()));
+    case 3: return dispatchHID(createDigitizerEvent(nx, ny, IcliTouchEnded, hidNow()));
+    default: return false;
+    }
 }
 
 bool icli_hid_tap(double x, double y) {

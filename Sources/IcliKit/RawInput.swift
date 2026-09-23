@@ -9,7 +9,7 @@ public enum TouchPhase: String, CaseIterable {
         switch self {
         case .down: return 0
         case .move: return 1
-        case .up: return 2
+        case .up: return 3
         }
     }
 }
