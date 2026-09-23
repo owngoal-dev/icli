@@ -47,7 +47,23 @@ static id attribute(AXElement element, uint32_t key) {
     return CFBridgingRelease(value);
 }
 
-static NSDictionary *serializeElement(AXElement element) {
+// SpringBoard reports frames in the fixed (portrait) space; apps report them
+// in the upright interface, which is what taps and screenshots use.
+static BOOL framesInFixedSpace(pid_t pid) {
+    int (*pidPath)(int, void *, uint32_t) = dlsym(RTLD_DEFAULT, "proc_pidpath");
+    char path[4096] = {0};
+    if (!pidPath || pidPath(pid, path, sizeof(path)) <= 0) return NO;
+    return strcmp(path, "/System/Library/CoreServices/SpringBoard.app/SpringBoard") == 0;
+}
+
+static CGRect interfaceRect(CGRect fixed) {
+    double x1, y1, x2, y2;
+    icli_screen_fixed_to_point(CGRectGetMinX(fixed), CGRectGetMinY(fixed), &x1, &y1);
+    icli_screen_fixed_to_point(CGRectGetMaxX(fixed), CGRectGetMaxY(fixed), &x2, &y2);
+    return CGRectStandardize(CGRectMake(x1, y1, x2 - x1, y2 - y1));
+}
+
+static NSDictionary *serializeElement(AXElement element, BOOL fixedSpace) {
     if (setTimeout) setTimeout(element, 0.25f);
     id value = attribute(element, 2003);
     CGRect frame = CGRectZero;
@@ -65,6 +81,12 @@ static NSDictionary *serializeElement(AXElement element) {
     CGPoint point = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
     id pointValue = attribute(element, 2007);
     if (pointValue) getAXValue((__bridge CFTypeRef)pointValue, 1, &point);
+    if (fixedSpace) {
+        frame = interfaceRect(frame);
+        double x, y;
+        icli_screen_fixed_to_point(point.x, point.y, &x, &y);
+        point = CGPointMake(x, y);
+    }
     NSMutableDictionary *node = [@{
         @"label": [label isKindOfClass:NSString.class] ? label : @"",
         @"identifier": [identifier isKindOfClass:NSString.class] ? identifier : @"",
@@ -92,11 +114,12 @@ char *icli_ax_elements_json(int pid, int max_elements) {
     }
     NSArray *elements = CFBridgingRelease(value);
     NSMutableArray *rows = [NSMutableArray array];
+    BOOL fixedSpace = framesInFixedSpace(pid);
     NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 5;
     BOOL truncated = NO;
     for (id element in elements) {
         if (rows.count >= (NSUInteger)max_elements || NSProcessInfo.processInfo.systemUptime >= deadline) { truncated = YES; break; }
-        NSDictionary *node = serializeElement((__bridge AXElement)element);
+        NSDictionary *node = serializeElement((__bridge AXElement)element, fixedSpace);
         if (node) [rows addObject:node];
     }
     return axJSON(@{@"source": @"ax", @"pid": @(pid), @"elements": rows, @"count": @(rows.count), @"truncated": @(truncated)});
@@ -107,10 +130,12 @@ char *icli_ax_element_at_json(int pid, double x, double y) {
     AXElement root = createApp(pid), hit = NULL;
     if (!root) return axJSON(@{@"error": @"AX application unavailable"});
     if (setTimeout) setTimeout(root, 0.5f);
-    int error = hitTest(root, &hit, (float)x, (float)y);
+    double fx = x, fy = y;
+    icli_screen_point_to_fixed(x, y, &fx, &fy);
+    int error = hitTest(root, &hit, (float)fx, (float)fy);
     CFRelease(root);
     if (error) { if (hit) CFRelease(hit); return axJSON(@{@"error": [NSString stringWithFormat:@"AX hit testing failed (%d)", error]}); }
-    NSDictionary *node = hit ? serializeElement(hit) : nil;
+    NSDictionary *node = hit ? serializeElement(hit, framesInFixedSpace(pid)) : nil;
     if (hit) CFRelease(hit);
     return axJSON(@{@"source": @"ax", @"element": node ?: @{}, @"x": @(x), @"y": @(y)});
 }

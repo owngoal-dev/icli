@@ -16,7 +16,7 @@ public func collectDeviceSnapshot() throws -> [String: Any] {
     snapshot["lock"] = [
         "locked": lock.locked,
         "screen_off": lock.screen_off,
-        "passcode_enabled": lock.passcode_enabled,
+        "passcode_enabled": icli_passcode_set(),
     ]
     return snapshot
 }
@@ -36,6 +36,12 @@ public func screenInfo() -> [String: Any] {
 }
 
 public func brightness() -> Double { icli_brightness_get() }
+
+/// Whether auto-brightness is on, or nil when it cannot be read.
+public func autoBrightness() -> Bool? {
+    let auto = icli_auto_brightness()
+    return auto < 0 ? nil : auto == 1
+}
 
 public func setBrightness(_ value: Double) throws {
     guard value.isFinite, (0...1).contains(value) else { throw IcliError.failed("brightness must be between 0 and 1") }

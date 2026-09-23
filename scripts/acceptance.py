@@ -46,6 +46,36 @@ class Device:
                         '-o', 'UserKnownHostsFile=' + str(ROOT / '.build/acceptance-known-hosts')]
         self.trace = []
         self.observations = []
+        self.layout = 'rootless'
+        self.jbroot = '/var/jb'
+
+    def configure(self, layout):
+        # icli works on physical paths; a RootHide shell sees the jbroot as /
+        # and the physical root under /rootfs, so shell checks translate paths.
+        self.layout = layout
+        self.jbroot = self.cli('env')['jbroot'].rstrip('/') or '/'
+
+    def jb(self, path):
+        """Physical path of a path inside the bootstrap."""
+        return path if self.jbroot == '/' else self.jbroot + path
+
+    @property
+    def install_prefix(self):
+        """Where dpkg places a package's absolute paths."""
+        return self.jbroot if self.layout == 'roothide' else ''
+
+    def sh(self, path):
+        """The shell's name for a physical path."""
+        if self.layout != 'roothide':
+            return path
+        if path == self.jbroot or path.startswith(self.jbroot + '/'):
+            return path[len(self.jbroot):] or '/'
+        for alias in ['/private/var/containers/', '/var/containers/']:
+            if self.jbroot.startswith('/var/containers/') and path.startswith(alias):
+                stripped = '/var/containers/' + path[len(alias):]
+                if stripped.startswith(self.jbroot + '/'):
+                    return stripped[len(self.jbroot):]
+        return '/rootfs' + path
 
     def run(self, command, timeout=35, sudo=False):
         command = shlex.join(command) if isinstance(command, list) else command
@@ -75,10 +105,10 @@ class Device:
 
     def upload(self, local, remote):
         subprocess.run(self.prefix + ['scp', '-q', '-r', '-P', self.port] + self.options +
-                       [str(local), self.user + '@' + self.host + ':' + remote], env=self.env, check=True)
+                       [str(local), self.user + '@' + self.host + ':' + self.sh(remote)], env=self.env, check=True)
 
     def state(self):
-        result = self.run(['cat', STATE])
+        result = self.run(['cat', self.sh(STATE)])
         assert result.returncode == 0, result.stderr
         return json.loads(result.stdout)
 
@@ -88,10 +118,31 @@ class Device:
         self.cli('url', 'open', 'icli-test://' + action)
         time.sleep(0.3)
 
+    def passcode_enabled(self):
+        return self.cli('device', 'info')['lock']['passcode_enabled']
+
+    def unlock_wait(self):
+        """Seconds an operator has to enter the passcode, from ICLI_UNLOCK_WAIT (0: no operator)."""
+        return float(self.env.get('ICLI_UNLOCK_WAIT', '0'))
+
+    def wait_unlocked(self, reason):
+        # icli cannot enter a passcode; after locking a passcode device the
+        # run waits for an operator to unlock it.
+        deadline = time.monotonic() + max(self.unlock_wait(), 30)
+        print(f'[{reason}] waiting up to {int(deadline - time.monotonic())} s for the device to be unlocked', flush=True)
+        while time.monotonic() < deadline:
+            self.cli('button', 'wake', expected=None)
+            info = self.cli('screen', 'info', expected=None)
+            if info.get('locked') is False and info.get('screen_off') is False:
+                return info
+            time.sleep(2)
+        raise AssertionError(f'device still locked after {reason}')
+
     def install(self):
         version = plistlib.loads((ROOT / 'Resources/Info.plist').read_bytes())['CFBundleShortVersionString']
-        package = ROOT / f'.build/com.icli.icli_{version}_iphoneos-arm64.deb'
-        subprocess.run([str(ROOT / 'packaging/build-deb.sh'), 'rootless'], cwd=ROOT, check=True)
+        arch = {'rootless': 'iphoneos-arm64', 'roothide': 'iphoneos-arm64e', 'rootful': 'iphoneos-arm'}[self.layout]
+        package = ROOT / f'.build/com.icli.icli_{version}_{arch}.deb'
+        subprocess.run([str(ROOT / 'packaging/build-deb.sh'), self.layout], cwd=ROOT, check=True)
         subprocess.run(self.prefix + ['scp', '-P', self.port] + self.options +
                        [str(package), self.user + '@' + self.host + ':/tmp/icli-acceptance.deb'], env=self.env, check=True)
         result = self.run(['dpkg', '-i', '/tmp/icli-acceptance.deb'], sudo=True)
@@ -101,7 +152,7 @@ class Device:
 @case('device_snapshot', 'runtime', ['device info', 'screen info'])
 def device_snapshot(d):
     info = d.cli('device', 'info')
-    assert info['jailbreak']['layout'] == 'rootless'
+    assert info['jailbreak']['layout'] == d.layout
     assert info['memory_bytes'] > 0 and info['processor_count'] > 0
     screen = d.cli('screen', 'info')
     assert screen['width'] > 0 and screen['height'] > 0 and screen['scale'] >= 1
@@ -270,14 +321,23 @@ def app_lifecycle(d):
 @case('brightness_and_volume', 'controls', ['device brightness get', 'device brightness set', 'device volume get', 'device volume set'])
 def brightness_volume(d):
     d.fixture()
-    original_b = d.cli('device', 'brightness', 'get')['brightness']
+    reading = d.cli('device', 'brightness', 'get')
+    original_b = reading['brightness']
     original_v = d.cli('device', 'volume', 'get')['volume']
+    # With auto-brightness on, ambient light can move the level again right
+    # after it is set; brightness set itself checks the level it applied.
+    auto = reading.get('auto_brightness', False)
+    if auto:
+        d.observations.append('Auto-brightness is on, so the level read back after brightness set is not asserted: '
+                              'the ambient-light controller may move it within seconds.')
     try:
         for value in [0.25, 0.65]:
-            d.cli('device', 'brightness', 'set', str(value))
+            applied = d.cli('device', 'brightness', 'set', str(value))
+            assert applied['brightness'] == value and applied.get('auto_brightness', False) == auto, applied
             assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
             time.sleep(0.2)
-            assert abs(d.cli('device', 'brightness', 'get')['brightness']-value) < 0.03
+            if not auto:
+                assert abs(d.cli('device', 'brightness', 'get')['brightness']-value) < 0.03
             d.cli('device', 'volume', 'set', str(value))
             time.sleep(0.2)
             assert abs(d.cli('device', 'volume', 'get')['volume']-value) < 0.03
@@ -291,7 +351,7 @@ def brightness_volume(d):
 @case('install_remove_deb', 'install', ['app install', 'app uninstall'])
 def install_deb(d):
     package = '/tmp/icli-install-fixture.deb'
-    marker = '/var/mobile/Library/Caches/icli-install-test/marker.txt'
+    marker = d.install_prefix + '/var/mobile/Library/Caches/icli-install-test/marker.txt'
     d.cli('app', 'install', package, sudo=True)
     assert d.cli('fs', 'read', marker)['content'] == 'icli installation verified\n'
     d.cli('app', 'uninstall', 'dev.owngoal.icli.installtest', '--package', '--force', sudo=True)
@@ -339,17 +399,31 @@ def home_power(d):
     d.cli('button', 'home')
     time.sleep(0.4)
     assert d.cli('app', 'frontmost')['bundle_id'] == 'com.apple.springboard'
+    passcode = d.passcode_enabled()
+    if passcode and not d.unlock_wait():
+        d.observations.append('The device has a passcode and ICLI_UNLOCK_WAIT is unset, so button power and button wake were '
+                              'not run: after locking, only an operator can unlock the device.')
+        d.fixture()
+        return
     d.cli('button', 'power')
-    time.sleep(0.4)
     try:
-        assert d.cli('screen', 'info')['screen_off']
+        # The display blanks after the lock animation, which takes longer on some devices.
+        deadline = time.monotonic() + 3
+        while not d.cli('screen', 'info')['screen_off']:
+            assert time.monotonic() < deadline, 'screen did not turn off after button power'
+            time.sleep(0.3)
         d.cli('screen', 'tap', '100', '245', expected=2)
         assert d.cli('screen', 'shot', '--base64')['data']
     finally:
         d.cli('button', 'wake')
     time.sleep(0.4)
     info = d.cli('screen', 'info')
-    assert not info['screen_off'] and not info['locked'], info
+    assert not info['screen_off'], info
+    if passcode:
+        assert info['locked'], info
+        d.wait_unlocked('button power')
+    else:
+        assert not info['locked'], info
     d.fixture()
 
 
@@ -399,8 +473,10 @@ def raster_ocr(d):
         assert described['ocr']['error'] == 'unavailable', described['ocr']
         d.cli('url', 'open', 'icli-test://ocr')
         oracle = d.state()['ocr']
-        assert not oracle['ok'] and oracle['error'], oracle
-        d.observations.append('System Vision OCR is unavailable; direct OCR and screen description report it explicitly, independently confirmed by TestHost.')
+        # Vision can fail without an NSError when its text models are missing.
+        assert not oracle['texts'], oracle
+        d.observations.append('System Vision OCR is unavailable; direct OCR and screen description report it explicitly, '
+                              'independently confirmed by TestHost (ok=%s, error=%r).' % (oracle['ok'], oracle['error']))
     else:
         assert result['engine'] == 'vision'
         for text, expected_y in [('HELLO 123', 691), ('中文测试', 726)]:
@@ -447,27 +523,27 @@ def filesystem_maintenance(d):
     source, copied, moved, link = [folder + '/' + name for name in ['source', 'copied', 'moved', 'link']]
     try:
         assert d.cli('fs', 'mkdir', folder, '--mode', '750')['created']
-        assert d.run(['stat', '-c', '%a', folder]).stdout.strip() == '750'
+        assert d.run(['stat', '-c', '%a', d.sh(folder)]).stdout.strip() == '750'
         assert not d.cli('fs', 'mkdir', folder)['created']
         d.cli('fs', 'write', source, 'filesystem fixture 中文')
         d.cli('fs', 'copy', source, copied)
-        assert d.run(['cmp', source, copied]).returncode == 0
+        assert d.run(['cmp', d.sh(source), d.sh(copied)]).returncode == 0
         d.cli('fs', 'copy', source, copied, expected=1)
         d.cli('fs', 'move', copied, moved)
-        assert d.run(['test', '-e', copied]).returncode == 1
-        assert d.run(['cat', moved]).stdout == 'filesystem fixture 中文'
+        assert d.run(['test', '-e', d.sh(copied)]).returncode == 1
+        assert d.run(['cat', d.sh(moved)]).stdout == 'filesystem fixture 中文'
         d.cli('fs', 'link', source, link)
-        assert d.run(['readlink', link]).stdout.strip() == source
+        assert d.run(['readlink', d.sh(link)]).stdout.strip() == d.sh(source)
         d.cli('fs', 'link', moved, link, expected=1)
         d.cli('fs', 'link', moved, link, '--replace')
-        assert d.run(['readlink', link]).stdout.strip() == moved
+        assert d.run(['readlink', d.sh(link)]).stdout.strip() == d.sh(moved)
         d.cli('fs', 'chmod', source, '640')
-        assert d.run(['stat', '-c', '%a', source]).stdout.strip() == '640'
+        assert d.run(['stat', '-c', '%a', d.sh(source)]).stdout.strip() == '640'
         d.cli('fs', 'chmod', source, '888', expected=1)
         d.cli('fs', 'chown', source, '0:0', sudo=True)
-        assert d.run(['stat', '-c', '%u:%g', source]).stdout.strip() == '0:0'
+        assert d.run(['stat', '-c', '%u:%g', d.sh(source)]).stdout.strip() == '0:0'
         d.cli('fs', 'chown', source, 'mobile:mobile', sudo=True)
-        assert d.run(['stat', '-c', '%u:%g', source]).stdout.strip() == '501:501'
+        assert d.run(['stat', '-c', '%u:%g', d.sh(source)]).stdout.strip() == '501:501'
         for format in [plistlib.FMT_XML, plistlib.FMT_BINARY]:
             path = folder + '/settings.plist'
             body = plistlib.dumps({'keep': ['original'], 'flag': False}, fmt=format)
@@ -481,15 +557,15 @@ def filesystem_maintenance(d):
             d.cli('fs', 'plist-set', path, 'count', 'invalid-json', expected=1)
             assert base64.b64decode(d.cli('fs', 'read', path, '--binary')['content']) == actual
         d.cli('fs', 'rm', source, expected=1)
-        assert d.run(['test', '-f', source]).returncode == 0
+        assert d.run(['test', '-f', d.sh(source)]).returncode == 0
         d.cli('fs', 'rm', folder, '--force', expected=1)
         d.cli('fs', 'rm', link, '--force')
-        assert d.run(['test', '-f', moved]).returncode == 0
+        assert d.run(['test', '-f', d.sh(moved)]).returncode == 0
         d.cli('fs', 'rm', folder, '--recursive', '--force')
-        assert d.run(['test', '-e', folder]).returncode == 1
+        assert d.run(['test', '-e', d.sh(folder)]).returncode == 1
         assert not d.cli('fs', 'rm', folder, '--force')['removed']
     finally:
-        assert d.run(['rm', '-rf', folder], sudo=True).returncode == 0
+        assert d.run(['rm', '-rf', d.sh(folder)], sudo=True).returncode == 0
 
 
 @case('extended_app_metadata', 'apps', ['app search', 'app open', 'app handlers', 'app schemes', 'app binary', 'app data', 'proc list'])
@@ -534,7 +610,7 @@ def rotation(d):
 @case('package_commands', 'packages', ['pkg list', 'pkg install', 'pkg remove', 'pkg tweaks', 'pkg status'])
 def packages(d):
     name = 'dev.owngoal.icli.installtest'
-    marker = '/var/mobile/Library/Caches/icli-install-test/marker.txt'
+    marker = d.install_prefix + '/var/mobile/Library/Caches/icli-install-test/marker.txt'
     assert d.cli('pkg', 'status', name)['installed'] is False
     try:
         installed = d.cli('pkg', 'install', '/tmp/icli-install-fixture.deb', sudo=True, timeout=150)
@@ -572,7 +648,7 @@ def package_metadata(d):
         assert 'Package: dev.owngoal.icli.installtest' in d.cli('fs', 'read', stage + '/DEBIAN/control')['content']
         d.cli('pkg', 'extract', '/tmp/icli-install-fixture.deb', stage, expected=1)
     finally:
-        d.run(['rm', '-rf', stage])
+        d.run(['rm', '-rf', d.sh(stage)])
     d.cli('pkg', 'info', '/tmp/icli-no-such-package.deb', expected=1)
     d.cli('pkg', 'info', '/tmp/icli-install-fixture.ipa', expected=1)
     for left, right, relation in [('1.0', '1:0.9', 'lt'), ('1.0~beta', '1.0', 'lt'), ('2.0.6', '0:2.0.6:compat', 'lt'), ('1.0-2', '1.0-1', 'gt'), ('1.0', '1.0', 'eq')]:
@@ -588,21 +664,22 @@ def package_metadata(d):
 ])
 def launchd_services(d):
     label = 'dev.owngoal.icli.testdaemon'
-    plist = f'/var/jb/Library/LaunchDaemons/{label}.plist'
+    plist = d.jb(f'/Library/LaunchDaemons/{label}.plist')
     folder = '/tmp/icli-daemons-' + uuid.uuid4().hex
-    body = plistlib.dumps({'Label': label, 'ProgramArguments': ['/var/jb/usr/bin/sleep', '3600'], 'KeepAlive': True, 'RunAtLoad': True}).decode()
+    body = plistlib.dumps({'Label': label, 'ProgramArguments': [d.jb('/usr/bin/sleep'), '3600'], 'KeepAlive': True, 'RunAtLoad': True}).decode()
     initial = d.cli('svc', 'status', label)
     assert initial['enabled'] and not initial['loaded'] and not initial['running'], initial
     d.cli('svc', 'status', 'bad label!', expected=1)
     d.cli('svc', 'load', '/tmp/icli-no-such-daemon.plist', sudo=True, expected=1)
     d.cli('fs', 'write', '/tmp/icli-daemon.plist', body)
-    assert d.run(['sh', '-c', f'cp /tmp/icli-daemon.plist {plist} && chown root:wheel {plist} && chmod 644 {plist} && mkdir -p {folder} && cp {plist} {folder}/'], sudo=True).returncode == 0
+    staged, target, copies = d.sh('/tmp/icli-daemon.plist'), d.sh(plist), d.sh(folder)
+    assert d.run(['sh', '-c', f'cp {staged} {target} && chown root:wheel {target} && chmod 644 {target} && mkdir -p {copies} && cp {target} {copies}/'], sudo=True).returncode == 0
     try:
         loaded = d.cli('svc', 'bootstrap', plist, sudo=True)
         assert loaded['verified'] and loaded['services'][0]['label'] == label, loaded
         time.sleep(1)
         status = d.cli('svc', 'status', label)
-        assert status['loaded'] and status['running'] and status['pid'] > 0 and status['program'] == '/var/jb/usr/bin/sleep', status
+        assert status['loaded'] and status['running'] and status['pid'] > 0 and status['program'] == d.jb('/usr/bin/sleep'), status
         assert any(p['pid'] == status['pid'] for p in d.cli('proc', 'list', '--filter', 'sleep')['processes']), 'launchd pid is not a live process'
         assert d.cli('svc', 'list', label)['pid'] == status['pid']
         assert any(row['label'] == label for row in d.cli('svc', 'list')['services'])
@@ -610,8 +687,14 @@ def launchd_services(d):
         assert printed['label'] == label and label in printed['description'], printed
         assert isinstance(d.cli('svc', 'print-disabled')['disabled'], dict)
         d.cli('svc', 'kill', 'TERM', label, sudo=True)
-        time.sleep(1)
-        killed_status = d.cli('svc', 'status', label)
+        # launchd holds a KeepAlive restart until the job's 10 s minimum
+        # runtime has passed, so a daemon killed early comes back late.
+        deadline = time.monotonic() + 15
+        while True:
+            time.sleep(1)
+            killed_status = d.cli('svc', 'status', label)
+            if killed_status['running'] or time.monotonic() > deadline:
+                break
         assert killed_status['running'] and killed_status['pid'] != status['pid'], killed_status
         assert d.cli('svc', 'stop', label, sudo=True)['accepted'] is True
         time.sleep(1)
@@ -649,7 +732,7 @@ def launchd_services(d):
         assert d.cli('svc', 'unload', folder, sudo=True)['verified'] is True
     finally:
         d.cli('svc', 'unload', plist, sudo=True, expected=None)
-        d.run(['rm', '-rf', plist, folder, '/tmp/icli-daemon.plist'], sudo=True)
+        d.run(['rm', '-rf', d.sh(plist), d.sh(folder), d.sh('/tmp/icli-daemon.plist')], sudo=True)
     assert d.cli('svc', 'status', label)['loaded'] is False
 
 
@@ -658,7 +741,7 @@ def app_refresh(d):
     bundle = 'dev.owngoal.icli.InstallFixture'
     folder = '/tmp/icli-apps-' + uuid.uuid4().hex
     app = folder + '/IcliInstallFixture.app'
-    assert d.run(['mkdir', '-p', folder]).returncode == 0
+    assert d.run(['mkdir', '-p', d.sh(folder)]).returncode == 0
     d.upload(ROOT / '.build/install-fixtures/Payload/IcliInstallFixture.app', app)
     try:
         # APP-01: registration is proven by LaunchServices listing the bundle at that path.
@@ -668,21 +751,21 @@ def app_refresh(d):
         d.cli('app', 'register', folder + '/missing.app', expected=1)
         d.cli('app', 'unregister', app, expected=1)
         assert d.cli('app', 'unregister', app, '--force')['unregistered'] is True
-        assert d.run(['test', '-f', app + '/Info.plist']).returncode == 0, 'unregister deleted the app bundle'
+        assert d.run(['test', '-f', d.sh(app) + '/Info.plist']).returncode == 0, 'unregister deleted the app bundle'
         d.cli('app', 'info', bundle, expected=1)
         assert d.cli('app', 'unregister', app, '--force')['unregistered'] is False
         d.cli('app', 'register', app)
         # APP-03: unchanged apps are skipped; missing bundles are unregistered.
         refreshed = d.cli('app', 'refresh', '--directory', folder)
         assert refreshed['registered'] == [] and refreshed['unchanged'] == [app.replace('/tmp/', '/var/tmp/')] and not refreshed['failed'] and not refreshed['unverified'], refreshed
-        d.run(['rm', '-rf', app])
+        d.run(['rm', '-rf', d.sh(app)])
         # Missing bundles must retain LaunchServices' original directory URL.
         assert d.cli('app', 'unregister', app, '--force')['unregistered'] is True
         d.cli('app', 'info', bundle, expected=1)
         assert d.cli('app', 'unregister', app, '--force')['unregistered'] is False
         d.upload(ROOT / '.build/install-fixtures/Payload/IcliInstallFixture.app', app)
         d.cli('app', 'register', app)
-        d.run(['rm', '-rf', app])
+        d.run(['rm', '-rf', d.sh(app)])
         refreshed = d.cli('app', 'refresh', '--directory', folder)
         assert refreshed['registered'] == [] and len(refreshed['unregistered']) == 1 and not refreshed['unverified'], refreshed
         d.cli('app', 'info', bundle, expected=1)
@@ -696,13 +779,13 @@ def app_refresh(d):
         d.cli('app', 'info', bundle, expected=1)
         assert d.cli('app', 'unregister', app, '--force')['unregistered'] is False
         # APP-02 on the bootstrap's own app directory, as root, restored by refresh.
-        path = '/var/jb/Applications/IcliTestHost.app'
+        path = d.jb('/Applications/IcliTestHost.app')
         d.cli('app', 'unregister', path, expected=1)
         assert d.cli('app', 'unregister', path, '--force', sudo=True)['unregistered'] is True
         assert BUNDLE not in json.dumps(d.cli('app', 'handlers', 'icli-test://reset'))
     finally:
         d.cli('app', 'unregister-dir', folder, '--force', expected=None)
-        d.run(['rm', '-rf', folder])
+        d.run(['rm', '-rf', d.sh(folder)])
         restored = d.cli('sb', 'uicache', sudo=True, timeout=90)
     assert any(p.endswith('/IcliTestHost.app') for p in restored['registered']) and not restored['failed'], restored
     assert BUNDLE in json.dumps(d.cli('app', 'handlers', 'icli-test://reset'))
@@ -788,20 +871,25 @@ def account_password(d):
 @case('environment_report', 'runtime', ['env info', 'env basebin'])
 def environment(d):
     env = d.cli('env')
-    assert env['layout'] == 'rootless' and env['jbroot'] == '/var/jb' and env['platform_binary'] is True, env
-    assert env['bootstrap_tools_present']['dpkg'] is True and env['roothide_runtime_active'] is False
+    assert env['layout'] == d.layout and env['jbroot'] == d.jbroot and env['platform_binary'] is True, env
+    assert env['bootstrap_tools_present']['dpkg'] is True and isinstance(env['roothide_runtime_active'], bool)
     assert env['external_tools_used'] == {} and env['spawns_processes'] is False, env
     assert d.cli('env', 'info', sudo=True)['euid'] == 0
-    absent = d.cli('env', 'basebin')
-    assert absent['installed_present'] is False and 'bundled' not in absent, absent
-    d.observations.append('This vphone has no BaseBin (no /var/jb/basebin/.version); the installed side of the comparison reports installed_present=false.')
+    installed = d.cli('env', 'basebin')
+    assert 'bundled' not in installed, installed
+    version = d.run(['cat', d.sh(d.jb('/basebin/.version'))])
+    if version.returncode == 0:
+        assert installed['installed_present'] is True and installed['installed'] == version.stdout.strip(), installed
+    else:
+        assert installed['installed_present'] is False, installed
+        d.observations.append('This device has no BaseBin version file; the installed side of the comparison reports installed_present=false.')
     archive = '/tmp/icli-basebin-' + uuid.uuid4().hex + '.tar'
-    assert d.run(['sh', '-c', f'rm -rf /tmp/icli-bb && mkdir -p /tmp/icli-bb/basebin && printf "2.3.4\\n" > /tmp/icli-bb/basebin/.version && tar -C /tmp/icli-bb -cf {archive} basebin && rm -rf /tmp/icli-bb']).returncode == 0
+    assert d.run(['sh', '-c', f'rm -rf /tmp/icli-bb && mkdir -p /tmp/icli-bb/basebin && printf "2.3.4\\n" > /tmp/icli-bb/basebin/.version && tar -C /tmp/icli-bb -cf {d.sh(archive)} basebin && rm -rf /tmp/icli-bb']).returncode == 0
     try:
         compared = d.cli('env', 'basebin', '--bundled', archive)
         assert compared['bundled'] == '2.3.4' and compared['bundled_present'] and compared['matches'] is False and compared['update_available'] is True, compared
     finally:
-        d.run(['rm', '-f', archive])
+        d.run(['rm', '-f', d.sh(archive)])
     d.cli('env', 'basebin', '--bundled', '/tmp/icli-no-such.tar', expected=1)
 
 
@@ -815,7 +903,9 @@ def boot_logo(d):
         for dark in [True, False]:
             rendered = d.cli('device', 'bootlogo', '--mark', mark, '--output', output, *(['--dark'] if dark else []))
             assert rendered['format'] == 'public.jpeg-2000' and rendered['bytes'] > 1000, rendered
-            assert rendered['width'] == round(screen['width'] * screen['scale']) and rendered['height'] == round(screen['height'] * screen['scale']), rendered
+            # The boot screen is drawn in the fixed portrait space, whatever the UI orientation.
+            short, long = sorted([round(screen['width'] * screen['scale']), round(screen['height'] * screen['scale'])])
+            assert rendered['width'] == short and rendered['height'] == long, rendered
             assert max(rendered['mark_pixels']) == round(128 * screen['scale'])
             head = base64.b64decode(d.cli('fs', 'read', output, '--binary', '--limit', '12')['content'])
             assert head == b'\x00\x00\x00\x0cjP  \r\n\x87\n', head
@@ -823,7 +913,7 @@ def boot_logo(d):
         assert custom['width'] == 640 and custom['height'] == 480 and max(custom['mark_pixels']) == round(64 * screen['scale']), custom
         d.cli('device', 'bootlogo', '--mark', '/tmp/icli-no-mark.png', '--output', output, expected=1)
     finally:
-        d.run(['rm', '-f', mark, output])
+        d.run(['rm', '-f', d.sh(mark), d.sh(output)])
 
 
 def wait_for_reconnect(d, seconds):
@@ -840,7 +930,13 @@ def wait_for_reconnect(d, seconds):
 
 def request_reboot(d, userspace=False):
     arguments = ['device', 'reboot'] + (['--userspace'] if userspace else []) + ['--force']
-    result = d.run([d.binary] + arguments, sudo=True)
+    try:
+        result = d.run([d.binary] + arguments, sudo=True)
+    except subprocess.TimeoutExpired:
+        # sshd can die without closing the TCP connection, leaving ssh hung until the timeout.
+        d.trace.append({'command': ' '.join(arguments), 'cli_arguments': arguments, 'exit': None, 'seconds': 35, 'stdout': '', 'stderr': 'ssh timed out'})
+        d.observations.append('SSH hung during the reboot call until its timeout; completion is checked after reconnecting, not inferred from the timeout.')
+        return
     result.icli_trace['cli_arguments'] = arguments
     if result.returncode == 0:
         accepted = json.loads(result.stdout)
@@ -868,11 +964,14 @@ def userspace_reboot(d):
     assert wait_for_reconnect(d, 240), 'device did not come back after the userspace reboot'
     after = d.cli('device', 'info')
     assert after['boot_session_uuid'] == session, 'kernel boot session changed: this was a full reboot'
-    assert after['boot_time'] == boot, 'kernel boot time changed: this was a full reboot'
-    deadline = time.monotonic() + 120
+    # kern.boottime shifts slightly whenever the kernel corrects the wall clock, so allow a few seconds of drift.
+    assert abs(after['boot_time'] - boot) < 5, 'kernel boot time changed: this was a full reboot'
+    assert after['uptime_seconds'] > before['uptime_seconds'], 'kernel uptime restarted: this was a full reboot'
+    # A passcode device comes back locked; ICLI_UNLOCK_WAIT gives the operator time to unlock it.
+    deadline = time.monotonic() + max(120, d.unlock_wait())
     while time.monotonic() < deadline:
         d.cli('button', 'wake', expected=None)
-        if d.cli('env', expected=None).get('layout') == 'rootless' and d.cli('screen', 'info', expected=None).get('locked') is False:
+        if d.cli('env', expected=None).get('layout') == d.layout and d.cli('screen', 'info', expected=None).get('locked') is False:
             break
         time.sleep(3)
     assert d.cli('env')['platform_binary'] is True
@@ -894,7 +993,7 @@ def device_reboot(d):
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         d.cli('button', 'wake', expected=None)
-        if d.cli('env', expected=None).get('layout') == 'rootless' and d.cli('screen', 'info', expected=None).get('locked') is False:
+        if d.cli('env', expected=None).get('layout') == d.layout and d.cli('screen', 'info', expected=None).get('locked') is False:
             break
         time.sleep(3)
     assert d.cli('env')['platform_binary'] is True and d.cli('svc', 'status', 'com.openssh.sshd')['loaded']
@@ -970,24 +1069,24 @@ def on_device_self_tests(d):
         assert report['passed'] + report['failed'] + report['skipped'] == len(report['tests']), report
         assert report['complete'] == (not failures and skipped == 0), report
 
-    mismatch = d.cli('tests', '--expect-layout', 'roothide', expected=1)
+    mismatch = d.cli('tests', '--expect-layout', 'rootful' if d.layout != 'rootful' else 'rootless', expected=1)
     assert 'no tests were run' in mismatch['message'], mismatch
     invalid = d.run([d.binary, 'tests', '--expect-layout', 'invalid'])
     assert invalid.returncode != 0 and 'Expected layout must be' in invalid.stderr, invalid.stderr
-    partial = d.cli('tests', '--expect-layout', 'rootless', timeout=120, expected=1 if expected_failures else 0)
+    partial = d.cli('tests', '--expect-layout', d.layout, timeout=120, expected=1 if expected_failures else 0)
     verify_report(partial, skipped=1)
     assert any(row['name'] == 'app_registration_refresh' and row['result'] == 'skipped' for row in partial['tests'])
     fixture = '/tmp/icli-selftest-source-' + uuid.uuid4().hex + '.app'
     d.upload(ROOT / '.build/install-fixtures/SelfTestFixture.app', fixture)
     try:
-        result = d.cli('tests', '--expect-layout', 'rootless', '--registration-fixture', fixture, timeout=120, expected=1 if expected_failures else 0)
-        (ROOT / '.build/selftest-rootless.json').write_text(json.dumps(result, indent=2) + '\n')
+        result = d.cli('tests', '--expect-layout', d.layout, '--registration-fixture', fixture, timeout=120, expected=1 if expected_failures else 0)
+        (ROOT / f'.build/selftest-{d.layout}.json').write_text(json.dumps(result, indent=2) + '\n')
         verify_report(result, skipped=0)
         failure = d.cli('tests', '--registration-fixture', fixture + '/missing.app', timeout=120, expected=1)
         verify_report(failure, skipped=0, additional_failures={'app_registration_refresh'})
         assert any(row['name'] == 'app_registration_refresh' and row['result'] == 'failed' for row in failure['tests'])
     finally:
-        d.run(['rm', '-rf', fixture])
+        d.run(['rm', '-rf', d.sh(fixture)])
 
 
 @case('icon_cache', 'system', ['sb uicache'])
@@ -1017,10 +1116,32 @@ def network_capture(d):
     assert 2 <= time.monotonic() - start < 8
     try:
         assert result['bytes'] > 24 and result['interface'] == 'lo0'
-        packet = d.run(['tcpdump', '-n', '-r', result['path']])
-        assert packet.returncode == 0 and 'UDP' in packet.stdout and '54321' in packet.stdout, packet.stdout
+        # Parse the pcap here so the check does not depend on tcpdump being installed.
+        capture = base64.b64decode(d.cli('fs', 'read', result['path'], '--binary', sudo=True)['content'])
+        assert udp_ports(capture) & {54321}, 'no UDP packet for port 54321 in the capture'
     finally:
-        assert d.run(['rm', '-f', result['path']], sudo=True).returncode == 0
+        assert d.run(['rm', '-f', d.sh(result['path'])], sudo=True).returncode == 0
+
+
+def udp_ports(capture):
+    """Destination and source UDP ports of IPv4/IPv6 packets in a classic pcap."""
+    import struct
+    magic = capture[:4]
+    endian = '<' if magic in (b'\xd4\xc3\xb2\xa1', b'\x4d\x3c\xb2\xa1') else '>'
+    link = struct.unpack(endian + 'I', capture[20:24])[0]
+    ports, offset = set(), 24
+    while offset + 16 <= len(capture):
+        included = struct.unpack(endian + 'I', capture[offset + 8:offset + 12])[0]
+        frame = capture[offset + 16:offset + 16 + included]
+        offset += 16 + included
+        # lo0 uses DLT_NULL (a 4-byte host-order family) or DLT_LOOP (network order).
+        packet = frame[4:] if link in (0, 108) else frame[14:]
+        if packet[:1] and packet[0] >> 4 == 4 and len(packet) >= 20 and packet[9] == 17:
+            header = (packet[0] & 0x0f) * 4
+            ports |= set(struct.unpack('>HH', packet[header:header + 4]))
+        elif packet[:1] and packet[0] >> 4 == 6 and len(packet) >= 48 and packet[6] == 17:
+            ports |= set(struct.unpack('>HH', packet[40:44]))
+    return ports
 
 
 @case('springboard_restart', 'system', ['sb respring'])
@@ -1029,15 +1150,22 @@ def springboard_restart(d):
         return [p['pid'] for p in d.cli('proc', 'list', '--filter', 'SpringBoard')['processes'] if p['name'] == 'SpringBoard']
     before = springboard_pid()
     assert before, 'SpringBoard is not running'
+    passcode = d.passcode_enabled()
+    if passcode and not d.unlock_wait():
+        d.observations.append('The device has a passcode and ICLI_UNLOCK_WAIT is unset, so sb respring was not run: '
+                              'SpringBoard restarts on the lock screen, and only an operator can unlock it.')
+        return
     restarted = d.cli('sb', 'respring', timeout=30)
     assert restarted['restarted'] and restarted['previous_pid'] == before[0] and restarted['pid'] != before[0], restarted
     assert restarted['method'] == 'frontboard_relaunch', restarted
     time.sleep(3)
+    # SpringBoard comes back on the lock screen with the display off, which
+    # blocks interactive commands, proc list included. Without a passcode,
+    # button wake (allowed while locked) must leave it usable again.
+    if passcode:
+        d.wait_unlocked('sb respring')
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        # SpringBoard comes back on the lock screen with the display off, which
-        # blocks interactive commands. The device has no passcode, so button
-        # wake (allowed while locked) must leave it usable again.
         d.cli('button', 'wake', expected=None)
         time.sleep(1)
         listed = d.cli('proc', 'list', '--filter', 'SpringBoard', expected=None)
@@ -1052,6 +1180,8 @@ def springboard_restart(d):
     second = springboard_pid()
     again = d.cli('sb', 'respring', sudo=True, timeout=30)
     assert again['restarted'] and again['previous_pid'] == second[0] and again['pid'] != second[0], again
+    if passcode:
+        d.wait_unlocked('sb respring as root')
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         d.cli('button', 'wake', expected=None)
@@ -1059,6 +1189,26 @@ def springboard_restart(d):
             break
         time.sleep(1)
     assert d.cli('screen', 'info')['locked'] is False
+
+
+def unsigned_code(binary):
+    """A thin arm64 Mach-O without its code signature and RootHide's section marker."""
+    import struct
+    magic, _, _, _, count, _, _, _ = struct.unpack('<8I', binary[:32])
+    assert magic == 0xfeedfacf, 'not a thin 64-bit Mach-O'
+    data, offset, end = bytearray(binary), 32, len(binary)
+    for _ in range(count):
+        command, size = struct.unpack('<2I', binary[offset:offset + 8])
+        if command == 0x19:  # LC_SEGMENT_64: blank each section's segname padding.
+            sections = struct.unpack('<I', binary[offset + 64:offset + 68])[0]
+            for index in range(sections):
+                header = offset + 72 + index * 80
+                name = binary[header + 16:header + 32].split(b'\0', 1)[0]
+                data[header + 16 + len(name):header + 32] = bytes(16 - len(name))
+        elif command == 0x1d:  # LC_CODE_SIGNATURE
+            end = struct.unpack('<I', binary[offset + 8:offset + 12])[0]
+        offset += size
+    return bytes(data[:end])
 
 
 def command_inventory(command, prefix=()):
@@ -1086,20 +1236,39 @@ def main():
     parser.add_argument('--skip-reboot', action='store_true', help='Leave out the reboot group (the run is then not a full run).')
     parser.add_argument('--case', action='append', dest='cases', help='Run only named cases (repeatable).')
     parser.add_argument('--report', default='.build/acceptance.json')
+    parser.add_argument('--layout', choices=['rootless', 'roothide', 'rootful'], default='rootless',
+                        help='Bootstrap layout the device is expected to use.')
     args = parser.parse_args()
     (ROOT / '.build').mkdir(exist_ok=True)
     device = Device()
+    device.layout = args.layout
     if args.install:
         device.install()
     fingerprint = device.run(['sha256sum', device.binary])
     assert fingerprint.returncode == 0, fingerprint.stderr
-    local_hash = hashlib.sha256((ROOT / '.build/icli').read_bytes()).hexdigest()
-    assert fingerprint.stdout.split()[0] == local_hash, 'device binary differs from local build'
+    local = (ROOT / '.build/icli').read_bytes()
+    local_hash = hashlib.sha256(local).hexdigest()
+    device_hash = fingerprint.stdout.split()[0]
+    if device_hash != local_hash:
+        # RootHide re-signs installed Mach-O files and stamps a marker into a
+        # section header, so compare everything else byte for byte.
+        assert args.layout == 'roothide', 'device binary differs from local build'
+        installed = subprocess.run(device.prefix + ['ssh', '-p', device.port] + device.options +
+                                   [device.user + '@' + device.host, shlex.join(['cat', device.binary])],
+                                   env=device.env, capture_output=True, timeout=60, check=True).stdout
+        assert unsigned_code(installed) == unsigned_code(local), 'device binary differs from local build beyond RootHide signing'
+    device.configure(args.layout)
+    # Install cases read these fixtures from the physical /tmp, which a
+    # RootHide shell sees as /rootfs/tmp, so stage them for every run.
+    for suffix in ['deb', 'ipa']:
+        fixture = ROOT / f'.build/install-fixtures/icli-install-fixture.{suffix}'
+        if fixture.exists():
+            device.upload(fixture, f'/tmp/icli-install-fixture.{suffix}')
     version = device.run([device.binary, '--version'])
     help_output = device.run([device.binary, '--experimental-dump-help'])
     assert help_output.returncode == 0, help_output.stderr
     inventory = command_inventory(json.loads(help_output.stdout)['command'])
-    report = {'environment': 'rootless', 'binary_sha256': fingerprint.stdout.split()[0],
+    report = {'environment': args.layout, 'binary_sha256': local_hash, 'installed_binary_sha256': device_hash,
               'runner_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               'version': version.stdout.strip(), 'device': device.cli('device', 'info'), 'cases': []}
     if args.cases:

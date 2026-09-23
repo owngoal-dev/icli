@@ -27,7 +27,14 @@ typedef struct {
 void icli_private_init(void);
 
 IcliLockStatus icli_lock_status(void);
+/// Whether the device has a passcode, whether or not it is locked now.
+bool icli_passcode_set(void);
 IcliScreenMetrics icli_screen_metrics(void);
+/// Converts a point in the upright interface to the fixed (portrait) space
+/// that the digitizer and accessibility hit testing use.
+void icli_screen_point_to_fixed(double x, double y, double *fx, double *fy);
+/// The inverse of icli_screen_point_to_fixed.
+void icli_screen_fixed_to_point(double fx, double fy, double *x, double *y);
 
 bool icli_screenshot_jpeg(const char *path, float quality, int max_bytes, bool native_resolution);
 char *icli_ax_elements_json(int pid, int max_elements);
@@ -57,6 +64,8 @@ int icli_battery_state(void);
 
 double icli_brightness_get(void);
 bool icli_brightness_set(double value);
+/// 1 when auto-brightness is on, 0 when off, -1 when it cannot be read.
+int icli_auto_brightness(void);
 double icli_volume_get(const char *category);
 bool icli_volume_set(double value, const char *category);
 

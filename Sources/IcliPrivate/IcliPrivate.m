@@ -157,6 +157,21 @@ static bool notifyFlag(const char *name) {
     return state != 0;
 }
 
+// SpringBoard's passcode flag is set only while the passcode is guarding the
+// lock screen, so it reads false on an unlocked device that has a passcode.
+static int passcodeSet(void) {
+    dlopen("/System/Library/PrivateFrameworks/ManagedConfiguration.framework/ManagedConfiguration", RTLD_NOW);
+    Class connectionClass = NSClassFromString(@"MCProfileConnection");
+    if (![connectionClass respondsToSelector:@selector(sharedConnection)]) {
+        return -1;
+    }
+    id connection = ((id (*)(id, SEL))objc_msgSend)(connectionClass, @selector(sharedConnection));
+    if (![connection respondsToSelector:@selector(isPasscodeSet)]) {
+        return -1;
+    }
+    return ((BOOL (*)(id, SEL))objc_msgSend)(connection, @selector(isPasscodeSet)) ? 1 : 0;
+}
+
 IcliLockStatus icli_lock_status(void) {
     icli_private_init();
     IcliLockStatus st = {false, false, false};
@@ -170,6 +185,11 @@ IcliLockStatus icli_lock_status(void) {
         st.passcode_enabled = passcode;
     }
     return st;
+}
+
+bool icli_passcode_set(void) {
+    int configured = passcodeSet();
+    return configured >= 0 ? configured == 1 : icli_lock_status().passcode_enabled;
 }
 
 static int parseRotationDegrees(id value) {
@@ -186,9 +206,9 @@ static int parseRotationDegrees(id value) {
     return 0;
 }
 
-// CLI UIScreen.bounds is the process interface orientation (often portrait).
-// CADisplay reports the compositor's current pixel size and native/current rotation.
-static IcliScreenMetrics compositorMetrics(void) {
+// CADisplay reports the panel's pixel size and native/current rotation. On an
+// iPad the panel is landscape (nativeOrientation rot270) whatever the UI does.
+static IcliScreenMetrics panelMetrics(void) {
     IcliScreenMetrics m = {0, 0, 1, 0};
     UIScreen *screen = [UIScreen mainScreen];
     if (screen) {
@@ -264,9 +284,170 @@ static int nativeToCurrentRotation(void) {
     return delta;
 }
 
+static UIImage *uikitScreenImage(void) {
+    UIImage *image = _UICreateScreenUIImage();
+    if (!image && p_UICreateScreenUIImage) {
+        image = p_UICreateScreenUIImage();
+    }
+    return image;
+}
+
+// UIKit's screen image holds the frame buffer in the fixed (portrait)
+// coordinate space that the digitizer and AX hit testing use. Its orientation
+// tag follows the physical device, so it goes stale when the interface is
+// rotated without turning the device; SpringBoard's interface orientation is
+// asked for first. CADisplay's currentOrientation follows neither.
+typedef struct {
+    bool valid;
+    double fixed_width;
+    double fixed_height;
+    double scale;
+    int degrees;
+} IcliInterfaceGeometry;
+
+static int degreesForImageOrientation(UIImageOrientation orientation) {
+    switch (orientation) {
+    case UIImageOrientationLeft:
+        return 90;
+    case UIImageOrientationDown:
+        return 180;
+    case UIImageOrientationRight:
+        return 270;
+    default:
+        return 0;
+    }
+}
+
+static id axSpringBoardServer(void);
+
+// Degrees for SpringBoard's UIInterfaceOrientation, or -1 when it is unknown.
+static int springBoardInterfaceDegrees(void) {
+    id server = axSpringBoardServer();
+    if (![server respondsToSelector:@selector(activeInterfaceOrientation)]) {
+        return -1;
+    }
+    switch (((long (*)(id, SEL))objc_msgSend)(server, @selector(activeInterfaceOrientation))) {
+    case 1:
+        return 0;
+    case 2:
+        return 180;
+    case 3:
+        return 270;
+    case 4:
+        return 90;
+    default:
+        return -1;
+    }
+}
+
+// A capture costs about 35 ms; gestures ask for every event, so reuse it briefly.
+static IcliInterfaceGeometry cachedGeometry = {false, 0, 0, 1, 0};
+static bool geometryStale = true;
+static NSTimeInterval geometryCapturedAt = 0;
+static NSLock *geometryLock(void) {
+    static NSLock *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        lock = [NSLock new];
+    });
+    return lock;
+}
+
+static void invalidateInterfaceGeometry(void) {
+    [geometryLock() lock];
+    geometryStale = true;
+    [geometryLock() unlock];
+}
+
+static IcliInterfaceGeometry interfaceGeometry(void) {
+    [geometryLock() lock];
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (geometryStale || !cachedGeometry.valid || now - geometryCapturedAt > 1) {
+        IcliInterfaceGeometry geometry = {false, 0, 0, 1, 0};
+        @autoreleasepool {
+            UIImage *image = uikitScreenImage();
+            CGImageRef cg = image.CGImage;
+            double scale = image.scale > 0 ? image.scale : 1;
+            if (cg && CGImageGetWidth(cg) > 1 && CGImageGetHeight(cg) > 1) {
+                geometry.valid = true;
+                geometry.fixed_width = CGImageGetWidth(cg) / scale;
+                geometry.fixed_height = CGImageGetHeight(cg) / scale;
+                geometry.scale = scale;
+                int degrees = springBoardInterfaceDegrees();
+                geometry.degrees = degrees >= 0 ? degrees : degreesForImageOrientation(image.imageOrientation);
+            }
+        }
+        cachedGeometry = geometry;
+        geometryCapturedAt = now;
+        geometryStale = false;
+    }
+    IcliInterfaceGeometry result = cachedGeometry;
+    [geometryLock() unlock];
+    return result;
+}
+
 IcliScreenMetrics icli_screen_metrics(void) {
     icli_private_init();
-    return compositorMetrics();
+    IcliInterfaceGeometry geometry = interfaceGeometry();
+    if (!geometry.valid) {
+        return panelMetrics();
+    }
+    bool sideways = geometry.degrees == 90 || geometry.degrees == 270;
+    IcliScreenMetrics m = {
+        sideways ? geometry.fixed_height : geometry.fixed_width,
+        sideways ? geometry.fixed_width : geometry.fixed_height,
+        geometry.scale,
+        geometry.degrees,
+    };
+    return m;
+}
+
+void icli_screen_point_to_fixed(double x, double y, double *fx, double *fy) {
+    icli_private_init();
+    IcliInterfaceGeometry geometry = interfaceGeometry();
+    double width = geometry.fixed_width, height = geometry.fixed_height;
+    switch (geometry.valid ? geometry.degrees : 0) {
+    case 90:
+        *fx = y;
+        *fy = height - x;
+        break;
+    case 180:
+        *fx = width - x;
+        *fy = height - y;
+        break;
+    case 270:
+        *fx = width - y;
+        *fy = x;
+        break;
+    default:
+        *fx = x;
+        *fy = y;
+        break;
+    }
+}
+
+void icli_screen_fixed_to_point(double fx, double fy, double *x, double *y) {
+    icli_private_init();
+    IcliInterfaceGeometry geometry = interfaceGeometry();
+    double width = geometry.fixed_width, height = geometry.fixed_height;
+    switch (geometry.valid ? geometry.degrees : 0) {
+    case 90:
+        *x = height - fy;
+        *y = fx;
+        break;
+    case 180:
+        *x = width - fx;
+        *y = height - fy;
+        break;
+    case 270:
+        *x = fy;
+        *y = width - fx;
+        break;
+    default:
+        *x = fx;
+        *y = fy;
+        break;
+    }
 }
 
 // UIInterfaceOrientation for a CADisplay rotation: landscape-left (90) is
@@ -302,12 +483,13 @@ static bool setCompositorOrientation(int degrees) {
     }
     ((void (*)(id, SEL, long))objc_msgSend)(server, @selector(setOrientation:), uiInterfaceOrientationForDegrees(degrees));
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.3, false);
+    invalidateInterfaceGeometry();
     return true;
 }
 
 IcliRotation icli_rotation_get(void) {
     icli_private_init();
-    IcliScreenMetrics metrics = compositorMetrics();
+    IcliScreenMetrics metrics = icli_screen_metrics();
     IcliRotation rotation = {0, 0, false};
     rotation.degrees = metrics.orientation;
     rotation.device_orientation = (int)[[UIDevice currentDevice] orientation];
@@ -412,7 +594,7 @@ static UIImage *screenshotViaRenderServer(void) {
     if (!pCreate || !pRender || !pBase || !pWidth) {
         return nil;
     }
-    IcliScreenMetrics m = icli_screen_metrics();
+    IcliScreenMetrics m = panelMetrics();
     int width = (int)(m.width * m.scale);
     int height = (int)(m.height * m.scale);
     if (width <= 0 || height <= 0) {
@@ -489,34 +671,44 @@ static UIImage *rotateCGImage(CGImageRef src, int degrees) {
     return out;
 }
 
-static UIImage *rawScreenImage(void) {
-    UIImage *image = _UICreateScreenUIImage();
-    if (!image && p_UICreateScreenUIImage) {
-        image = p_UICreateScreenUIImage();
-    }
-    if (!image) {
-        image = screenshotViaRenderServer();
-    }
-    return image;
-}
-
 static UIImage *orientedScreenImage(void) {
-    UIImage *raw = rawScreenImage();
+    UIImage *raw = uikitScreenImage();
+    if (!raw) {
+        // The render server draws in the panel's orientation, not the UI's.
+        raw = screenshotViaRenderServer();
+        int degrees = raw ? nativeToCurrentRotation() : 0;
+        if (degrees == 90 || degrees == 180 || degrees == 270) {
+            UIImage *rotated = rotateCGImage(raw.CGImage, degrees);
+            if (rotated) {
+                return rotated;
+            }
+        }
+    }
     if (!raw) {
         return nil;
     }
-    int degrees = nativeToCurrentRotation();
-    if (degrees == 90 || degrees == 180 || degrees == 270) {
-        UIImage *rotated = rotateCGImage(raw.CGImage, degrees);
-        if (rotated) {
-            return rotated;
-        }
+    // The buffer is in the fixed space. Under a landscape-right (270) interface
+    // the top of the interface lies along the buffer's right edge, so it turns
+    // counter-clockwise to become upright. This matches
+    // icli_screen_point_to_fixed, which the digitizer confirms.
+    IcliInterfaceGeometry geometry = interfaceGeometry();
+    UIImageOrientation upright = UIImageOrientationUp;
+    switch (geometry.valid ? geometry.degrees : 0) {
+    case 90:
+        upright = UIImageOrientationRight;
+        break;
+    case 180:
+        upright = UIImageOrientationDown;
+        break;
+    case 270:
+        upright = UIImageOrientationLeft;
+        break;
+    default:
+        return [UIImage imageWithCGImage:raw.CGImage scale:raw.scale orientation:UIImageOrientationUp];
     }
-    if (raw.imageOrientation == UIImageOrientationUp) {
-        return raw;
-    }
-    UIGraphicsBeginImageContextWithOptions(raw.size, YES, raw.scale);
-    [raw drawInRect:CGRectMake(0, 0, raw.size.width, raw.size.height)];
+    UIImage *turned = [UIImage imageWithCGImage:raw.CGImage scale:raw.scale orientation:upright];
+    UIGraphicsBeginImageContextWithOptions(turned.size, YES, turned.scale);
+    [turned drawInRect:CGRectMake(0, 0, turned.size.width, turned.size.height)];
     UIImage *baked = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     return baked ?: raw;
@@ -572,12 +764,19 @@ static bool dispatchHID(IOHIDEventRef event) {
     return true;
 }
 
+// The digitizer reports in the fixed (portrait) space, whatever the UI shows.
 static void normalizePoint(double x, double y, double *nx, double *ny) {
-    IcliScreenMetrics m = icli_screen_metrics();
-    double width = m.width > 1 ? m.width : 1;
-    double height = m.height > 1 ? m.height : 1;
-    *nx = x / width;
-    *ny = y / height;
+    IcliInterfaceGeometry geometry = interfaceGeometry();
+    if (!geometry.valid) {
+        IcliScreenMetrics m = panelMetrics();
+        *nx = x / (m.width > 1 ? m.width : 1);
+        *ny = y / (m.height > 1 ? m.height : 1);
+        return;
+    }
+    double fx = x, fy = y;
+    icli_screen_point_to_fixed(x, y, &fx, &fy);
+    *nx = fx / (geometry.fixed_width > 1 ? geometry.fixed_width : 1);
+    *ny = fy / (geometry.fixed_height > 1 ? geometry.fixed_height : 1);
 }
 
 static IOHIDEventRef createDigitizerEvent(double x, double y, IcliTouchPhase phase, uint64_t timestamp) {
@@ -762,11 +961,68 @@ bool icli_open_url(const char *url) {
     return false;
 }
 
+// RunningBoard marks the focused foreground app with a FrontBoard
+// "Workspace-ForegroundFocal" assertion. iPadOS 18 answers nil from
+// SBSCopyFrontmostApplicationDisplayIdentifier even with an app in front.
+static NSString *runningBoardFocalApplication(void) {
+    dlopen("/System/Library/PrivateFrameworks/RunningBoardServices.framework/RunningBoardServices", RTLD_NOW);
+    Class handleClass = NSClassFromString(@"RBSProcessHandle");
+    Class identifierClass = NSClassFromString(@"RBSProcessIdentifier");
+    SEL identifierSelector = NSSelectorFromString(@"identifierWithPid:");
+    SEL handleSelector = NSSelectorFromString(@"handleForIdentifier:error:");
+    if (![identifierClass respondsToSelector:identifierSelector] || ![handleClass respondsToSelector:handleSelector]) {
+        return nil;
+    }
+    int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL};
+    size_t length = 0;
+    if (sysctl(mib, 3, NULL, &length, NULL, 0) != 0) {
+        return nil;
+    }
+    length += 64 * sizeof(struct kinfo_proc);
+    struct kinfo_proc *processes = calloc(1, length);
+    if (!processes || sysctl(mib, 3, processes, &length, NULL, 0) != 0) {
+        free(processes);
+        return nil;
+    }
+    int (*pidPath)(int, void *, uint32_t) = dlsym(RTLD_DEFAULT, "proc_pidpath");
+    NSString *focal = nil;
+    for (size_t i = 0; i < length / sizeof(struct kinfo_proc) && !focal; i++) {
+        pid_t pid = processes[i].kp_proc.p_pid;
+        char path[4096] = {0};
+        // Only app bundles can be the frontmost application.
+        if (pid <= 0 || !pidPath || pidPath(pid, path, sizeof(path)) <= 0 || !strstr(path, ".app/")) {
+            continue;
+        }
+        @try {
+            id identifier = ((id (*)(id, SEL, int))objc_msgSend)(identifierClass, identifierSelector, pid);
+            id handle = ((id (*)(id, SEL, id, NSError **))objc_msgSend)(handleClass, handleSelector, identifier, NULL);
+            NSString *bundleID = [[handle valueForKey:@"identity"] valueForKey:@"embeddedApplicationIdentifier"];
+            if (![bundleID isKindOfClass:[NSString class]] || !bundleID.length) {
+                continue;
+            }
+            for (id assertion in [[handle valueForKey:@"currentState"] valueForKey:@"assertions"]) {
+                NSString *domain = [assertion valueForKey:@"domain"];
+                if ([domain isKindOfClass:[NSString class]] && [domain containsString:@"Workspace-ForegroundFocal"]) {
+                    focal = bundleID;
+                    break;
+                }
+            }
+        } @catch (NSException *ex) {
+            (void)ex;
+        }
+    }
+    free(processes);
+    return focal;
+}
+
 char *icli_frontmost_bundle_id(void) {
     icli_private_init();
     NSString *bid = nil;
     if (pSBSCopyFrontmostApplicationDisplayIdentifier) {
         bid = pSBSCopyFrontmostApplicationDisplayIdentifier();
+    }
+    if (!bid.length) {
+        bid = runningBoardFocalApplication();
     }
     if (!bid.length) {
         return NULL;
@@ -796,6 +1052,35 @@ double icli_brightness_get(void) {
     return [UIScreen mainScreen].brightness;
 }
 
+static id brightnessClient(void) {
+    dlopen("/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness", RTLD_NOW);
+    Class clientClass = NSClassFromString(@"BrightnessSystemClient");
+    if (![clientClass instancesRespondToSelector:@selector(setProperty:forKey:)] ||
+        ![clientClass instancesRespondToSelector:@selector(copyPropertyForKey:)]) {
+        return nil;
+    }
+    return [[clientClass alloc] init];
+}
+
+int icli_auto_brightness(void) {
+    id client = brightnessClient();
+    id value = client ? ((id (*)(id, SEL, id))objc_msgSend)(client, @selector(copyPropertyForKey:), @"DisplayBrightnessAuto") : nil;
+    return [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : -1;
+}
+
+// CoreBrightness takes a committed value as the user's own setting, the way
+// Control Center's slider does. A raw backboardd level is pulled back to the
+// ambient-light curve within seconds; with auto-brightness on, a committed
+// value can still drift as ambient light changes.
+static bool setUserBrightness(double value) {
+    id client = brightnessClient();
+    if (!client) {
+        return false;
+    }
+    NSDictionary *request = @{@"Brightness": @(value), @"Commit": @YES};
+    return ((BOOL (*)(id, SEL, id, id))objc_msgSend)(client, @selector(setProperty:forKey:), request, @"DisplayBrightness");
+}
+
 // backboardd honours BKSDisplayBrightnessSet only from clients holding
 // com.apple.backboard.displaybrightness; the request is sent asynchronously,
 // so spin the run loop before the caller reads the value back.
@@ -804,6 +1089,10 @@ bool icli_brightness_set(double value) {
     double v = value;
     if (v < 0) v = 0;
     if (v > 1) v = 1;
+    if (setUserBrightness(v)) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.3, false);
+        return true;
+    }
     void *handle = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_NOW);
     void (*set)(float, int) = handle ? dlsym(handle, "BKSDisplayBrightnessSet") : NULL;
     if (!set) {

@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.5.1_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.5.2_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 
@@ -63,6 +63,8 @@ OCR uses Apple's Vision framework. If system text recognition is unavailable, th
 
 Run these commands on the device or in its SSH session. Unlock the device and keep the screen on before interacting with an app. Use `icli --help` or append `--help` to a command to see its options.
 
+icli reads and writes real filesystem paths. On RootHide, the bootstrap's shell, `scp`, and other tools treat `/` as the jailbreak root and reach the real filesystem under `/rootfs`. A file that icli writes to `/tmp/screen.jpg` therefore appears in the shell as `/rootfs/tmp/screen.jpg`. To pass a file from the shell to icli, prefix its path with the `jbroot` value that `icli env` reports.
+
 ### Inspect and Interact
 
 Read the foreground app's accessibility tree, then use its text or identifiers in your commands. Replace the sample identifiers and text below with elements in your app:
@@ -75,7 +77,7 @@ icli ui wait 'Ready element' --timeout 5
 icli ui wait-gone 'Loading' --timeout 10
 ```
 
-For coordinate input, read the screen dimensions first. Coordinates are **points**, including those returned by accessibility and OCR:
+For coordinate input, read the screen dimensions first. Coordinates are **points** in the orientation shown on screen, including those returned by accessibility and OCR. On an iPad held in landscape, `screen info` reports a landscape width and height:
 
 ```sh
 icli screen info

@@ -43,12 +43,17 @@ extension Device {
         static var configuration = CommandConfiguration(subcommands: [Get.self, Set.self])
         struct Get: ParsableCommand {
             @OptionGroup var output: OutputOptions
-            func run() { emit(output) { ["brightness": brightness()] } }
+            func run() { emit(output) { brightnessReport(brightness()) } }
         }
         struct Set: ParsableCommand {
             @OptionGroup var output: OutputOptions
             @Argument(help: "Brightness from 0 to 1.") var value: Double
-            func run() { emit(output) { try setBrightness(value); return ["brightness": value] } }
+            func run() {
+                emit(output) {
+                    try setBrightness(value)
+                    return brightnessReport(value)
+                }
+            }
         }
     }
 
@@ -110,4 +115,10 @@ extension Device {
         @Option var plane: String = "IOService"
         func run() { emit(output) { try ioregistry(plane: plane) } }
     }
+}
+
+private func brightnessReport(_ level: Double) -> [String: Any] {
+    var result: [String: Any] = ["brightness": level]
+    if let auto = autoBrightness() { result["auto_brightness"] = auto }
+    return result
 }
