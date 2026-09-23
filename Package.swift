@@ -48,6 +48,7 @@ let package = Package(
                 .linkedFramework("ImageIO"),
                 .linkedFramework("CoreFoundation"),
                 .linkedFramework("AVFoundation"),
+                .linkedFramework("CoreLocation"),
             ]
         ),
         .target(

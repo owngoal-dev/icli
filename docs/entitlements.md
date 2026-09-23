@@ -1,6 +1,6 @@
 # Entitlements and execution requirements
 
-[Resources/icli.entitlements](../Resources/icli.entitlements) is the authoritative signing profile for the shipped CLI. This inventory covers all 62 keys and their exact configured values. The complete profile is tested together on the rootless vphone; individual keys have **not** been tested by removing them one at a time. Descriptions below explain each capability's intended role, not a claim that every key is necessary on every iOS release. Private capabilities depend on the OS and bootstrap.
+[Resources/icli.entitlements](../Resources/icli.entitlements) is the authoritative signing profile for the shipped CLI. This inventory covers all 65 keys and their exact configured values. The complete profile is tested together on the rootless vphone; individual keys have **not** been tested by removing them one at a time. Descriptions below explain each capability's intended role, not a claim that every key is necessary on every iOS release. Private capabilities depend on the OS and bootstrap.
 
 When linking **IcliKit** or **IcliSystem**, entitlements must be granted to the final calling executable or app. [The Swift Package guide](swift-package.md#entitlements-the-host-needs) maps the read-only `IcliSystem` calls onto the keys below and says which of those are verified. SwiftPM does not apply this file to consumers or sign them. Use your own `application-identifier` and `com.apple.application-identifier`; the `com.icli.icli` values identify the CLI. Integrate only the feature groups your host needs using its existing signing process. Ordinary provisioning cannot grant this private platform profile.
 
@@ -87,6 +87,15 @@ OCR uses Vision and the captured image; there is no separate OCR entitlement in 
 | `com.apple.private.network.statistics` | `true` | Retained network inspection profile; packet capture uses BPF and requires device access/root. |
 | `com.apple.private.security.storage.DiagnosticReports.read-write` | `true` | Diagnostic report storage access; crash commands read reports. |
 | `com.apple.CommCenter.fine-grained` | `spi`, `data-allowed-write` | CoreTelephony policy query SPI and per-app data-policy write capability. |
+
+## Location
+
+| Key | CLI value | Intended role |
+| --- | --- | --- |
+| `com.apple.locationd.simulation` | `true` | Required for `location set` and `location clear`: without it locationd silently ignores `CLSimulationManager` requests, even from root (verified on iOS 18.5). |
+| `com.apple.locationd.effective_bundle` | `true` | Required for `location get`: it lets the CLI read as a System Services location bundle, because locationd never authorizes a bare executable (verified on iOS 18.5). |
+
+`com.apple.locationd.preauthorized` is not in the profile: on iOS 18.5 it neither authorizes a bare executable nor is needed once the client names a location bundle.
 
 ## Keychain
 

@@ -103,6 +103,12 @@ char *icli_bootlogo_render_json(const char *mark_path, const char *output_path, 
 char *icli_active_audio_json(void);
 char *icli_audio_button_json(const char *button);
 
+/// Location simulation through locationd; the location outlives the process.
+char *icli_location_simulate_json(double latitude, double longitude, double altitude, double horizontal_accuracy, double vertical_accuracy, double speed, double course);
+char *icli_location_clear_json(void);
+/// Waits up to `timeout` seconds for a fresh fix (at the target coordinate when `match`).
+char *icli_location_read_json(double timeout, bool match, double latitude, double longitude);
+
 char *icli_syslog_json(double seconds, const char *process, const char *level, int max_lines);
 char *icli_ioreg_json(const char *plane);
 

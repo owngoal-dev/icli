@@ -118,6 +118,10 @@
 	<true/>
 	<key>com.apple.Pasteboard.paste-unchecked</key>
 	<true/>
+	<key>com.apple.locationd.simulation</key>
+	<true/>
+	<key>com.apple.locationd.effective_bundle</key>
+	<true/>
 	<key>com.apple.backboard.displaybrightness</key>
 	<true/>
 	<key>com.apple.CommCenter.fine-grained</key>
