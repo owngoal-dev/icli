@@ -7,7 +7,7 @@ The package exports the `IcliKit` and `IcliSystem` libraries and the `icli` exec
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.5.0"),
+    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.0"),
 ],
 targets: [
     .target(
@@ -42,6 +42,22 @@ Functions return Foundation dictionaries and throw `IcliError` or underlying Fou
 The API is synchronous and has not been audited for concurrent use. Serialize operations, especially package database mutations and UI interactions. Archive operations and waits can block; integrate them with your application's scheduling and lifecycle. Long-lived app hosts have only been checked for compilation through a separate consumer; the full behavior suite runs in the CLI process.
 
 `Envelope` is CLI output/exit machinery, not an app integration API: `Envelope.run` can terminate the process. Call the throwing library functions directly. The CLI's interactive lock check wraps its commands; library callers must enforce their own interaction policy, check `screenInfo()` for `locked` and `screen_off`, and respect system privacy and permission decisions.
+
+## Device features
+
+Every `icli` command is a thin layer over a public IcliKit function, so a long-running host such as a daemon can call the same code in-process. These arrived in 0.6.0:
+
+| Feature | Calls |
+| --- | --- |
+| Location | `simulateLocation(latitude:longitude:altitude:horizontalAccuracy:verticalAccuracy:speed:course:)`, `clearSimulatedLocation()`, `currentLocation(timeout:)`. The simulation stays on after the calling process exits. |
+| Developer Mode | `developerModeStatus()`, `enableDeveloperMode()`. Enabling only arms it for the next restart. |
+| Low Power Mode | `lowPowerMode()`, `setLowPowerMode(_:)` |
+| Clipboard | `clipboardInfo(imageOutput:)`, `clipboardImagePNG()`, `setClipboardImage(_:)`, next to `clipboardText()` and `setClipboard(_:)` |
+| Preferences | `readPreference`, `writePreference` and `deletePreference`, with `PreferenceUser` and `PreferenceValue`. Build a `PreferenceValue` directly, or parse command-line text with `init(text:type:)`. |
+| Raw input | `touch(_:x:y:normalized:)`, `touchSequence(_:normalized:)` with `TouchEvent`, `hidEvent(page:usage:down:)`, `hidPress(page:usage:)`. `TouchPhase` is `down`, `move` or `up` (UITouchPhase 0, 1 and 3). |
+| Container installs | `installIPAInContainer(_:registration:)` or `installPackage(_:container:registration:)`, with `AppRegistrationType`. `uninstallApp(_:force:)` removes container apps icli installed. |
+
+A call a device can't support throws `IcliError.unavailable` and leaves the device as it was. For example, a jailbroken device won't launch an app installed in a container unless the app is signed in a way CoreTrust accepts. The CLI refuses UI input while the device is locked. A library caller has to make that check itself.
 
 ## The IcliSystem product
 
@@ -102,4 +118,4 @@ python3 scripts/check-package-consumer.py
 python3 scripts/check-package-consumer.py --device
 ```
 
-This builds separate iOS executables against a local Git snapshot tagged with the package version, using an exact-version source-control dependency: `IcliKit` at the iOS 16 triple and `IcliSystem` at the iOS 15 one, from a consumer package that declares the iOS 15 floor. It verifies product selection, public imports, transitive linkage, the floor a consumer may declare, and compatibility with SwiftPM's dependency build restrictions. `--device` signs the test executable with its own application identity and the CLI capability profile, then checks environment reporting, Debian version comparison, and installed package state on the device. The consumer source is in [Tests/PackageConsumer](../Tests/PackageConsumer); evidence is saved to `.build/package-consumer-verification.json`.
+This builds separate iOS executables against a local Git snapshot tagged with the package version, using an exact-version source-control dependency: `IcliKit` at the iOS 16 triple and `IcliSystem` at the iOS 15 one, from a consumer package that declares the iOS 15 floor. It verifies product selection, public imports, transitive linkage, the floor a consumer may declare, and compatibility with SwiftPM's dependency build restrictions. `--device` signs the test executable with its own application identity and the CLI capability profile, then checks environment reporting, Debian version comparison, installed package state, Developer Mode and Low Power Mode status on the device. It also checks that `writePreference` refuses a value that isn't a property list before anything is written. The build references every 0.6.0 device-feature API with its full type, so the check fails if one stops being public or changes signature. The consumer source is in [Tests/PackageConsumer](../Tests/PackageConsumer); evidence is saved to `.build/package-consumer-verification.json`.

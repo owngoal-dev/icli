@@ -112,6 +112,10 @@ public func readPreference(domain: String, key: String?, user: PreferenceUser = 
 public func writePreference(domain: String, key: String, value: PreferenceValue, user: PreferenceUser = .mobile, notify: String? = nil) throws -> [String: Any] {
     let domain = try checkedDomain(domain)
     try checkedKey(key)
+    // .plist can come from a host's own decoded JSON, not only init(text:type:).
+    guard PropertyListSerialization.propertyList(value.propertyList, isValidFor: .binary) else {
+        throw IcliError.failed("\(key) is not a property-list value (no nulls; dictionary keys must be strings)")
+    }
     CFPreferencesSetValue(key as CFString, value.propertyList, domain as CFString, user.cfUser, kCFPreferencesAnyHost)
     try synchronize(domain, user)
     guard let stored = CFPreferencesCopyValue(key as CFString, domain as CFString, user.cfUser, kCFPreferencesAnyHost),

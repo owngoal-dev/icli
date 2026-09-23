@@ -80,17 +80,22 @@ if args.device:
     signing.write_bytes(plistlib.dumps(entitlements))
     subprocess.run(['ldid', '-S' + str(signing), str(binary)], check=True)
     device = runpy.run_path(str(root / 'scripts/acceptance.py'))['Device']()
-    remote = '/tmp/icli-package-consumer'
+    folder = '/var/tmp/icli-package-consumer'
+    remote = folder + '/IcliPackageConsumer'
+    # RootHide binaries find the jbroot through a .jbroot link beside them, as
+    # in its /usr/bin; a copied binary in a plain folder would miss it.
+    made = device.run(f'rm -rf {folder} && mkdir {folder} && if [ -L /usr/bin/.jbroot ]; then ln -s ../../../.jbroot {folder}/.jbroot; fi')
+    assert made.returncode == 0, made.stderr
     device.upload(binary, remote)
     digest = hashlib.sha256(binary.read_bytes()).hexdigest()
     fingerprint = device.run(['sha256sum', remote])
     assert fingerprint.returncode == 0 and fingerprint.stdout.split()[0] == digest
     result = device.run([remote])
+    device.run(['rm', '-rf', folder])
     assert result.returncode == 0, result.stdout + result.stderr
     report['signed_consumer_binary_sha256'] = digest
     report['application_identifier'] = identifier
     report['device_result'] = json.loads(result.stdout)
-    device.run(['rm', '-f', remote])
 (root / '.build/package-consumer-verification.json').write_text(json.dumps(report, indent=2) + '\n')
 print('PASS external versioned Swift Package consumer:', binary)
 print('PASS iOS 15 IcliSystem consumer:', system_binary)
