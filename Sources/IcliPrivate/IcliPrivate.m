@@ -765,7 +765,7 @@ static bool dispatchHID(IOHIDEventRef event) {
 }
 
 // The digitizer reports in the fixed (portrait) space, whatever the UI shows.
-static void normalizePoint(double x, double y, double *nx, double *ny) {
+void icli_screen_point_to_digitizer(double x, double y, double *nx, double *ny) {
     IcliInterfaceGeometry geometry = interfaceGeometry();
     if (!geometry.valid) {
         IcliScreenMetrics m = panelMetrics();
@@ -779,7 +779,8 @@ static void normalizePoint(double x, double y, double *nx, double *ny) {
     *ny = fy / (geometry.fixed_height > 1 ? geometry.fixed_height : 1);
 }
 
-static IOHIDEventRef createDigitizerEvent(double x, double y, IcliTouchPhase phase, uint64_t timestamp) {
+// nx and ny are 0…1 in the fixed digitizer space.
+static IOHIDEventRef createDigitizerEvent(double nx, double ny, IcliTouchPhase phase, uint64_t timestamp) {
     if (!pIOHIDEventCreateDigitizerEvent) {
         return NULL;
     }
@@ -805,8 +806,6 @@ static IOHIDEventRef createDigitizerEvent(double x, double y, IcliTouchPhase pha
     default:
         return NULL;
     }
-    double nx, ny;
-    normalizePoint(x, y, &nx, &ny);
     IOHIDEventRef parent = pIOHIDEventCreateDigitizerEvent(
         kCFAllocatorDefault, timestamp, kIOHIDDigitizerTransducerTypeHand,
         0, 0, mask, 0,
@@ -833,7 +832,15 @@ static IOHIDEventRef createDigitizerEvent(double x, double y, IcliTouchPhase pha
 
 static bool hidTouch(double x, double y, IcliTouchPhase phase) {
     icli_private_init();
-    return dispatchHID(createDigitizerEvent(x, y, phase, hidNow()));
+    double nx, ny;
+    icli_screen_point_to_digitizer(x, y, &nx, &ny);
+    return dispatchHID(createDigitizerEvent(nx, ny, phase, hidNow()));
+}
+
+bool icli_hid_touch(int phase, double nx, double ny) {
+    icli_private_init();
+    if (phase < IcliTouchBegan || phase > IcliTouchEnded) return false;
+    return dispatchHID(createDigitizerEvent(nx, ny, (IcliTouchPhase)phase, hidNow()));
 }
 
 bool icli_hid_tap(double x, double y) {
