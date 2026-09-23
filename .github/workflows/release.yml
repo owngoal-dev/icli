@@ -76,13 +76,8 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - Location simulation: `location set`, `location clear` and `location get`; the simulated location applies to every app and stays on after icli exits.
-          - `device low-power get/set` switches Low Power Mode through powerd, and `device devmode get/enable` reads Developer Mode and arms it for the next restart.
-          - `clipboard get` reports pasteboard types, change count and images (`--image-output`); `clipboard set --image` copies an image.
-          - `prefs read/write/delete`: typed preference values like `defaults`, for mobile by default, root, or a plist path.
-          - Raw input: `screen touch down/move/up`, `screen touch-sequence` and `input hid`, with point or normalized digitizer coordinates.
-          - `app install --container` installs an IPA into its own app and data containers and `app uninstall` removes them; the IPA must already be signed so the device can run it.
-          - Each feature is a public IcliKit API, so a long-running host can link it.
+          - Maintenance release: the code is simplified and reorganized, with no intended change to commands, JSON output or the public IcliKit API. `IcliPrivate.m` and the host commands are split into focused files, and long lines are wrapped at 120 columns.
+          - Includes the 0.6.0 device features (location simulation, Low Power Mode, Developer Mode, clipboard images, typed preferences, raw touch and HID input, container IPA installs), each a public IcliKit API.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
           - These are CI-built artifacts; CI does not rerun device tests. Before release, the full acceptance suite passed on an iPad (iOS 18.5, RootHide) except the full reboot case, which was not run.
