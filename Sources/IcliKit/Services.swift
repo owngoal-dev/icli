@@ -1,7 +1,7 @@
+import Darwin
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
-import Darwin
 
 // launchd system-domain service mutations, spoken to directly over launchd's
 // bootstrap pipe. They need root; the read-only half lives in IcliSystem.
@@ -15,11 +15,15 @@ private func decode(_ raw: String?) throws -> [String: Any] {
 public func loadServices(_ paths: [String], load: Bool, override: Bool) throws -> [String: Any] {
     guard !paths.isEmpty else { throw IcliError.failed("at least one plist or directory path is required") }
     let absolute = paths.map { ($0 as NSString).standardizingPath }.map { $0.hasPrefix("/") ? $0 : FileManager.default.currentDirectoryPath + "/" + $0 }
-    for path in absolute where !FileManager.default.fileExists(atPath: path) { throw IcliError.failed("path not found: \(path)") }
+    for path in absolute where !FileManager.default.fileExists(atPath: path) {
+        throw IcliError.failed("path not found: \(path)")
+    }
     var cStrings = absolute.map { UnsafePointer<CChar>(strdup($0)) }
     defer { cStrings.forEach { free(UnsafeMutablePointer(mutating: $0)) } }
     let result = try decode(cStrings.withUnsafeMutableBufferPointer { buffer in takeCString(icli_launchd_load_json(buffer.baseAddress, Int32(buffer.count), load, override)) })
-    if let error = launchdStatusError(result, load ? "load" : "unload") { throw error }
+    if let error = launchdStatusError(result, load ? "load" : "unload") {
+        throw error
+    }
     let errors = result["errors"] as? [String: Any] ?? [:]
     var services: [[String: Any]] = []
     for path in absolute {
@@ -37,17 +41,23 @@ public func loadServices(_ paths: [String], load: Bool, override: Bool) throws -
         // service was already in the requested state.
         let benign = errors.values.allSatisfy { (($0 as? [String: Any])?["code"] as? Int).map { load ? $0 == EEXIST || $0 == EALREADY : $0 == 113 } ?? false }
         payload["unchanged"] = benign
-        if !benign { throw IcliError.failed("launchd rejected \(errors.count) path(s): \(errors)") }
+        if !benign {
+            throw IcliError.failed("launchd rejected \(errors.count) path(s): \(errors)")
+        }
         payload["verified"] = unexpected.isEmpty
     }
-    if !unexpected.isEmpty { throw IcliError.failed("\(unexpected.count) service(s) did not reach the requested state: \(unexpected.compactMap { $0["label"] })") }
+    if !unexpected.isEmpty {
+        throw IcliError.failed("\(unexpected.count) service(s) did not reach the requested state: \(unexpected.compactMap { $0["label"] })")
+    }
     return payload
 }
 
 private func launchdPlists(at path: String) -> [String] {
     var isDirectory: ObjCBool = false
     guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return [] }
-    if !isDirectory.boolValue { return [path] }
+    if !isDirectory.boolValue {
+        return [path]
+    }
     let names = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
     return names.filter { $0.hasSuffix(".plist") }.sorted().map { (path as NSString).appendingPathComponent($0) }
 }
@@ -56,9 +66,13 @@ private func launchdPlists(at path: String) -> [String] {
 public func setServiceEnabled(_ label: String, enabled: Bool) throws -> [String: Any] {
     try validateServiceLabel(label)
     let before = try serviceStatus(label)
-    if before["enabled"] as? Bool == enabled { return ["label": label, "enabled": enabled, "changed": false] }
+    if before["enabled"] as? Bool == enabled {
+        return ["label": label, "enabled": enabled, "changed": false]
+    }
     let result = try decode(takeCString(icli_launchd_enable_json(label, enabled)))
-    if let error = launchdStatusError(result, enabled ? "enable" : "disable") { throw error }
+    if let error = launchdStatusError(result, enabled ? "enable" : "disable") {
+        throw error
+    }
     let after = try serviceStatus(label)
     guard after["enabled"] as? Bool == enabled else { throw IcliError.failed("launchd accepted the request but the override did not change") }
     return ["label": label, "enabled": enabled, "changed": true]
@@ -72,7 +86,9 @@ private func serviceActionResult(
 ) throws -> [String: Any] {
     let result = try decode(raw)
     let status = result["status"] as? Int ?? 0
-    if !benignStatuses.contains(status), let error = launchdStatusError(result, action) { throw error }
+    if !benignStatuses.contains(status), let error = launchdStatusError(result, action) {
+        throw error
+    }
     var payload: [String: Any] = [
         "action": action,
         "label": label,
@@ -81,8 +97,12 @@ private func serviceActionResult(
         "launchd_status": status,
         "message": result["message"] as? String ?? "",
     ]
-    if let pid = result["pid"] as? Int, pid > 0 { payload["pid"] = pid }
-    if let domain = result["domain"] as? String, !domain.isEmpty { payload["domain"] = domain }
+    if let pid = result["pid"] as? Int, pid > 0 {
+        payload["pid"] = pid
+    }
+    if let domain = result["domain"] as? String, !domain.isEmpty {
+        payload["domain"] = domain
+    }
     return payload
 }
 
@@ -130,9 +150,13 @@ public func signalService(_ label: String, signal: String) throws -> [String: An
 
 public func setLaunchdEnvironment(_ key: String, value: String?) throws -> [String: Any] {
     try validateEnvironmentKey(key)
-    if value?.contains("\0") == true { throw IcliError.failed("environment value contains a NUL byte") }
+    if value?.contains("\0") == true {
+        throw IcliError.failed("environment value contains a NUL byte")
+    }
     let result = try decode(takeCString(icli_launchd_setenv_json(key, value ?? "", value == nil)))
-    if let error = launchdStatusError(result, value == nil ? "unsetenv" : "setenv") { throw error }
+    if let error = launchdStatusError(result, value == nil ? "unsetenv" : "setenv") {
+        throw error
+    }
     let after = try launchdEnvironment(key)
     let matches = value.map { after["value"] as? String == $0 } ?? (after["exists"] as? Bool == false)
     guard matches else { throw IcliError.failed("launchd accepted the environment change but read-back did not match") }
@@ -142,9 +166,13 @@ public func setLaunchdEnvironment(_ key: String, value: String?) throws -> [Stri
 }
 
 private func parseSignal(_ value: String) throws -> Int32 {
-    if let number = Int32(value), number > 0, number < 32 { return number }
+    if let number = Int32(value), number > 0, number < 32 {
+        return number
+    }
     var name = value.uppercased()
-    if name.hasPrefix("SIG") { name.removeFirst(3) }
+    if name.hasPrefix("SIG") {
+        name.removeFirst(3)
+    }
     let names: [String: Int32] = [
         "HUP": 1, "INT": 2, "QUIT": 3, "ILL": 4, "TRAP": 5, "ABRT": 6,
         "EMT": 7, "FPE": 8, "KILL": 9, "BUS": 10, "SEGV": 11, "SYS": 12,
@@ -168,7 +196,9 @@ public func respring() throws -> [String: Any] {
     func wait(seconds: Double, before: Int?) throws -> Int? {
         let deadline = ProcessInfo.processInfo.systemUptime + seconds
         repeat {
-            if let now = try springboardPID(), now != before { return now }
+            if let now = try springboardPID(), now != before {
+                return now
+            }
             Thread.sleep(forTimeInterval: 0.2)
         } while ProcessInfo.processInfo.systemUptime < deadline
         return nil

@@ -1,6 +1,6 @@
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
 import UIKit
 import Vision
 
@@ -8,14 +8,22 @@ public func takeScreenshot(path requestedPath: String? = nil, base64: Bool = fal
     icli_private_init()
     let path = requestedPath ?? (JailbreakRoot.current.scratchDirectory() + "/icli-\(UUID().uuidString).jpg")
     guard icli_screenshot_jpeg(path, 0.8, 800_000, nativeResolution) else { throw IcliError.failed("screenshot failed") }
-    defer { if base64 && requestedPath == nil { try? FileManager.default.removeItem(atPath: path) } }
+    defer {
+        if base64, requestedPath == nil {
+            try? FileManager.default.removeItem(atPath: path)
+        }
+    }
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
     guard let image = UIImage(data: data)?.cgImage else { throw IcliError.failed("screenshot is not a valid image") }
     let metrics = icli_screen_metrics()
     var result: [String: Any] = ["bytes": data.count, "mime_type": "image/jpeg", "width": image.width,
-        "height": image.height, "coordinate_scale": Double(image.width) / metrics.width]
-    if base64 { result["data"] = data.base64EncodedString() }
-    if !base64 || requestedPath != nil { result["path"] = path }
+                                 "height": image.height, "coordinate_scale": Double(image.width) / metrics.width]
+    if base64 {
+        result["data"] = data.base64EncodedString()
+    }
+    if !base64 || requestedPath != nil {
+        result["path"] = path
+    }
     return result
 }
 
@@ -43,14 +51,16 @@ public func swipe(x1: Double, y1: Double, x2: Double, y2: Double, seconds: Doubl
     try validatePoint(x1, y1)
     try validatePoint(x2, y2)
     try validateDuration(seconds, name: "seconds")
-    guard (1...2000).contains(steps) else { throw IcliError.failed("steps must be 1–2000") }
+    guard (1 ... 2000).contains(steps) else { throw IcliError.failed("steps must be 1–2000") }
     guard icli_hid_swipe(x1, y1, x2, y2, seconds, Int32(steps)) else { throw IcliError.failed("hid swipe unavailable") }
     return ["from": [x1, y1], "to": [x2, y2]]
 }
 
 public func drag(points: [(Double, Double)], seconds: Double, hold: Double = 0.5, steps: Int = 20) throws -> [String: Any] {
-    guard (2...1000).contains(points.count), (points.count - 1...2000).contains(steps) else { throw IcliError.failed("drag needs 2–1000 points and steps >= segments, up to 2000") }
-    for (x, y) in points { try validatePoint(x, y) }
+    guard (2 ... 1000).contains(points.count), (points.count - 1 ... 2000).contains(steps) else { throw IcliError.failed("drag needs 2–1000 points and steps >= segments, up to 2000") }
+    for (x, y) in points {
+        try validatePoint(x, y)
+    }
     try validateDuration(seconds, name: "seconds")
     try validateDuration(hold, name: "hold", allowZero: true)
     var xs = points.map(\.0)
@@ -67,7 +77,9 @@ public func drag(points: [(Double, Double)], seconds: Double, hold: Double = 0.5
 public func pressButton(_ name: String) throws -> [String: Any] {
     if ["volume-up", "volume-down", "mute"].contains(name) {
         guard let raw = takeCString(icli_audio_button_json(name)), let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid audio button response") }
-        if let error = result["error"] as? String { throw IcliError.failed(error) }
+        if let error = result["error"] as? String {
+            throw IcliError.failed(error)
+        }
         return result
     }
     if name == "wake" {
@@ -79,7 +91,7 @@ public func pressButton(_ name: String) throws -> [String: Any] {
 }
 
 public func typeText(_ text: String, delayMS: Double = 30) throws -> [String: Any] {
-    guard !text.isEmpty, text.utf8.count <= 64 * 1024, delayMS.isFinite, (0...1000).contains(delayMS) else {
+    guard !text.isEmpty, text.utf8.count <= 64 * 1024, delayMS.isFinite, (0 ... 1000).contains(delayMS) else {
         throw IcliError.failed("text must contain 1–65536 bytes and delay-ms must be 0–1000")
     }
     for character in text {
@@ -91,8 +103,8 @@ public func typeText(_ text: String, delayMS: Double = 30) throws -> [String: An
 
 public func pressKey(_ name: String) throws -> [String: Any] {
     let keys: [String: UInt16] = ["return": 0x28, "enter": 0x28, "delete": 0x2A, "backspace": 0x2A,
-        "tab": 0x2B, "escape": 0x29, "space": 0x2C, "up": 0x52, "down": 0x51, "left": 0x50,
-        "right": 0x4F, "home": 0x4A, "end": 0x4D, "pageup": 0x4B, "pagedown": 0x4E]
+                                  "tab": 0x2B, "escape": 0x29, "space": 0x2C, "up": 0x52, "down": 0x51, "left": 0x50,
+                                  "right": 0x4F, "home": 0x4A, "end": 0x4D, "pageup": 0x4B, "pagedown": 0x4E]
     let parts = name.lowercased().split(separator: "+").map(String.init)
     let modifierKeys: [String: UInt16] = ["cmd": 0xE3, "command": 0xE3, "ctrl": 0xE0, "control": 0xE0, "shift": 0xE1, "alt": 0xE2, "option": 0xE2]
     var modifiers: [UInt16] = []
@@ -102,14 +114,16 @@ public func pressKey(_ name: String) throws -> [String: Any] {
     }
     let key = parts.last ?? ""
     let letter = key.utf8.count == 1 ? key.utf8.first : nil
-    let usage = keys[key] ?? letter.flatMap { (97...122).contains($0) ? UInt16($0 - 97 + 4) : nil }
+    let usage = keys[key] ?? letter.flatMap { (97 ... 122).contains($0) ? UInt16($0 - 97 + 4) : nil }
     guard let usage else { throw IcliError.failed("unknown key: \(name)") }
-    defer { for modifier in modifiers.reversed() { _ = icli_hid_key(0x07, modifier, false) } }
+    defer { for modifier in modifiers.reversed() {
+        _ = icli_hid_key(0x07, modifier, false)
+    } }
     for modifier in modifiers {
         guard icli_hid_key(0x07, modifier, true) else { throw IcliError.failed("HID keyboard unavailable") }
     }
     guard icli_hid_key(0x07, usage, true) else { throw IcliError.failed("HID keyboard unavailable") }
-    usleep(20_000)
+    usleep(20000)
     guard icli_hid_key(0x07, usage, false) else { throw IcliError.failed("HID key release failed") }
     return ["key": name, "dispatched": true]
 }
@@ -126,7 +140,7 @@ public func openURL(_ url: String) throws -> [String: Any] {
 }
 
 public func recognizeScreen(languages: [String], minConfidence: Float) throws -> [String: Any] {
-    guard !languages.isEmpty, minConfidence.isFinite, (0...1).contains(minConfidence) else {
+    guard !languages.isEmpty, minConfidence.isFinite, (0 ... 1).contains(minConfidence) else {
         throw IcliError.failed("provide languages and confidence between 0 and 1")
     }
     let path = JailbreakRoot.current.scratchDirectory() + "/icli-ocr-\(UUID().uuidString).jpg"
@@ -147,14 +161,20 @@ private func recognizeImage(path: String, languages: [String], minConfidence: Fl
 }
 
 public func uiElements(maxElements: Int = 250, visibleOnly: Bool = true, clickableOnly: Bool = false, limit: Int? = nil) throws -> [String: Any] {
-    guard (1...2000).contains(maxElements), limit == nil || (limit! > 0 && limit! <= 2000) else {
+    guard (1 ... 2000).contains(maxElements), limit == nil || (limit! > 0 && limit! <= 2000) else {
         throw IcliError.failed("element limits must be between 1 and 2000")
     }
-    var result = try decodeAX(takeCString(icli_ax_elements_json(try frontmostPID(), Int32(maxElements))))
+    var result = try decodeAX(takeCString(icli_ax_elements_json(frontmostPID(), Int32(maxElements))))
     var elements = result["elements"] as? [[String: Any]] ?? []
-    if visibleOnly { elements = elements.filter { $0["visible"] as? Bool == true } }
-    if clickableOnly { elements = elements.filter { $0["clickable"] as? Bool == true } }
-    if let limit { elements = Array(elements.prefix(limit)) }
+    if visibleOnly {
+        elements = elements.filter { $0["visible"] as? Bool == true }
+    }
+    if clickableOnly {
+        elements = elements.filter { $0["clickable"] as? Bool == true }
+    }
+    if let limit {
+        elements = Array(elements.prefix(limit))
+    }
     result["elements"] = elements
     result["count"] = elements.count
     return result
@@ -164,7 +184,9 @@ private func decodeAX(_ raw: String?) throws -> [String: Any] {
     guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
         throw IcliError.failed("invalid AX response")
     }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
+    if let error = result["error"] as? String {
+        throw IcliError.failed(error)
+    }
     return result
 }
 
@@ -180,7 +202,7 @@ public func describeScreen() throws -> [String: Any] {
     let resized = UIGraphicsImageRenderer(size: pointSize, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: pointSize)) }
     guard let jpeg = resized.jpegData(compressionQuality: 0.8) else { throw IcliError.failed("snapshot JPEG encoding failed") }
     var payload: [String: Any] = ["frontmost": frontmost, "screen": screenInfo(),
-        "screenshot": ["data": jpeg.base64EncodedString(), "mime_type": "image/jpeg", "width": pointSize.width, "height": pointSize.height, "coordinate_scale": 1, "bytes": jpeg.count]]
+                                  "screenshot": ["data": jpeg.base64EncodedString(), "mime_type": "image/jpeg", "width": pointSize.width, "height": pointSize.height, "coordinate_scale": 1, "bytes": jpeg.count]]
     do { payload["elements"] = try uiElements() }
     catch { payload["elements"] = ["error": error.localizedDescription] }
     do { payload["ocr"] = try recognizeImage(path: path, languages: ["zh-Hans", "en-US"], minConfidence: 0.3) }
@@ -192,7 +214,7 @@ public func describeScreen() throws -> [String: Any] {
 
 public func elementAt(x: Double, y: Double) throws -> [String: Any] {
     try validatePoint(x, y)
-    return try decodeAX(takeCString(icli_ax_element_at_json(try frontmostPID(), x, y)))
+    return try decodeAX(takeCString(icli_ax_element_at_json(frontmostPID(), x, y)))
 }
 
 public struct ElementSelector {
@@ -203,7 +225,7 @@ public struct ElementSelector {
     public let index: Int
 
     public init(text: String?, identifier: String? = nil, role: String? = nil, match: String = "contains", index: Int = 0) throws {
-        guard (text?.isEmpty == false || identifier?.isEmpty == false), ["contains", "exact"].contains(match), index >= 0 else {
+        guard text?.isEmpty == false || identifier?.isEmpty == false, ["contains", "exact"].contains(match), index >= 0 else {
             throw IcliError.failed("provide text or identifier, match contains/exact, and a nonnegative index")
         }
         self.text = text; self.identifier = identifier; self.role = role; self.match = match; self.index = index
@@ -211,8 +233,13 @@ public struct ElementSelector {
 
     func matches(_ element: [String: Any]) -> Bool {
         if let role {
-            if role == "control" { if element["clickable"] as? Bool != true { return false } }
-            else if role != "element", element["role"] as? String != role { return false }
+            if role == "control" {
+                if element["clickable"] as? Bool != true {
+                    return false
+                }
+            } else if role != "element", element["role"] as? String != role {
+                return false
+            }
         }
         if let identifier {
             return element["identifier"] as? String == identifier || element["label"] as? String == identifier
@@ -241,7 +268,7 @@ public func tapElement(_ selector: ElementSelector) throws -> [String: Any] {
 }
 
 public func waitForElement(_ selector: ElementSelector, appear: Bool, timeout: TimeInterval, interval: TimeInterval = 0.3) throws -> [String: Any] {
-    guard timeout.isFinite, (0...60).contains(timeout), interval.isFinite, (0.1...5).contains(interval) else {
+    guard timeout.isFinite, (0 ... 60).contains(timeout), interval.isFinite, (0.1 ... 5).contains(interval) else {
         throw IcliError.failed("timeout must be 0–60 seconds and interval 0.1–5 seconds")
     }
     let start = ProcessInfo.processInfo.systemUptime
@@ -252,7 +279,9 @@ public func waitForElement(_ selector: ElementSelector, appear: Bool, timeout: T
             return ["found": present, "disappeared": !present, "waited_ms": Int((ProcessInfo.processInfo.systemUptime - start) * 1000), "element": present ? hits[selector.index] : [:]]
         }
         let remaining = timeout - (ProcessInfo.processInfo.systemUptime - start)
-        if remaining <= 0 { break }
+        if remaining <= 0 {
+            break
+        }
         Thread.sleep(forTimeInterval: min(interval, remaining))
     } while ProcessInfo.processInfo.systemUptime - start <= timeout
     throw IcliError.failed("element wait timed out")
@@ -275,8 +304,8 @@ private func visionBlocks(in image: CGImage, languages: [String], minConfidence:
         guard let candidate = observation.topCandidates(1).first, candidate.confidence >= minConfidence else { return nil }
         let box = observation.boundingBox
         return ["text": candidate.string, "confidence": candidate.confidence,
-            "x": box.midX * pointSize.width, "y": (1 - box.midY) * pointSize.height,
-            "width": box.width * pointSize.width, "height": box.height * pointSize.height]
+                "x": box.midX * pointSize.width, "y": (1 - box.midY) * pointSize.height,
+                "width": box.width * pointSize.width, "height": box.height * pointSize.height]
     }
 }
 

@@ -1,5 +1,5 @@
-import IcliSystem
 import Foundation
+import IcliSystem
 
 private let defaultReadCap = 512 * 1024
 
@@ -24,7 +24,7 @@ public func listDirectory(_ path: String) throws -> [String: Any] {
 
 public func readFile(_ path: String, binary: Bool, limit: Int?) throws -> [String: Any] {
     let cap = limit ?? defaultReadCap
-    guard (0...64 * 1024 * 1024).contains(cap) else { throw IcliError.failed("limit must be 0–67108864 bytes") }
+    guard (0 ... 64 * 1024 * 1024).contains(cap) else { throw IcliError.failed("limit must be 0–67108864 bytes") }
     let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
     defer { try? handle.close() }
     let size = try handle.seekToEnd()
@@ -74,9 +74,13 @@ public func writeFile(_ path: String, content: String, encoding: String) throws 
 public func makeDirectory(_ path: String, mode: String?) throws -> [String: Any] {
     let existed = FileManager.default.fileExists(atPath: path)
     var attributes: [FileAttributeKey: Any] = [:]
-    if let mode { attributes[.posixPermissions] = try parseMode(mode) }
+    if let mode {
+        attributes[.posixPermissions] = try parseMode(mode)
+    }
     try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true, attributes: attributes)
-    if existed, let mode { try FileManager.default.setAttributes([.posixPermissions: try parseMode(mode)], ofItemAtPath: path) }
+    if existed, let mode {
+        try FileManager.default.setAttributes([.posixPermissions: parseMode(mode)], ofItemAtPath: path)
+    }
     return ["path": path, "created": !existed]
 }
 
@@ -87,7 +91,7 @@ public func removePath(_ path: String, recursive: Bool, force: Bool) throws -> [
     var info = stat()
     guard lstat(path, &info) == 0 else { return ["path": path, "removed": false, "message": "path does not exist"] }
     let isDirectory = (info.st_mode & S_IFMT) == S_IFDIR
-    if isDirectory && !recursive {
+    if isDirectory, !recursive {
         guard rmdir(path) == 0 else { throw IcliError.failed("directory not empty or not removable; pass --recursive: \(String(cString: strerror(errno)))") }
         return ["path": path, "removed": true, "type": "directory"]
     }
@@ -116,9 +120,15 @@ public func changeOwner(_ path: String, owner: String) throws -> [String: Any] {
     let parts = owner.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
     guard parts.count == 2 else { throw IcliError.failed("owner must be uid:gid") }
     func resolve(_ text: String, group: Bool) throws -> UInt32 {
-        if let number = UInt32(text) { return number }
-        if group, let entry = getgrnam(text) { return entry.pointee.gr_gid }
-        if !group, let entry = getpwnam(text) { return entry.pointee.pw_uid }
+        if let number = UInt32(text) {
+            return number
+        }
+        if group, let entry = getgrnam(text) {
+            return entry.pointee.gr_gid
+        }
+        if !group, let entry = getpwnam(text) {
+            return entry.pointee.pw_uid
+        }
         throw IcliError.failed("unknown \(group ? "group" : "user"): \(text)")
     }
     let uid = try resolve(parts[0], group: false), gid = try resolve(parts[1], group: true)
@@ -127,13 +137,17 @@ public func changeOwner(_ path: String, owner: String) throws -> [String: Any] {
 }
 
 public func copyPath(_ source: String, to destination: String) throws -> [String: Any] {
-    if FileManager.default.fileExists(atPath: destination) { throw IcliError.failed("destination exists: \(destination)") }
+    if FileManager.default.fileExists(atPath: destination) {
+        throw IcliError.failed("destination exists: \(destination)")
+    }
     try FileManager.default.copyItem(atPath: source, toPath: destination)
     return ["source": source, "destination": destination]
 }
 
 public func movePath(_ source: String, to destination: String) throws -> [String: Any] {
-    if FileManager.default.fileExists(atPath: destination) { throw IcliError.failed("destination exists: \(destination)") }
+    if FileManager.default.fileExists(atPath: destination) {
+        throw IcliError.failed("destination exists: \(destination)")
+    }
     try FileManager.default.moveItem(atPath: source, toPath: destination)
     return ["source": source, "destination": destination]
 }
@@ -155,12 +169,16 @@ public func setPlistValue(_ path: String, key: String, json: String?) throws -> 
     var info = stat()
     let existed = stat(path, &info) == 0
     try output.write(to: URL(fileURLWithPath: path), options: .atomic)
-    if existed { chmod(path, info.st_mode & 0o7777); if geteuid() == 0 { chown(path, info.st_uid, info.st_gid) } }
+    if existed {
+        chmod(path, info.st_mode & 0o7777); if geteuid() == 0 {
+            chown(path, info.st_uid, info.st_gid)
+        }
+    }
     return ["path": path, "key": key, "value": plist[key].map(jsonSafe) ?? NSNull(), "previous": previous.map(jsonSafe) ?? NSNull(), "format": format == .binary ? "binary" : "xml"]
 }
 
 private func parseMode(_ text: String) throws -> Int {
-    guard let value = Int(text, radix: 8), (0...0o7777).contains(value) else { throw IcliError.failed("mode must be octal, e.g. 755") }
+    guard let value = Int(text, radix: 8), (0 ... 0o7777).contains(value) else { throw IcliError.failed("mode must be octal, e.g. 755") }
     return value
 }
 
@@ -172,7 +190,9 @@ public func findFiles(root: String, pattern: String) throws -> [String: Any] {
         if rel.lowercased().contains(pred) {
             matches.append((root as NSString).appendingPathComponent(rel))
         }
-        if matches.count >= 500 { break }
+        if matches.count >= 500 {
+            break
+        }
     }
     return ["root": root, "pattern": pattern, "matches": matches]
 }
@@ -184,22 +204,26 @@ public func readPlist(_ path: String) throws -> [String: Any] {
 }
 
 private func isLikelyText(_ data: Data) -> Bool {
-    if data.isEmpty { return true }
-    if data.contains(0) { return false }
+    if data.isEmpty {
+        return true
+    }
+    if data.contains(0) {
+        return false
+    }
     return String(data: data, encoding: .utf8) != nil
 }
 
 private func jsonSafe(_ value: Any) -> Any {
     switch value {
     case let d as Data:
-        return d.base64EncodedString()
+        d.base64EncodedString()
     case let d as Date:
-        return ISO8601DateFormatter().string(from: d)
+        ISO8601DateFormatter().string(from: d)
     case let dict as [String: Any]:
-        return dict.mapValues { jsonSafe($0) }
+        dict.mapValues { jsonSafe($0) }
     case let arr as [Any]:
-        return arr.map { jsonSafe($0) }
+        arr.map { jsonSafe($0) }
     default:
-        return value
+        value
     }
 }

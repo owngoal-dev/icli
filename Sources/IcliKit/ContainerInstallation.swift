@@ -1,7 +1,7 @@
+import Darwin
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
-import Darwin
 
 /// How LaunchServices lists an app installed in its own container.
 public enum AppRegistrationType: String, CaseIterable {
@@ -69,14 +69,18 @@ private func appPlugIns(of app: String, owner: String) throws -> [PlugIn] {
 private func fixPermissions(_ app: String) throws {
     var paths = [app]
     if let entries = FileManager.default.enumerator(atPath: app) {
-        for case let relative as String in entries { paths.append(app + "/" + relative) }
+        for case let relative as String in entries {
+            paths.append(app + "/" + relative)
+        }
     }
     for path in paths {
         var status = stat()
         guard lstat(path, &status) == 0 else { throw IcliError.failed("could not read \(path): \(String(cString: strerror(errno)))") }
         guard lchown(path, 33, 33) == 0 else { throw IcliError.failed("could not change the owner of \(path): \(String(cString: strerror(errno)))") }
         let kind = status.st_mode & S_IFMT
-        if kind == S_IFLNK { continue }
+        if kind == S_IFLNK {
+            continue
+        }
         let executable = kind == S_IFDIR || isMachO(path)
         guard chmod(path, executable ? 0o755 : 0o644) == 0 else { throw IcliError.failed("could not change the mode of \(path): \(String(cString: strerror(errno)))") }
     }
@@ -86,7 +90,7 @@ private func isMachO(_ path: String) -> Bool {
     guard let handle = FileHandle(forReadingAtPath: path) else { return false }
     defer { try? handle.close() }
     let magic = handle.readData(ofLength: 4)
-    return magic.count == 4 && [0xfeedfacf, 0xcffaedfe, 0xcafebabe, 0xbebafeca].contains(magic.withUnsafeBytes { $0.load(as: UInt32.self) })
+    return magic.count == 4 && [0xFEED_FACF, 0xCFFA_EDFE, 0xCAFE_BABE, 0xBEBA_FECA].contains(magic.withUnsafeBytes { $0.load(as: UInt32.self) })
 }
 
 /// The part of a LaunchServices registration an app and its plug-ins share,
@@ -100,7 +104,9 @@ private func registrationRecord(bundleID: String, executable: String, dataKind: 
     let dataID = entitlements["com.apple.private.security.container-required"] as? String ?? bundleID
     let data = try container(dataKind, dataID, create: true)
     guard let dataPath = data["path"] as? String else { throw IcliError.failed("no data container for \(bundleID)") }
-    if data["existed"] as? Bool == false { created.append(CreatedContainer(kind: dataKind, identifier: dataID)) }
+    if data["existed"] as? Bool == false {
+        created.append(CreatedContainer(kind: dataKind, identifier: dataID))
+    }
     let home = containerized ? dataPath : "/var/mobile"
     var record: [String: Any] = [
         "CFBundleIdentifier": bundleID,
@@ -111,29 +117,37 @@ private func registrationRecord(bundleID: String, executable: String, dataKind: 
         "EnvironmentVariables": ["CFFIXED_USER_HOME": home, "HOME": home, "TMPDIR": containerized ? dataPath + "/tmp" : "/var/tmp"],
         "Entitlements": entitlements,
         "SignerOrganization": "Apple Inc.",
-        "SignatureVersion": 132352,
+        "SignatureVersion": 132_352,
         "SignerIdentity": "Apple iPhone OS Application Signing",
     ]
-    if let team = entitlements["com.apple.developer.team-identifier"] as? String { record["TeamIdentifier"] = team }
+    if let team = entitlements["com.apple.developer.team-identifier"] as? String {
+        record["TeamIdentifier"] = team
+    }
     var groups: [String: String] = [:]
     for (key, kind, flag) in [("com.apple.security.application-groups", "group", "HasAppGroupContainers"),
-                              ("com.apple.security.system-groups", "system-group", "HasSystemGroupContainers")] {
+                              ("com.apple.security.system-groups", "system-group", "HasSystemGroupContainers")]
+    {
         for identifier in entitlements[key] as? [String] ?? [] {
             let group = try container(kind, identifier, create: true)
             guard let path = group["path"] as? String else { continue }
-            if group["existed"] as? Bool == false { created.append(CreatedContainer(kind: kind, identifier: identifier)) }
+            if group["existed"] as? Bool == false {
+                created.append(CreatedContainer(kind: kind, identifier: identifier))
+            }
             groups[identifier] = path
             record[flag] = true
         }
     }
-    if !groups.isEmpty { record["GroupContainers"] = groups }
+    if !groups.isEmpty {
+        record["GroupContainers"] = groups
+    }
     return record
 }
 
 /// Registers a container app and its plug-ins, then reads the record back,
 /// adding the data container and whether the app is sandboxed in it.
 private func registerContainerApp(_ app: String, bundleID: String, executable: String, plugIns: [PlugIn],
-                                  registration: AppRegistrationType, created: inout [CreatedContainer]) throws -> [String: Any] {
+                                  registration: AppRegistrationType, created: inout [CreatedContainer]) throws -> [String: Any]
+{
     var record = try registrationRecord(bundleID: bundleID, executable: app + "/" + executable, dataKind: "data", created: &created)
     record["ApplicationType"] = registration == .system ? "System" : "User"
     record["Path"] = app
@@ -183,7 +197,8 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
         throw IcliError.failed("\(bundleID) is already installed and icli did not install it; remove it first")
     }
     if let installed = (try? appInfo(bundleID))?["bundle_path"] as? String,
-       !physicalPath(installed).hasPrefix(physicalPath(bundleContainer ?? "/nonexistent") + "/") {
+       !physicalPath(installed).hasPrefix(physicalPath(bundleContainer ?? "/nonexistent") + "/")
+    {
         throw IcliError.failed("\(bundleID) is already installed at \(installed); only an app icli installed in a container can be replaced")
     }
 
@@ -191,12 +206,16 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
     if bundleContainer == nil {
         let made = try container("app", bundleID, create: true)
         guard let path = made["path"] as? String else { throw IcliError.failed("no bundle container for \(bundleID)") }
-        if made["existed"] as? Bool == false { created.append(CreatedContainer(kind: "app", identifier: bundleID)) }
+        if made["existed"] as? Bool == false {
+            created.append(CreatedContainer(kind: "app", identifier: bundleID))
+        }
         bundleContainer = path
     }
     guard let bundleContainer else { throw IcliError.failed("no bundle container for \(bundleID)") }
     let previousType = previous.flatMap { try? appRegistration($0)["type"] as? String }
-    if previous != nil, (try? appInfo(bundleID)) != nil { _ = try killApp(bundleID, force: true) }
+    if previous != nil, (try? appInfo(bundleID)) != nil {
+        _ = try killApp(bundleID, force: true)
+    }
 
     let target = bundleContainer + "/" + (staged.app as NSString).lastPathComponent
     let backup = bundleContainer + "/.icli-previous"
@@ -208,7 +227,9 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
             try manager.moveItem(atPath: previous, toPath: backup)
         }
         try manager.copyItem(atPath: staged.app, toPath: target)
-        if !markerExisted, !manager.createFile(atPath: marker, contents: Data()) { throw IcliError.failed("could not mark the app container as installed by icli") }
+        if !markerExisted, !manager.createFile(atPath: marker, contents: Data()) {
+            throw IcliError.failed("could not mark the app container as installed by icli")
+        }
         try fixPermissions(target)
         let record = try registerContainerApp(target, bundleID: bundleID, executable: staged.executable, plugIns: plugIns, registration: registration, created: &created)
         try? manager.removeItem(atPath: backup)
@@ -224,17 +245,24 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
             "upgraded": previous != nil,
         ]
     } catch {
-        if (try? appRegistration(target)["registered"] as? Bool) == true { _ = icli_unregister_app(target) }
+        if (try? appRegistration(target)["registered"] as? Bool) == true {
+            _ = icli_unregister_app(target)
+        }
         try? manager.removeItem(atPath: target)
         if let previous, manager.fileExists(atPath: backup), (try? manager.moveItem(atPath: backup, toPath: previous)) != nil,
-           let executable = NSDictionary(contentsOfFile: previous + "/Info.plist")?["CFBundleExecutable"] as? String {
+           let executable = NSDictionary(contentsOfFile: previous + "/Info.plist")?["CFBundleExecutable"] as? String
+        {
             var ignored: [CreatedContainer] = []
             _ = try? registerContainerApp(previous, bundleID: bundleID, executable: executable,
                                           plugIns: (try? appPlugIns(of: previous, owner: bundleID)) ?? [],
                                           registration: previousType == "System" ? .system : .user, created: &ignored)
         }
-        if !markerExisted { try? manager.removeItem(atPath: marker) }
-        for made in created.reversed() { _ = try? destroyContainer(made.kind, made.identifier) }
+        if !markerExisted {
+            try? manager.removeItem(atPath: marker)
+        }
+        for made in created.reversed() {
+            _ = try? destroyContainer(made.kind, made.identifier)
+        }
         throw error
     }
 }
@@ -250,11 +278,17 @@ func uninstallContainerApp(_ bundleID: String) throws -> [String: Any]? {
     guard geteuid() == 0 else { throw IcliError.failed("removing an app icli installed in a container requires root") }
     let app = appBundle(in: bundleContainer)
     let plugIns = app.flatMap { try? appPlugIns(of: $0, owner: bundleID) } ?? []
-    if (try? appInfo(bundleID)) != nil { _ = try killApp(bundleID, force: true) }
-    if let app { _ = try unregisterApp(app, force: true) }
+    if (try? appInfo(bundleID)) != nil {
+        _ = try killApp(bundleID, force: true)
+    }
+    if let app {
+        _ = try unregisterApp(app, force: true)
+    }
     var removed: [String] = []
     for (kind, identifier) in plugIns.map({ ("plugin", $0.bundleID) }) + [("data", bundleID), ("app", bundleID)] {
-        if let path = try destroyContainer(kind, identifier)["path"] as? String { removed.append(path) }
+        if let path = try destroyContainer(kind, identifier)["path"] as? String {
+            removed.append(path)
+        }
     }
     return ["uninstalled": bundleID, "method": "container", "removed_containers": removed]
 }

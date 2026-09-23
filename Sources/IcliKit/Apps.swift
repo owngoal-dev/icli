@@ -1,7 +1,7 @@
+import Darwin
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
-import Darwin
 
 public func searchApps(_ query: String) throws -> [String: Any] {
     let all = try listApps()["apps"] as? [[String: Any]] ?? []
@@ -77,24 +77,32 @@ public func launchApp(_ bundleID: String) throws -> [String: Any] {
     guard icli_launch_app(bundleID) else { throw IcliError.failed("launch failed: \(bundleID)") }
     let deadline = ProcessInfo.processInfo.systemUptime + 5
     repeat {
-        if frontmostApp()["bundle_id"] as? String == bundleID { return ["launched": bundleID, "frontmost": true] }
+        if frontmostApp()["bundle_id"] as? String == bundleID {
+            return ["launched": bundleID, "frontmost": true]
+        }
         Thread.sleep(forTimeInterval: 0.1)
     } while ProcessInfo.processInfo.systemUptime < deadline
     throw IcliError.failed("app did not become frontmost: \(bundleID)")
 }
 
 public func killApp(_ bundleID: String, force: Bool) throws -> [String: Any] {
-    if !force { throw IcliError.forceRequired("kill \(bundleID)") }
+    if !force {
+        throw IcliError.forceRequired("kill \(bundleID)")
+    }
     let app = try appInfo(bundleID)
     let processes = try listProcesses(filter: nil)["processes"] as? [[String: Any]] ?? []
     let pids = processes.filter { processMatchesApp($0, app) }.compactMap { $0["pid"] as? Int }
     for pid in pids {
-        if Darwin.kill(Int32(pid), SIGTERM) != 0 && errno != ESRCH { throw IcliError.failed("could not stop app: \(String(cString: strerror(errno)))") }
+        if Darwin.kill(Int32(pid), SIGTERM) != 0, errno != ESRCH {
+            throw IcliError.failed("could not stop app: \(String(cString: strerror(errno)))")
+        }
     }
     let deadline = ProcessInfo.processInfo.systemUptime + 5
     repeat {
         let remaining = try listProcesses(filter: nil)["processes"] as? [[String: Any]] ?? []
-        if !remaining.contains(where: { processMatchesApp($0, app) }) { return ["killed": bundleID, "pids": pids, "already_stopped": pids.isEmpty] }
+        if !remaining.contains(where: { processMatchesApp($0, app) }) {
+            return ["killed": bundleID, "pids": pids, "already_stopped": pids.isEmpty]
+        }
         Thread.sleep(forTimeInterval: 0.1)
     } while ProcessInfo.processInfo.systemUptime < deadline
     throw IcliError.failed("app is still running: \(bundleID)")
@@ -122,9 +130,15 @@ public func installPackage(_ path: String, container: Bool = false, registration
 }
 
 public func uninstallApp(_ bundleID: String, force: Bool) throws -> [String: Any] {
-    if !force { throw IcliError.forceRequired("uninstall \(bundleID)") }
-    if let result = try uninstallManagedApp(bundleID) { return result }
-    if let result = try uninstallContainerApp(bundleID) { return result }
+    if !force {
+        throw IcliError.forceRequired("uninstall \(bundleID)")
+    }
+    if let result = try uninstallManagedApp(bundleID) {
+        return result
+    }
+    if let result = try uninstallContainerApp(bundleID) {
+        return result
+    }
     guard icli_uninstall_app(bundleID) else {
         throw IcliError.failed("uninstall failed: \(bundleID)")
     }
@@ -133,7 +147,9 @@ public func uninstallApp(_ bundleID: String, force: Bool) throws -> [String: Any
 
 private func decodeApps(_ raw: String?) throws -> [String: Any] {
     guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid application response") }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
+    if let error = result["error"] as? String {
+        throw IcliError.failed(error)
+    }
     return result
 }
 
@@ -152,7 +168,9 @@ public func registerApp(_ path: String) throws -> [String: Any] {
 }
 
 public func unregisterApp(_ path: String, force: Bool) throws -> [String: Any] {
-    if !force { throw IcliError.forceRequired("unregister \(path)") }
+    if !force {
+        throw IcliError.forceRequired("unregister \(path)")
+    }
     let before = try appRegistration(path)
     guard before["registered"] as? Bool == true else { return ["unregistered": false, "path": path, "message": "app is not registered"] }
     guard icli_unregister_app(path) else { throw IcliError.failed("unregister failed: \(path)") }
@@ -174,7 +192,9 @@ public func refreshApps(directory: String?) throws -> [String: Any] {
 }
 
 public func unregisterAppsInDirectory(_ directory: String, force: Bool) throws -> [String: Any] {
-    if !force { throw IcliError.forceRequired("unregister every app in \(directory)") }
+    if !force {
+        throw IcliError.forceRequired("unregister every app in \(directory)")
+    }
     let result = try decodeApps(takeCString(icli_apps_unregister_directory_json(directory)))
     let failed = result["failed"] as? [String] ?? []
     let unverified = result["unverified"] as? [String] ?? []
@@ -200,7 +220,9 @@ public func openAppURL(_ url: String, bundleID: String?) throws -> [String: Any]
         throw IcliError.failed("open failed: \(url)")
     }
     var payload: [String: Any] = ["url": url]
-    if let bundleID { payload["bundle_id"] = bundleID }
+    if let bundleID {
+        payload["bundle_id"] = bundleID
+    }
     return payload
 }
 
@@ -213,7 +235,9 @@ public func appURLSchemes() throws -> [String: Any] {
         guard let info = NSDictionary(contentsOfFile: plist) else { continue }
         let types = info["CFBundleURLTypes"] as? [[String: Any]] ?? []
         let names = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
-        if !names.isEmpty { schemes[bid] = names }
+        if !names.isEmpty {
+            schemes[bid] = names
+        }
     }
     return ["schemes": schemes]
 }

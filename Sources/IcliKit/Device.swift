@@ -1,7 +1,7 @@
+import Darwin
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
-import Darwin
 
 /// IcliSystem's device snapshot plus the battery and lock state that only the
 /// UIKit/SpringBoard bridge can answer.
@@ -35,7 +35,9 @@ public func screenInfo() -> [String: Any] {
     ]
 }
 
-public func brightness() -> Double { icli_brightness_get() }
+public func brightness() -> Double {
+    icli_brightness_get()
+}
 
 /// Whether auto-brightness is on, or nil when it cannot be read.
 public func autoBrightness() -> Bool? {
@@ -44,7 +46,7 @@ public func autoBrightness() -> Bool? {
 }
 
 public func setBrightness(_ value: Double) throws {
-    guard value.isFinite, (0...1).contains(value) else { throw IcliError.failed("brightness must be between 0 and 1") }
+    guard value.isFinite, (0 ... 1).contains(value) else { throw IcliError.failed("brightness must be between 0 and 1") }
     guard icli_brightness_set(value) else { throw IcliError.failed("could not set brightness") }
     Thread.sleep(forTimeInterval: 0.1)
     guard abs(icli_brightness_get() - value) <= 0.02 else {
@@ -58,12 +60,14 @@ public func volume(_ category: String = "Audio/Video") -> Double {
 
 public func audioState() throws -> [String: Any] {
     guard let raw = takeCString(icli_active_audio_json()), let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid audio state") }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
+    if let error = result["error"] as? String {
+        throw IcliError.failed(error)
+    }
     return result
 }
 
 public func setVolume(_ value: Double, category: String = "Audio/Video") throws -> [String: Any] {
-    guard value.isFinite, (0...1).contains(value) else { throw IcliError.failed("volume must be between 0 and 1") }
+    guard value.isFinite, (0 ... 1).contains(value) else { throw IcliError.failed("volume must be between 0 and 1") }
     guard icli_volume_set(value, category) else { throw IcliError.failed("could not set volume") }
     return [
         "volume": icli_volume_get(category),
@@ -110,11 +114,11 @@ public func setRotationLock(_ locked: Bool) throws -> [String: Any] {
 
 private func rotationName(_ degrees: Int32) -> String {
     switch degrees {
-    case 0: return "portrait"
-    case 90: return "landscape-left"
-    case 180: return "upside-down"
-    case 270: return "landscape-right"
-    default: return "unknown"
+    case 0: "portrait"
+    case 90: "landscape-left"
+    case 180: "upside-down"
+    case 270: "landscape-right"
+    default: "unknown"
     }
 }
 

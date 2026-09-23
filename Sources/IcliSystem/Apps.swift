@@ -1,6 +1,6 @@
-import IcliSystemPrivate
-import Foundation
 import Darwin
+import Foundation
+import IcliSystemPrivate
 
 /// LaunchServices' registrations, plus the application directories of every
 /// bootstrap layout. Read-only: bundle identifier, name, paths (a `data_path`
@@ -42,7 +42,9 @@ private func uniqued(_ apps: [[String: Any]], key: String) -> [[String: Any]] {
     var seen = Set<String>()
     return apps.filter { app in
         let id = app[key] as? String ?? UUID().uuidString
-        if seen.contains(id) { return false }
+        if seen.contains(id) {
+            return false
+        }
         seen.insert(id)
         return true
     }

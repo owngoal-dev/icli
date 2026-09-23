@@ -1,6 +1,6 @@
-import IcliSystemPrivate
-import Foundation
 import Darwin
+import Foundation
+import IcliSystemPrivate
 
 public func listProcesses(filter: String?) throws -> [String: Any] {
     let result = try decodeBridgeJSON(takeCString(icli_processes_json()), "process list")

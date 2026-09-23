@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import IcliKit
+
 struct Screen: ParsableCommand {
     static var configuration = CommandConfiguration(
         abstract: "Touch, screenshot, OCR",
@@ -13,7 +14,9 @@ extension Screen {
         @OptionGroup var output: OutputOptions
         @Argument var x: Double
         @Argument var y: Double
-        func run() { emit(output) { try tap(x: x, y: y) } }
+        func run() {
+            emit(output) { try tap(x: x, y: y) }
+        }
     }
 
     struct Swipe: ParsableCommand {
@@ -24,7 +27,9 @@ extension Screen {
         @Option var toY: Double
         @Option var seconds: Double = 0.25
         @Option var steps: Int = 20
-        func run() { emit(output) { try swipe(x1: fromX, y1: fromY, x2: toX, y2: toY, seconds: seconds, steps: steps) } }
+        func run() {
+            emit(output) { try swipe(x1: fromX, y1: fromY, x2: toX, y2: toY, seconds: seconds, steps: steps) }
+        }
     }
 
     struct LongPress: ParsableCommand {
@@ -33,7 +38,9 @@ extension Screen {
         @Argument var x: Double
         @Argument var y: Double
         @Option var seconds: Double = 0.6
-        func run() { emit(output) { try longPress(x: x, y: y, seconds: seconds) } }
+        func run() {
+            emit(output) { try longPress(x: x, y: y, seconds: seconds) }
+        }
     }
 
     struct DoubleTap: ParsableCommand {
@@ -42,7 +49,9 @@ extension Screen {
         @Argument var x: Double
         @Argument var y: Double
         @Option var interval: Double = 0.1
-        func run() { emit(output) { try doubleTap(x: x, y: y, interval: interval) } }
+        func run() {
+            emit(output) { try doubleTap(x: x, y: y, interval: interval) }
+        }
     }
 
     struct Drag: ParsableCommand {
@@ -94,7 +103,9 @@ extension Screen {
         @OptionGroup var output: OutputOptions
         @Option(help: "JSON array of {phase,x,y,delay_ms}; delay_ms is the pause after that event.") var events: String
         @Flag(help: "x and y are 0–1 in the fixed portrait digitizer space instead of UI points.") var normalized = false
-        func run() { emit(output) { try touchSequence(TouchEvent.list(fromJSON: events), normalized: normalized) } }
+        func run() {
+            emit(output) { try touchSequence(TouchEvent.list(fromJSON: events), normalized: normalized) }
+        }
     }
 
     struct Shot: ParsableCommand {
@@ -102,24 +113,32 @@ extension Screen {
         @Option(name: .customLong("output"), help: "Destination JPEG path; defaults to a temporary file.") var path: String?
         @Flag(help: "Include the JPEG as Base64 in the result; keep a file only when --output is supplied.") var base64 = false
         @Flag var nativeResolution = false
-        func run() { emit(allowWhenLocked: true, output) { try takeScreenshot(path: path, base64: base64, nativeResolution: nativeResolution) } }
+        func run() {
+            emit(allowWhenLocked: true, output) { try takeScreenshot(path: path, base64: base64, nativeResolution: nativeResolution) }
+        }
     }
 
     struct Info: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        func run() { emit(allowWhenLocked: true, output) { screenInfo() } }
+        func run() {
+            emit(allowWhenLocked: true, output) { screenInfo() }
+        }
     }
 
     struct OCR: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @Option var lang: [String] = ["zh-Hans", "en-US"]
         @Option var minConfidence: Float = 0.3
-        func run() { emit(output) { try recognizeScreen(languages: lang, minConfidence: minConfidence) } }
+        func run() {
+            emit(output) { try recognizeScreen(languages: lang, minConfidence: minConfidence) }
+        }
     }
 
     struct Describe: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        func run() { emit(output) { try describeScreen() } }
+        func run() {
+            emit(output) { try describeScreen() }
+        }
     }
 }
 
@@ -133,29 +152,46 @@ struct Button: ParsableCommand {
 extension Button {
     struct Home: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        func run() { emit(output) { try pressButton("home") } }
+        func run() {
+            emit(output) { try pressButton("home") }
+        }
     }
+
     struct Power: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        func run() { emit(output) { try pressButton("power") } }
+        func run() {
+            emit(output) { try pressButton("power") }
+        }
     }
+
     struct VolumeUp: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "volume-up")
         @OptionGroup var output: OutputOptions
-        func run() { emit(output) { try pressButton("volume-up") } }
+        func run() {
+            emit(output) { try pressButton("volume-up") }
+        }
     }
+
     struct VolumeDown: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "volume-down")
         @OptionGroup var output: OutputOptions
-        func run() { emit(output) { try pressButton("volume-down") } }
+        func run() {
+            emit(output) { try pressButton("volume-down") }
+        }
     }
+
     struct Mute: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        func run() { emit(output) { try pressButton("mute") } }
+        func run() {
+            emit(output) { try pressButton("mute") }
+        }
     }
+
     struct Wake: ParsableCommand {
         @OptionGroup var output: OutputOptions
-        func run() { emit(allowWhenLocked: true, output) { try pressButton("wake") } }
+        func run() {
+            emit(allowWhenLocked: true, output) { try pressButton("wake") }
+        }
     }
 }
 
@@ -170,20 +206,29 @@ extension Input {
     struct Paste: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @Argument var text: String
-        func run() { emit(output) { try pasteText(text) } }
+        func run() {
+            emit(output) { try pasteText(text) }
+        }
     }
+
     struct TypeText: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "type")
         @OptionGroup var output: OutputOptions
         @Argument var text: String
         @Option(name: .customLong("delay-ms")) var delayMS: Double = 30
-        func run() { emit(output) { try typeText(text, delayMS: delayMS) } }
+        func run() {
+            emit(output) { try typeText(text, delayMS: delayMS) }
+        }
     }
+
     struct Key: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @Argument var name: String
-        func run() { emit(output) { try pressKey(name) } }
+        func run() {
+            emit(output) { try pressKey(name) }
+        }
     }
+
     struct HID: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Send a raw HID usage: a press, or only the key going down or up.")
         @OptionGroup var output: OutputOptions
@@ -195,7 +240,9 @@ extension Input {
             emit(output) {
                 guard !(down && up) else { throw IcliError.failed("use --down or --up, not both") }
                 let page = try parseHIDNumber(page), usage = try parseHIDNumber(usage)
-                if down || up { return try hidEvent(page: page, usage: usage, down: down) }
+                if down || up {
+                    return try hidEvent(page: page, usage: usage, down: down)
+                }
                 return try hidPress(page: page, usage: usage)
             }
         }
@@ -227,33 +274,47 @@ extension UI {
         @Option var limit: Int?
         @Flag var includeOffscreen = false
         @Flag var clickableOnly = false
-        func run() { emit(output) { try uiElements(maxElements: maxElements, visibleOnly: !includeOffscreen, clickableOnly: clickableOnly, limit: limit) } }
+        func run() {
+            emit(output) { try uiElements(maxElements: maxElements, visibleOnly: !includeOffscreen, clickableOnly: clickableOnly, limit: limit) }
+        }
     }
+
     struct At: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @Argument var x: Double
         @Argument var y: Double
-        func run() { emit(output) { try elementAt(x: x, y: y) } }
+        func run() {
+            emit(output) { try elementAt(x: x, y: y) }
+        }
     }
+
     struct Tap: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @OptionGroup var selection: ElementOptions
-        func run() { emit(output) { try tapElement(selection.selector()) } }
+        func run() {
+            emit(output) { try tapElement(selection.selector()) }
+        }
     }
+
     struct Wait: ParsableCommand {
         @OptionGroup var output: OutputOptions
         @OptionGroup var selection: ElementOptions
         @Option var timeout: Double = 10
         @Option var interval: Double = 0.3
-        func run() { emit(output) { try waitForElement(selection.selector(), appear: true, timeout: timeout, interval: interval) } }
+        func run() {
+            emit(output) { try waitForElement(selection.selector(), appear: true, timeout: timeout, interval: interval) }
+        }
     }
+
     struct WaitGone: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "wait-gone")
         @OptionGroup var output: OutputOptions
         @OptionGroup var selection: ElementOptions
         @Option var timeout: Double = 10
         @Option var interval: Double = 0.3
-        func run() { emit(output) { try waitForElement(selection.selector(), appear: false, timeout: timeout, interval: interval) } }
+        func run() {
+            emit(output) { try waitForElement(selection.selector(), appear: false, timeout: timeout, interval: interval) }
+        }
     }
 }
 

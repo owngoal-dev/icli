@@ -1,5 +1,5 @@
-import IcliSystem
 import Foundation
+import IcliSystem
 import UIKit
 
 private func generalPasteboard() throws -> UIPasteboard {
@@ -12,7 +12,9 @@ private func generalPasteboard() throws -> UIPasteboard {
 public func clipboardText() throws -> [String: Any] {
     let pasteboard = try generalPasteboard()
     guard let text = pasteboard.string else {
-        if pasteboard.numberOfItems == 0 { return ["text": "", "method": "uipasteboard"] }
+        if pasteboard.numberOfItems == 0 {
+            return ["text": "", "method": "uipasteboard"]
+        }
         throw IcliError.unavailable("Clipboard text is unavailable to this process.")
     }
     return ["text": text, "method": "uipasteboard"]

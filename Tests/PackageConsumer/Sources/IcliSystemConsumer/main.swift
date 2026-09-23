@@ -1,8 +1,8 @@
 import Foundation
 import IcliSystem
 
-// The read-only system product on its own: no IcliKit, no private bridge
-// import, and no UIKit, Vision or LibArchive in the link.
+/// The read-only system product on its own: no IcliKit, no private bridge
+/// import, and no UIKit, Vision or LibArchive in the link.
 let systemAPIs: [Any] = [
     deviceSnapshot as () throws -> [String: Any],
     listProcesses as (String?) throws -> [String: Any],
@@ -20,15 +20,15 @@ precondition(systemAPIs.count == 11)
 let snapshot = try deviceSnapshot()
 precondition(snapshot["model"] as? String != nil)
 let jetsam = try jetsamSnapshot()
-let report: [String: Any] = [
+let report: [String: Any] = try [
     "library": "IcliSystem",
     "api_count": systemAPIs.count,
     "layout": (snapshot["jailbreak"] as? [String: Any])?["layout"] ?? "",
-    "processes": try listProcesses(filter: nil)["count"] ?? 0,
-    "apps": try listApps()["count"] ?? 0,
-    "services": try listServices()["count"] ?? 0,
+    "processes": listProcesses(filter: nil)["count"] ?? 0,
+    "apps": listApps()["count"] ?? 0,
+    "services": listServices()["count"] ?? 0,
     "jetsam_priorities": (jetsam["priorities"] as? [[String: Any]])?.count ?? 0,
     "jetsam_priorities_error": jetsam["priorities_error"] ?? "",
     "jetsam_properties": (jetsam["properties"] as? [String: Any])?.count ?? 0,
 ]
-print(String(decoding: try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))
+try print(String(decoding: JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))

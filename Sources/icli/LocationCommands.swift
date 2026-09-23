@@ -25,8 +25,11 @@ struct Location: ParsableCommand {
         @Option(help: "Speed in metres per second (default: unknown).") var speed: Double?
         @Option(help: "Course in degrees from true north, 0 to less than 360 (default: unknown).") var course: Double?
         func validate() throws {
-            if coordinate.contains("-h") || coordinate.contains("--help") { throw CleanExit.helpRequest(self) }
+            if coordinate.contains("-h") || coordinate.contains("--help") {
+                throw CleanExit.helpRequest(self)
+            }
         }
+
         func run() {
             emit(allowWhenLocked: true, output) {
                 let degrees = coordinate.compactMap(Double.init)
@@ -39,7 +42,9 @@ struct Location: ParsableCommand {
     struct Clear: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Stop simulating and return to the real location")
         @OptionGroup var output: OutputOptions
-        func run() { emit(allowWhenLocked: true, output) { try clearSimulatedLocation() } }
+        func run() {
+            emit(allowWhenLocked: true, output) { try clearSimulatedLocation() }
+        }
     }
 
     struct Get: ParsableCommand {
@@ -49,6 +54,8 @@ struct Location: ParsableCommand {
         )
         @OptionGroup var output: OutputOptions
         @Option(help: "Seconds to wait for a fresh fix.") var timeout: Double = 10
-        func run() { emit(allowWhenLocked: true, output) { try currentLocation(timeout: timeout) } }
+        func run() {
+            emit(allowWhenLocked: true, output) { try currentLocation(timeout: timeout) }
+        }
     }
 }

@@ -1,6 +1,6 @@
-import IcliSystemPrivate
-import Foundation
 import Darwin
+import Foundation
+import IcliSystemPrivate
 
 public enum IcliError: Error {
     case locked
@@ -12,35 +12,37 @@ public enum IcliError: Error {
 
     public var code: String {
         switch self {
-        case .unavailable: return "unavailable"
-        case .locked: return "device_locked"
-        case .forceRequired: return "force_required"
-        case .missing: return "missing_dependency"
-        case .failed: return "failed"
-        case .commandFailed: return "command_failed"
+        case .unavailable: "unavailable"
+        case .locked: "device_locked"
+        case .forceRequired: "force_required"
+        case .missing: "missing_dependency"
+        case .failed: "failed"
+        case .commandFailed: "command_failed"
         }
     }
 
     public var message: String {
         switch self {
         case .locked:
-            return "device is locked or screen is off; wake the device before interactive commands"
-        case .forceRequired(let action):
-            return "pass --force to \(action)"
-        case .unavailable(let message):
-            return message
-        case .missing(let name):
-            return "\(name) is not installed"
-        case .failed(let message):
-            return message
-        case .commandFailed(let result):
-            return "command exited with status \(result["status"] ?? 1)"
+            "device is locked or screen is off; wake the device before interactive commands"
+        case let .forceRequired(action):
+            "pass --force to \(action)"
+        case let .unavailable(message):
+            message
+        case let .missing(name):
+            "\(name) is not installed"
+        case let .failed(message):
+            message
+        case let .commandFailed(result):
+            "command exited with status \(result["status"] ?? 1)"
         }
     }
 
     public var payload: [String: Any] {
         var result: [String: Any] = [:]
-        if case .commandFailed(let output) = self { result = output }
+        if case let .commandFailed(output) = self {
+            result = output
+        }
         result["error"] = code
         result["message"] = message
         return result
@@ -59,6 +61,8 @@ public func decodeBridgeJSON(_ raw: String?, _ what: String) throws -> [String: 
     guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
         throw IcliError.failed("invalid \(what)")
     }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
+    if let error = result["error"] as? String {
+        throw IcliError.failed(error)
+    }
     return result
 }

@@ -1,6 +1,6 @@
-import IcliSystemPrivate
-import Foundation
 import Darwin
+import Foundation
+import IcliSystemPrivate
 
 /// Physical paths for this process; bootstrap path conversion stays in Runtime.m.
 public struct JailbreakRoot: Equatable {
@@ -27,7 +27,9 @@ public struct JailbreakRoot: Equatable {
 
     public func binary(_ name: String) -> String {
         if name.contains("/") {
-            if FileManager.default.isExecutableFile(atPath: name) { return name }
+            if FileManager.default.isExecutableFile(atPath: name) {
+                return name
+            }
             return jbrootPath(name)
         }
         let dirs = ["/usr/bin", "/usr/sbin", "/bin", "/sbin"]
@@ -40,6 +42,6 @@ public struct JailbreakRoot: Equatable {
         let data = Data(raw.utf8)
         let info = (try? JSONSerialization.jsonObject(with: data)) as? [String: String] ?? [:]
         return JailbreakRoot(layout: Layout(rawValue: info["layout"] ?? "") ?? .rootful,
-                            jbroot: info["jbroot"] ?? "/", source: info["source"] ?? "unavailable")
+                             jbroot: info["jbroot"] ?? "/", source: info["source"] ?? "unavailable")
     }
 }

@@ -19,7 +19,9 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
         } catch {
             let message = (error as? IcliError)?.message ?? error.localizedDescription
             var result: [String: Any] = ["name": name, "result": "failed", "message": message, "seconds": ProcessInfo.processInfo.systemUptime - start]
-            if let error = error as? IcliError { result["details"] = error.payload }
+            if let error = error as? IcliError {
+                result["details"] = error.payload
+            }
             results.append(result)
         }
     }
@@ -52,11 +54,11 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
             let path = directory + "/original.txt"
             let content = "icli self-test 中文 🌱\n"
             _ = try writeFile(path, content: content, encoding: "utf8")
-            try requireSelfTest(try readFile(path, binary: false, limit: nil)["content"] as? String == content, "File content did not round-trip.")
+            try requireSelfTest(readFile(path, binary: false, limit: nil)["content"] as? String == content, "File content did not round-trip.")
             _ = try copyPath(path, to: directory + "/copy.txt")
             _ = try movePath(directory + "/copy.txt", to: directory + "/moved.txt")
-            try requireSelfTest(try readFile(directory + "/moved.txt", binary: false, limit: nil)["content"] as? String == content, "Copied and moved content differs.")
-            try requireSelfTest(try readFile(path, binary: false, limit: 4)["truncated"] as? Bool == true, "Read limit was not enforced.")
+            try requireSelfTest(readFile(directory + "/moved.txt", binary: false, limit: nil)["content"] as? String == content, "Copied and moved content differs.")
+            try requireSelfTest(readFile(path, binary: false, limit: 4)["truncated"] as? Bool == true, "Read limit was not enforced.")
             return ["write_read_copy_move": true, "truncation": true]
         }
     }
@@ -87,7 +89,9 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
                 try requireSelfTest((tree["count"] as? Int ?? 0) > 0, "No visible accessibility elements; open an accessible app and retry.")
                 return ["count": tree["count"] ?? 0, "attempts": attempts]
             } catch {
-                if ProcessInfo.processInfo.systemUptime >= deadline { throw error }
+                if ProcessInfo.processInfo.systemUptime >= deadline {
+                    throw error
+                }
                 Thread.sleep(forTimeInterval: 0.1)
             }
         }
@@ -111,12 +115,16 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
 }
 
 private func requireSelfTest(_ condition: Bool, _ message: String) throws {
-    if !condition { throw IcliError.failed(message) }
+    if !condition {
+        throw IcliError.failed(message)
+    }
 }
 
 private func requireSelfTestUnlocked() throws {
     let state = screenInfo()
-    if state["locked"] as? Bool == true || state["screen_off"] as? Bool == true { throw IcliError.locked }
+    if state["locked"] as? Bool == true || state["screen_off"] as? Bool == true {
+        throw IcliError.locked
+    }
 }
 
 private func selfTestRegisteredApps() throws -> [[String: Any]] {
@@ -130,7 +138,7 @@ private func withSelfTestDirectory(_ body: (String) throws -> [String: Any]) thr
     let directory = JailbreakRoot.current.scratchDirectory() + "/icli-selftest-" + UUID().uuidString
     try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: false)
     let result: Result<[String: Any], Error>
-    do { result = .success(try body(directory)) } catch { result = .failure(error) }
+    do { result = try .success(body(directory)) } catch { result = .failure(error) }
     do { try FileManager.default.removeItem(atPath: directory) } catch {
         throw IcliError.failed("Self-test cleanup failed at \(directory): \(error.localizedDescription); test result: \(result)")
     }
@@ -150,7 +158,9 @@ private func selfTestKeychain() throws -> [String: Any] {
     _ = try deleteKeychain(className: "generic", service: service, account: account, server: nil, group: group)
     let remaining = try listKeychain(className: "generic", service: service, account: account, server: nil, group: group, includeData: false)
     try requireSelfTest(remaining["count"] as? Int == 0, "Self-test Keychain item was not removed: \(account)")
-    if let failure { throw failure }
+    if let failure {
+        throw failure
+    }
     return ["write_read_delete": true, "group": group]
 }
 
@@ -158,7 +168,7 @@ private func selfTestRegistration(_ fixture: String) throws -> [String: Any] {
     let bundleID = "dev.owngoal.icli.SelfTestFixture"
     let info = NSDictionary(contentsOfFile: fixture + "/Info.plist")
     try requireSelfTest(info?["CFBundleIdentifier"] as? String == bundleID, "Use the dedicated dev.owngoal.icli.SelfTestFixture bundle.")
-    try requireSelfTest(try !selfTestRegisteredApps().contains { $0["bundle_id"] as? String == bundleID }, "SelfTestFixture is already registered; unregister it before testing.")
+    try requireSelfTest(!selfTestRegisteredApps().contains { $0["bundle_id"] as? String == bundleID }, "SelfTestFixture is already registered; unregister it before testing.")
     return try withSelfTestDirectory { directory in
         let first = directory + "/first"
         let second = directory + "/second"
@@ -177,22 +187,22 @@ private func selfTestRegistration(_ fixture: String) throws -> [String: Any] {
             try requireSelfTest((unchanged["registered"] as? [String])?.isEmpty == true && (unchanged["unchanged"] as? [String])?.count == 1, "Refresh re-registered an unchanged app.")
             let unregistered = try unregisterApp(original, force: true)
             try requireSelfTest(unregistered["unregistered"] as? Bool == true && FileManager.default.fileExists(atPath: original), "Explicit unregister failed or removed the bundle from disk.")
-            try requireSelfTest(try appRegistration(original)["registered"] as? Bool == false, "LaunchServices still lists the explicitly unregistered bundle.")
-            try requireSelfTest(try unregisterApp(original, force: true)["unregistered"] as? Bool == false, "Repeated unregister was not a no-op.")
+            try requireSelfTest(appRegistration(original)["registered"] as? Bool == false, "LaunchServices still lists the explicitly unregistered bundle.")
+            try requireSelfTest(unregisterApp(original, force: true)["unregistered"] as? Bool == false, "Repeated unregister was not a no-op.")
             _ = try refreshApps(directory: first)
             try FileManager.default.moveItem(atPath: original, toPath: moved)
             _ = try refreshApps(directory: second)
             _ = try refreshApps(directory: first)
-            try requireSelfTest(try appRegistration(moved)["registered"] as? Bool == true && appRegistration(original)["registered"] as? Bool == false, "Moved app registration was lost or still points at its old path.")
+            try requireSelfTest(appRegistration(moved)["registered"] as? Bool == true && appRegistration(original)["registered"] as? Bool == false, "Moved app registration was lost or still points at its old path.")
             try FileManager.default.removeItem(atPath: moved)
-            try requireSelfTest(try unregisterApp(alias + "/SelfTestFixture.app", force: true)["unregistered"] as? Bool == true, "Could not explicitly unregister a deleted bundle through a symlinked parent.")
-            try requireSelfTest(try appRegistration(moved)["registered"] as? Bool == false, "Deleted bundle remains registered after explicit unregister.")
+            try requireSelfTest(unregisterApp(alias + "/SelfTestFixture.app", force: true)["unregistered"] as? Bool == true, "Could not explicitly unregister a deleted bundle through a symlinked parent.")
+            try requireSelfTest(appRegistration(moved)["registered"] as? Bool == false, "Deleted bundle remains registered after explicit unregister.")
             try FileManager.default.copyItem(atPath: fixture, toPath: moved)
             _ = try refreshApps(directory: second)
             try FileManager.default.removeItem(atPath: moved)
             let removed = try refreshApps(directory: second)
             try requireSelfTest((removed["unregistered"] as? [String])?.count == 1, "Missing app registration was not removed.")
-            try requireSelfTest(try !selfTestRegisteredApps().contains { $0["bundle_id"] as? String == bundleID }, "Fixture is still registered after removal.")
+            try requireSelfTest(!selfTestRegisteredApps().contains { $0["bundle_id"] as? String == bundleID }, "Fixture is still registered after removal.")
         } catch { failure = error }
         // Cleanup also runs after a failed assertion or API call.
         var cleanupErrors: [String] = []
@@ -202,7 +212,9 @@ private func selfTestRegistration(_ fixture: String) throws -> [String: Any] {
             }
         }
         try requireSelfTest(cleanupErrors.isEmpty, "Fixture cleanup failed: \(cleanupErrors.joined(separator: "; "))")
-        if let failure { throw failure }
+        if let failure {
+            throw failure
+        }
         return ["new_registration": true, "unchanged_skipped": true, "unregister_existing": true, "unregister_missing": true,
                 "unregister_idempotent": true, "missing_bundle_symlink_resolution": true, "relocation": true, "stale_removal": true, "cleanup": true]
     }

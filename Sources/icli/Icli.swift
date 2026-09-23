@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import IcliKit
+
 struct OutputOptions: ParsableArguments {
     @Flag(name: .long, help: "Human-readable text instead of JSON")
     var human = false

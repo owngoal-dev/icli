@@ -1,13 +1,13 @@
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
 
 /// A bridge result, with any error reported as `unavailable`: each one means
 /// locationd cannot simulate or report a location here.
 private func decodeLocation(_ raw: String?) throws -> [String: Any] {
     do {
         return try decodeBridgeJSON(raw, "location response")
-    } catch IcliError.failed(let message) {
+    } catch let IcliError.failed(message) {
         throw IcliError.unavailable(message)
     }
 }
@@ -28,13 +28,17 @@ public func simulateLocation(
     speed: Double? = nil,
     course: Double? = nil
 ) throws -> [String: Any] {
-    guard latitude.isFinite, (-90...90).contains(latitude) else { throw IcliError.failed("latitude must be between -90 and 90") }
-    guard longitude.isFinite, (-180...180).contains(longitude) else { throw IcliError.failed("longitude must be between -180 and 180") }
+    guard latitude.isFinite, (-90 ... 90).contains(latitude) else { throw IcliError.failed("latitude must be between -90 and 90") }
+    guard longitude.isFinite, (-180 ... 180).contains(longitude) else { throw IcliError.failed("longitude must be between -180 and 180") }
     guard altitude.isFinite, abs(altitude) <= 100_000 else { throw IcliError.failed("altitude must be between -100000 and 100000 metres") }
     guard horizontalAccuracy.isFinite, horizontalAccuracy >= 0 else { throw IcliError.failed("horizontal accuracy must be 0 or more metres") }
     guard verticalAccuracy.isFinite, verticalAccuracy >= 0 else { throw IcliError.failed("vertical accuracy must be 0 or more metres") }
-    if let speed { guard speed.isFinite, speed >= 0 else { throw IcliError.failed("speed must be 0 or more metres per second") } }
-    if let course { guard course.isFinite, (0..<360).contains(course) else { throw IcliError.failed("course must be at least 0 and less than 360 degrees") } }
+    if let speed {
+        guard speed.isFinite, speed >= 0 else { throw IcliError.failed("speed must be 0 or more metres per second") }
+    }
+    if let course {
+        guard course.isFinite, (0 ..< 360).contains(course) else { throw IcliError.failed("course must be at least 0 and less than 360 degrees") }
+    }
     _ = try decodeLocation(takeCString(icli_location_simulate_json(latitude, longitude, altitude, horizontalAccuracy, verticalAccuracy, speed ?? -1, course ?? -1)))
     // locationd accepts the request without a reply, and ignores it without
     // the simulation entitlement, so only a read-back proves it took effect.

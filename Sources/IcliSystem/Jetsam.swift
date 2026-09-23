@@ -1,6 +1,6 @@
-import IcliSystemPrivate
-import Foundation
 import Darwin
+import Foundation
+import IcliSystemPrivate
 
 /// The kernel's memory policy: every process's jetsam band and limit, the
 /// jetsam property lists shipped with the OS, and the memory pressure sysctls.
@@ -28,12 +28,12 @@ private func jetsamProperties() -> [String: Any] {
 
 private func jsonSafe(_ value: Any) -> Any {
     switch value {
-    case let dictionary as [String: Any]: return dictionary.mapValues(jsonSafe)
-    case let array as [Any]: return array.map(jsonSafe)
-    case let data as Data: return data.base64EncodedString()
-    case let date as Date: return ISO8601DateFormatter().string(from: date)
-    case let number as NSNumber: return number
-    case let string as String: return string
-    default: return String(describing: value)
+    case let dictionary as [String: Any]: dictionary.mapValues(jsonSafe)
+    case let array as [Any]: array.map(jsonSafe)
+    case let data as Data: data.base64EncodedString()
+    case let date as Date: ISO8601DateFormatter().string(from: date)
+    case let number as NSNumber: number
+    case let string as String: string
+    default: String(describing: value)
     }
 }

@@ -1,7 +1,7 @@
+import Darwin
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
-import Darwin
 
 // Debian packages handled entirely in-process: reading and unpacking use
 // libarchive, and installation keeps dpkg's own database (status, info/*.list,
@@ -12,7 +12,9 @@ import Darwin
 
 private func decodePackage(_ raw: String?) throws -> [String: Any] {
     guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid package response") }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
+    if let error = result["error"] as? String {
+        throw IcliError.failed(error)
+    }
     return result
 }
 
@@ -60,7 +62,9 @@ private struct Stanza {
         var current: String?
         for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
             if line.hasPrefix(" ") || line.hasPrefix("\t") {
-                if let current { fields[current, default: ""] += "\n" + line.dropFirst() }
+                if let current {
+                    fields[current, default: ""] += "\n" + line.dropFirst()
+                }
                 continue
             }
             guard let colon = line.firstIndex(of: ":") else { continue }
@@ -88,8 +92,13 @@ private struct Stanza {
         return Stanza(raw: text)
     }
 
-    var package: String? { fields["Package"] }
-    var installed: Bool { (fields["Status"] ?? "").hasSuffix(" installed") }
+    var package: String? {
+        fields["Package"]
+    }
+
+    var installed: Bool {
+        (fields["Status"] ?? "").hasSuffix(" installed")
+    }
 }
 
 private struct DpkgDatabase {
@@ -104,13 +113,17 @@ private struct DpkgDatabase {
         stanzas = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .newlines) }.filter { !$0.isEmpty }.map(Stanza.init(raw:))
     }
 
-    func stanza(_ name: String) -> Stanza? { stanzas.first { $0.package == name } }
+    func stanza(_ name: String) -> Stanza? {
+        stanzas.first { $0.package == name }
+    }
 
     /// Real packages plus virtual ones from Provides, each with the version that satisfies constraints.
     func installedVersions() -> [String: [String]] {
         var versions: [String: [String]] = [:]
         for stanza in stanzas where stanza.installed {
-            if let name = stanza.package { versions[name, default: []].append(stanza.fields["Version"] ?? "") }
+            if let name = stanza.package {
+                versions[name, default: []].append(stanza.fields["Version"] ?? "")
+            }
             for provided in (stanza.fields["Provides"] ?? "").split(separator: ",") {
                 let (name, constraint) = parseRelation(String(provided))
                 versions[name, default: []].append(constraint?.version ?? "")
@@ -132,7 +145,9 @@ private struct DpkgDatabase {
     }
 
     mutating func releaseLock() {
-        if lock >= 0 { close(lock) }
+        if lock >= 0 {
+            close(lock)
+        }
         lock = -1
     }
 
@@ -174,7 +189,7 @@ private func parseRelation(_ text: String) -> (String, Constraint?) {
         return (trimmed.split(separator: ":").first.map(String.init) ?? trimmed, nil)
     }
     let name = trimmed[..<open].trimmingCharacters(in: .whitespaces)
-    let parts = trimmed[trimmed.index(after: open)..<close].split(separator: " ", omittingEmptySubsequences: true)
+    let parts = trimmed[trimmed.index(after: open) ..< close].split(separator: " ", omittingEmptySubsequences: true)
     guard parts.count == 2 else { return (name, nil) }
     return (name, Constraint(op: String(parts[0]), version: String(parts[1])))
 }
@@ -189,7 +204,9 @@ private func unmetDependencies(_ control: [String: String], database: DpkgDataba
             let satisfied = alternatives.contains { name, constraint in
                 (installed[name] ?? []).contains { version in constraint.map { $0.satisfied(by: version) } ?? true }
             }
-            if !satisfied { unmet.append(group.trimmingCharacters(in: .whitespaces)) }
+            if !satisfied {
+                unmet.append(group.trimmingCharacters(in: .whitespaces))
+            }
         }
     }
     return unmet
@@ -222,13 +239,15 @@ private func deletePackagePath(_ full: String) -> Deletion {
     return unlink(full) == 0 ? .removed : .failed
 }
 
-private var installPrefix: String { JailbreakRoot.current.layout == .roothide ? JailbreakRoot.current.jbroot : "" }
+private var installPrefix: String {
+    JailbreakRoot.current.layout == .roothide ? JailbreakRoot.current.jbroot : ""
+}
 
 private func acceptedArchitectures() -> Set<String> {
     switch JailbreakRoot.current.layout {
-    case .rootless: return ["iphoneos-arm64", "all"]
-    case .roothide: return ["iphoneos-arm64e", "all"]
-    case .rootful: return ["iphoneos-arm", "all"]
+    case .rootless: ["iphoneos-arm64", "all"]
+    case .roothide: ["iphoneos-arm64e", "all"]
+    case .rootful: ["iphoneos-arm", "all"]
     }
 }
 
@@ -239,7 +258,11 @@ private func registerBundles(_ paths: [String]) -> ([String], [String]) {
         let bundle = installPrefix + path
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: bundle + "/Info.plist"), FileManager.default.fileExists(atPath: bundle, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
-        if icli_register_app(bundle), (try? appRegistration(bundle))?["registered"] as? Bool == true { registered.append(bundle) } else { failed.append(bundle) }
+        if icli_register_app(bundle), (try? appRegistration(bundle))?["registered"] as? Bool == true {
+            registered.append(bundle)
+        } else {
+            failed.append(bundle)
+        }
     }
     return (registered, failed)
 }
@@ -254,7 +277,9 @@ public func listPackages(filter: String?) throws -> [String: Any] {
     var rows: [[String: Any]] = []
     for stanza in database.stanzas where stanza.installed {
         let row: [String: Any] = ["package": stanza.package ?? "", "name": stanza.fields["Name"] ?? "", "version": stanza.fields["Version"] ?? "", "architecture": stanza.fields["Architecture"] ?? "", "section": stanza.fields["Section"] ?? "", "status": stanza.fields["Status"] ?? ""]
-        if let filter, !(row["package"] as! String).localizedCaseInsensitiveContains(filter), !(row["name"] as! String).localizedCaseInsensitiveContains(filter) { continue }
+        if let filter, !(row["package"] as! String).localizedCaseInsensitiveContains(filter), !(row["name"] as! String).localizedCaseInsensitiveContains(filter) {
+            continue
+        }
         rows.append(row)
     }
     return ["packages": rows, "count": rows.count]
@@ -285,7 +310,9 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     try database.acquireLock()
     defer { database.releaseLock() }
     let unmet = unmetDependencies(control, database: database)
-    if !unmet.isEmpty && !ignoreDependencies { throw IcliError.commandFailed(["package": name, "error": "unmet_dependencies", "message": "dependencies not installed: " + unmet.joined(separator: ", "), "unmet": unmet]) }
+    if !unmet.isEmpty && !ignoreDependencies {
+        throw IcliError.commandFailed(["package": name, "error": "unmet_dependencies", "message": "dependencies not installed: " + unmet.joined(separator: ", "), "unmet": unmet])
+    }
     let previous = database.stanza(name)
     let previousVersion = previous?.installed == true ? previous?.fields["Version"] : nil
     let previousFiles = fileList(database, name)
@@ -299,7 +326,9 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     // Files that belonged to the previous version and are gone from this one.
     var removedStale: [String] = []
     for stale in Set(previousFiles).subtracting(installed).sorted(by: { $0.count > $1.count }) where stale != "/." {
-        if deletePackagePath(installPrefix + stale) == .removed { removedStale.append(stale) }
+        if deletePackagePath(installPrefix + stale) == .removed {
+            removedStale.append(stale)
+        }
     }
 
     let infoDirectory = database.directory + "/info"
@@ -319,7 +348,9 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
         try text.write(toFile: target, atomically: true, encoding: .utf8)
         let isScript = ["preinst", "postinst", "prerm", "postrm"].contains(file)
         try FileManager.default.setAttributes([.posixPermissions: isScript ? 0o755 : 0o644], ofItemAtPath: target)
-        if isScript { scripts.append(file) }
+        if isScript {
+            scripts.append(file)
+        }
     }
     for file in ["preinst", "postinst", "prerm", "postrm", "conffiles", "md5sums", "triggers", "shlibs", "symbols"] where texts[file] == nil {
         try? FileManager.default.removeItem(atPath: infoPath(database, name, file))
@@ -333,7 +364,11 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     }
     let order = (metadata["control_order"] as? [String]) ?? Array(control.keys)
     let stanza = Stanza.compose(fields, order: order)
-    if let index = database.stanzas.firstIndex(where: { $0.package == name }) { database.stanzas[index] = stanza } else { database.stanzas.append(stanza) }
+    if let index = database.stanzas.firstIndex(where: { $0.package == name }) {
+        database.stanzas[index] = stanza
+    } else {
+        database.stanzas.append(stanza)
+    }
     try database.save()
 
     let (registered, registrationFailed) = registerBundles(installed)
@@ -347,7 +382,9 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
         result = "installed"
     }
     var payload: [String: Any] = ["package": name, "version": version, "architecture": architecture, "path": path, "result": result, "previous_version": previousVersion ?? "", "status": verification["status"] ?? "", "files": installed.count, "kept_conffiles": unpacked["kept"] ?? [], "removed_stale_files": removedStale, "scripts_not_run": scripts.sorted(), "registered_apps": registered, "unmet_dependencies": unmet, "completion": scripts.isEmpty && registrationFailed.isEmpty ? "complete" : "partial"]
-    if !registrationFailed.isEmpty { payload["registration_failed"] = registrationFailed }
+    if !registrationFailed.isEmpty {
+        payload["registration_failed"] = registrationFailed
+    }
     return payload
 }
 
@@ -375,14 +412,20 @@ public func removeDeb(_ name: String, purge: Bool = false) throws -> [String: An
     let infoDirectory = database.directory + "/info/"
     let infoFiles = ((try? FileManager.default.contentsOfDirectory(atPath: infoDirectory)) ?? []).filter { $0.hasPrefix(name + ".") }
     if conffiles.isEmpty {
-        for file in infoFiles { try? FileManager.default.removeItem(atPath: infoDirectory + file) }
+        for file in infoFiles {
+            try? FileManager.default.removeItem(atPath: infoDirectory + file)
+        }
         database.stanzas.removeAll { $0.package == name }
     } else {
-        for file in infoFiles where !["list", "conffiles", "postrm", "md5sums"].contains(String(file.dropFirst(name.count + 1))) { try? FileManager.default.removeItem(atPath: infoDirectory + file) }
+        for file in infoFiles where !["list", "conffiles", "postrm", "md5sums"].contains(String(file.dropFirst(name.count + 1))) {
+            try? FileManager.default.removeItem(atPath: infoDirectory + file)
+        }
         try (conffiles.joined(separator: "\n") + "\n").write(toFile: infoPath(database, name, "list"), atomically: true, encoding: .utf8)
         var fields = stanza.fields
         fields["Status"] = "deinstall ok config-files"
-        if let index = database.stanzas.firstIndex(where: { $0.package == name }) { database.stanzas[index] = Stanza.compose(fields, order: stanza.order) }
+        if let index = database.stanzas.firstIndex(where: { $0.package == name }) {
+            database.stanzas[index] = Stanza.compose(fields, order: stanza.order)
+        }
     }
     try database.save()
     let after = try packageStatus(name)

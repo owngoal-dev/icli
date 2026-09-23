@@ -1,11 +1,13 @@
+import Darwin
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
-import Darwin
 
 private func decodeSystem(_ raw: String?) throws -> [String: Any] {
     guard let raw, let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid response") }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
+    if let error = result["error"] as? String {
+        throw IcliError.failed(error)
+    }
     return result
 }
 
@@ -50,7 +52,9 @@ public func environmentReport() throws -> [String: Any] {
     icli_private_init()
     let root = JailbreakRoot.current
     let manager = FileManager.default
-    func present(_ path: String) -> Bool { manager.fileExists(atPath: root.jbrootPath(path)) }
+    func present(_ path: String) -> Bool {
+        manager.fileExists(atPath: root.jbrootPath(path))
+    }
     let platformBinary = icli_platform_binary()
     let systemHook = dlopen("systemhook.dylib", RTLD_NOLOAD)
     var roothideRuntime = false

@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import IcliKit
+
 struct Prefs: ParsableCommand {
     static var configuration = CommandConfiguration(
         abstract: "Read and change preference domains through cfprefsd, like defaults.",
@@ -25,8 +26,11 @@ extension Prefs {
         @OptionGroup var user: PreferenceUserOption
         @Argument var domain: String
         @Argument var key: String?
-        func run() { emit(allowWhenLocked: true, output) { try readPreference(domain: domain, key: key, user: user.parsed()) } }
+        func run() {
+            emit(allowWhenLocked: true, output) { try readPreference(domain: domain, key: key, user: user.parsed()) }
+        }
     }
+
     struct Write: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Set one key and return the value read back")
         @OptionGroup var output: OutputOptions
@@ -36,10 +40,13 @@ extension Prefs {
         @Argument var value: String
         @Option(help: "string, int, float, bool, date (ISO-8601 or epoch seconds), data (Base64) or json (array or object).") var type: String = "string"
         @Option(help: "Darwin notification to post after the change.") var notify: String?
-        func run() { emit(allowWhenLocked: true, output) {
-            try writePreference(domain: domain, key: key, value: PreferenceValue(text: value, type: type), user: user.parsed(), notify: notify)
-        } }
+        func run() {
+            emit(allowWhenLocked: true, output) {
+                try writePreference(domain: domain, key: key, value: PreferenceValue(text: value, type: type), user: user.parsed(), notify: notify)
+            }
+        }
     }
+
     struct Delete: ParsableCommand {
         static var configuration = CommandConfiguration(abstract: "Remove one key and confirm it is gone")
         @OptionGroup var output: OutputOptions
@@ -47,6 +54,8 @@ extension Prefs {
         @Argument var domain: String
         @Argument var key: String
         @Option(help: "Darwin notification to post after the change.") var notify: String?
-        func run() { emit(allowWhenLocked: true, output) { try deletePreference(domain: domain, key: key, user: user.parsed(), notify: notify) } }
+        func run() {
+            emit(allowWhenLocked: true, output) { try deletePreference(domain: domain, key: key, user: user.parsed(), notify: notify) }
+        }
     }
 }

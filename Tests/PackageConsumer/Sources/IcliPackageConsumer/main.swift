@@ -1,9 +1,9 @@
 import Foundation
 import IcliKit
 
-// This consumer imports only the public library product. No CLI entry point,
-// ArgumentParser dependency, or private bridge import is needed. The launchd
-// read APIs below come from IcliSystem, which IcliKit re-exports.
+/// This consumer imports only the public library product. No CLI entry point,
+/// ArgumentParser dependency, or private bridge import is needed. The launchd
+/// read APIs below come from IcliSystem, which IcliKit re-exports.
 let comparison = try compareDebianVersions("1.0~beta", "1.0")
 precondition(comparison["relation"] as? String == "lt")
 let packages = try packageStatus("com.icli.icli")
@@ -23,8 +23,8 @@ let launchdAPIs: [Any] = [
     setLaunchdEnvironment as (String, String?) throws -> [String: Any],
 ]
 precondition(launchdAPIs.count == 10)
-// The 0.6.0 device features, which vphoned will call in-process. Referencing
-// each with its full type keeps them public and their signatures stable.
+/// The 0.6.0 device features, which vphoned will call in-process. Referencing
+/// each with its full type keeps them public and their signatures stable.
 let deviceFeatureAPIs: [Any] = [
     simulateLocation as (Double, Double, Double, Double, Double, Double?, Double?) throws -> [String: Any],
     clearSimulatedLocation as () throws -> [String: Any],
@@ -69,4 +69,4 @@ let report: [String: Any] = [
     "developer_mode": developerMode,
     "low_power_mode": lowPower,
 ]
-print(String(decoding: try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))
+try print(String(decoding: JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))

@@ -1,7 +1,7 @@
-import IcliSystem
-import Foundation
 import CoreFoundation
 import Darwin
+import Foundation
+import IcliSystem
 
 /// Whose preferences a prefs call reads or writes. `mobile` is the user the
 /// device's apps and settings run as, and is the default even under sudo.
@@ -12,10 +12,10 @@ public enum PreferenceUser: String, CaseIterable {
     /// passed as the current user, which cfprefsd serves without a lookup.
     var cfUser: CFString {
         switch self {
-        case .mobile: return geteuid() == 501 ? kCFPreferencesCurrentUser : "mobile" as CFString
-        case .root: return geteuid() == 0 ? kCFPreferencesCurrentUser : "root" as CFString
-        case .current: return kCFPreferencesCurrentUser
-        case .any: return kCFPreferencesAnyUser
+        case .mobile: geteuid() == 501 ? kCFPreferencesCurrentUser : "mobile" as CFString
+        case .root: geteuid() == 0 ? kCFPreferencesCurrentUser : "root" as CFString
+        case .current: kCFPreferencesCurrentUser
+        case .any: kCFPreferencesAnyUser
         }
     }
 }
@@ -63,7 +63,8 @@ public enum PreferenceValue {
             self = .data(data)
         case "json":
             guard let value = try? JSONSerialization.jsonObject(with: Data(text.utf8)), value is [Any] || value is [String: Any],
-                  PropertyListSerialization.propertyList(value, isValidFor: .binary) else {
+                  PropertyListSerialization.propertyList(value, isValidFor: .binary)
+            else {
                 throw IcliError.failed("json must be an array or object without nulls")
             }
             self = .plist(value)
@@ -74,13 +75,13 @@ public enum PreferenceValue {
 
     var propertyList: CFPropertyList {
         switch self {
-        case .string(let value): return value as CFString
-        case .int(let value): return NSNumber(value: value)
-        case .float(let value): return NSNumber(value: value)
-        case .bool(let value): return value ? kCFBooleanTrue : kCFBooleanFalse
-        case .date(let value): return value as NSDate
-        case .data(let value): return value as NSData
-        case .plist(let value): return value as AnyObject
+        case let .string(value): value as CFString
+        case let .int(value): NSNumber(value: value)
+        case let .float(value): NSNumber(value: value)
+        case let .bool(value): value ? kCFBooleanTrue : kCFBooleanFalse
+        case let .date(value): value as NSDate
+        case let .data(value): value as NSData
+        case let .plist(value): value as AnyObject
         }
     }
 }
@@ -100,7 +101,8 @@ public func readPreference(domain: String, key: String?, user: PreferenceUser = 
     }
     var values: [String: Any] = [:]
     if let keys = CFPreferencesCopyKeyList(domain as CFString, user.cfUser, kCFPreferencesAnyHost),
-       let all = CFPreferencesCopyMultiple(keys, domain as CFString, user.cfUser, kCFPreferencesAnyHost) as? [String: Any] {
+       let all = CFPreferencesCopyMultiple(keys, domain as CFString, user.cfUser, kCFPreferencesAnyHost) as? [String: Any]
+    {
         values = all.mapValues { describePreference($0 as CFPropertyList) }
     }
     result["values"] = values
@@ -119,12 +121,15 @@ public func writePreference(domain: String, key: String, value: PreferenceValue,
     CFPreferencesSetValue(key as CFString, value.propertyList, domain as CFString, user.cfUser, kCFPreferencesAnyHost)
     try synchronize(domain, user)
     guard let stored = CFPreferencesCopyValue(key as CFString, domain as CFString, user.cfUser, kCFPreferencesAnyHost),
-          CFEqual(stored, value.propertyList) else {
+          CFEqual(stored, value.propertyList)
+    else {
         throw IcliError.unavailable("cfprefsd did not store \(key) in \(domain) for user \(user.rawValue).")
     }
     postNotification(notify)
     var result = try readPreference(domain: domain, key: key, user: user)
-    if let notify { result["notified"] = notify }
+    if let notify {
+        result["notified"] = notify
+    }
     return result
 }
 
@@ -141,7 +146,9 @@ public func deletePreference(domain: String, key: String, user: PreferenceUser =
     }
     postNotification(notify)
     var result: [String: Any] = ["domain": domain, "key": key, "user": user.rawValue, "removed": existed, "exists": false]
-    if let notify { result["notified"] = notify }
+    if let notify {
+        result["notified"] = notify
+    }
     return result
 }
 
@@ -169,7 +176,9 @@ private func postNotification(_ name: String?) {
 
 private func parseISO8601(_ text: String) -> Date? {
     let formatter = ISO8601DateFormatter()
-    if let date = formatter.date(from: text) { return date }
+    if let date = formatter.date(from: text) {
+        return date
+    }
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.date(from: text)
 }
@@ -193,11 +202,11 @@ private func describePreference(_ value: CFPropertyList) -> [String: Any] {
 
 private func jsonValue(_ value: Any) -> Any {
     switch value {
-    case let data as Data: return data.base64EncodedString()
-    case let date as Date: return formatDate(date)
-    case let dictionary as [String: Any]: return dictionary.mapValues(jsonValue)
-    case let array as [Any]: return array.map(jsonValue)
-    default: return value
+    case let data as Data: data.base64EncodedString()
+    case let date as Date: formatDate(date)
+    case let dictionary as [String: Any]: dictionary.mapValues(jsonValue)
+    case let array as [Any]: array.map(jsonValue)
+    default: value
     }
 }
 

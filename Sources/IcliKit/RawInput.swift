@@ -1,5 +1,5 @@
-import IcliPrivate
 import Foundation
+import IcliPrivate
 
 /// One finger phase of a digitizer event.
 public enum TouchPhase: String, CaseIterable {
@@ -7,9 +7,9 @@ public enum TouchPhase: String, CaseIterable {
 
     var bridgeValue: Int32 {
         switch self {
-        case .down: return 0
-        case .move: return 1
-        case .up: return 3
+        case .down: 0
+        case .move: 1
+        case .up: 3
         }
     }
 }
@@ -55,9 +55,10 @@ public func touch(_ phase: TouchPhase, x: Double, y: Double, normalized: Bool = 
 /// Sends a whole sequence from one process, pausing `delayMS` after each event.
 /// A finger still down at the end stays down.
 public func touchSequence(_ events: [TouchEvent], normalized: Bool = false) throws -> [String: Any] {
-    guard (1...10_000).contains(events.count) else { throw IcliError.failed("a sequence needs 1–10000 events") }
-    guard events.allSatisfy({ $0.delayMS.isFinite && (0...60_000).contains($0.delayMS) }),
-          events.reduce(0, { $0 + $1.delayMS }) <= 300_000 else {
+    guard (1 ... 10000).contains(events.count) else { throw IcliError.failed("a sequence needs 1–10000 events") }
+    guard events.allSatisfy({ $0.delayMS.isFinite && (0 ... 60000).contains($0.delayMS) }),
+          events.reduce(0, { $0 + $1.delayMS }) <= 300_000
+    else {
         throw IcliError.failed("delay_ms must be 0–60000 per event and at most 300000 in total")
     }
     let points = try events.map { try digitizerPoint($0.x, $0.y, normalized: normalized) }
@@ -65,14 +66,18 @@ public func touchSequence(_ events: [TouchEvent], normalized: Bool = false) thro
     var down = false
     for (event, point) in zip(events, points) {
         guard icli_hid_touch(event.phase.bridgeValue, point.0, point.1) else {
-            if down { _ = icli_hid_touch(TouchPhase.up.bridgeValue, point.0, point.1) }
+            if down {
+                _ = icli_hid_touch(TouchPhase.up.bridgeValue, point.0, point.1)
+            }
             throw hidUnavailable
         }
         down = event.phase != .up
-        if event.delayMS > 0 { Thread.sleep(forTimeInterval: event.delayMS / 1000) }
+        if event.delayMS > 0 {
+            Thread.sleep(forTimeInterval: event.delayMS / 1000)
+        }
     }
     return ["events": events.count, "normalized": normalized, "finger_down": down,
-        "duration_ms": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)]
+            "duration_ms": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)]
 }
 
 /// Sends one raw HID keyboard or consumer event: a key going down or up.
@@ -95,7 +100,7 @@ private let hidUnavailable = IcliError.unavailable("HID event injection is unava
 
 private func digitizerPoint(_ x: Double, _ y: Double, normalized: Bool) throws -> (Double, Double) {
     if normalized {
-        guard x.isFinite, y.isFinite, (0...1).contains(x), (0...1).contains(y) else {
+        guard x.isFinite, y.isFinite, (0 ... 1).contains(x), (0 ... 1).contains(y) else {
             throw IcliError.failed("normalized coordinates must be between 0 and 1")
         }
         return (x, y)
@@ -107,7 +112,7 @@ private func digitizerPoint(_ x: Double, _ y: Double, normalized: Bool) throws -
 }
 
 private func validateUsage(page: Int, usage: Int) throws {
-    guard (1...0xFFFF).contains(page), (1...0xFFFF).contains(usage) else {
+    guard (1 ... 0xFFFF).contains(page), (1 ... 0xFFFF).contains(usage) else {
         throw IcliError.failed("page and usage must be 1–0xFFFF")
     }
 }

@@ -1,6 +1,6 @@
-import IcliSystemPrivate
-import Foundation
 import Darwin
+import Foundation
+import IcliSystemPrivate
 
 /// Model, kernel, boot, storage and bootstrap facts: everything about the
 /// device that sysctl and the filesystem answer. Battery and lock state need
@@ -49,7 +49,7 @@ private func diskUsage(_ path: String) throws -> [String: Any] {
     ]
 }
 
-private func cStringField<T>(_ value: inout T) -> String {
+private func cStringField(_ value: inout some Any) -> String {
     withUnsafeBytes(of: &value) { raw in
         String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
     }

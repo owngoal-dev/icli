@@ -1,6 +1,6 @@
-import IcliSystemPrivate
-import Foundation
 import Darwin
+import Foundation
+import IcliSystemPrivate
 
 // launchd system-domain services, read over launchd's bootstrap pipe. Status
 // works for any caller; the mutations live in IcliKit.
@@ -9,9 +9,15 @@ import Darwin
 /// Shared with IcliKit's service mutations.
 public func launchdStatusError(_ result: [String: Any], _ action: String) -> IcliError? {
     let status = result["status"] as? Int ?? 0
-    if status == EPERM || status == EACCES { return .failed("\(action) requires root (launchd status \(status))") }
-    if status == 144 { return .failed("\(action) requires launchctl service-configure privilege (launchd status 144)") }
-    if status != 0 { return .failed("\(action) failed: launchd status \(status) (\(result["message"] as? String ?? ""))") }
+    if status == EPERM || status == EACCES {
+        return .failed("\(action) requires root (launchd status \(status))")
+    }
+    if status == 144 {
+        return .failed("\(action) requires launchctl service-configure privilege (launchd status 144)")
+    }
+    if status != 0 {
+        return .failed("\(action) failed: launchd status \(status) (\(result["message"] as? String ?? ""))")
+    }
     return nil
 }
 
@@ -36,8 +42,12 @@ public func listServices() throws -> [String: Any] {
     for domain in ["system", "user"] {
         let record = result[domain] as? [String: Any] ?? [:]
         let status = record["status"] as? Int ?? 0
-        if status == 113 { continue }
-        if status != 0 { throw IcliError.failed("launchd list failed in the \(domain) domain: status \(status)") }
+        if status == 113 {
+            continue
+        }
+        if status != 0 {
+            throw IcliError.failed("launchd list failed in the \(domain) domain: status \(status)")
+        }
         let services = record["services"] as? [String: [String: Any]] ?? [:]
         for (label, service) in services {
             var row = rows[label] ?? ["label": label, "domains": [String](), "running": false]
@@ -50,7 +60,9 @@ public func listServices() throws -> [String: Any] {
                 row["running"] = pid > 0
                 row["last_exit_status"] = service["LastExitStatus"] ?? 0
             }
-            if let program = service["Program"] { row["program"] = program }
+            if let program = service["Program"] {
+                row["program"] = program
+            }
             rows[label] = row
         }
     }
@@ -60,7 +72,9 @@ public func listServices() throws -> [String: Any] {
 
 public func disabledServiceOverrides() throws -> [String: Any] {
     let result = try decodeBridgeJSON(takeCString(icli_launchd_disabled_json()), "launchd response")
-    if let error = launchdStatusError(result, "print disabled services") { throw error }
+    if let error = launchdStatusError(result, "print disabled services") {
+        throw error
+    }
     let disabled = result["disabled"] as? [String: Bool] ?? [:]
     return ["count": disabled.count, "disabled": disabled]
 }
@@ -68,7 +82,9 @@ public func disabledServiceOverrides() throws -> [String: Any] {
 public func printService(_ label: String) throws -> [String: Any] {
     try validateServiceLabel(label)
     let result = try decodeBridgeJSON(takeCString(icli_launchd_print_json(label)), "launchd response")
-    if let error = launchdStatusError(result, "print") { throw error }
+    if let error = launchdStatusError(result, "print") {
+        throw error
+    }
     return [
         "label": label,
         "domain": result["domain"] as? String ?? "system",
@@ -90,8 +106,12 @@ public func serviceStatus(_ label: String) throws -> [String: Any] {
     for domain in ["system", "user"] {
         let record = listed[domain] as? [String: Any] ?? [:]
         let status = record["status"] as? Int ?? 0
-        if status == 113 { continue } // ENOSERVICE
-        if status != 0 { throw IcliError.failed("launchd list failed in the \(domain) domain: status \(status)") }
+        if status == 113 {
+            continue
+        } // ENOSERVICE
+        if status != 0 {
+            throw IcliError.failed("launchd list failed in the \(domain) domain: status \(status)")
+        }
         let service = record["service"] as? [String: Any] ?? [:]
         let pid = service["PID"] as? Int ?? 0
         domains.append(domain)
@@ -101,7 +121,9 @@ public func serviceStatus(_ label: String) throws -> [String: Any] {
             payload["pid"] = pid
             payload["last_exit_status"] = service["LastExitStatus"] ?? 0
         }
-        if let program = service["Program"] { payload["program"] = program }
+        if let program = service["Program"] {
+            payload["program"] = program
+        }
     }
     payload["domains"] = domains
     return payload
@@ -132,9 +154,15 @@ public func servicesDump() throws -> [String: Any] {
 public func launchdEnvironment(_ key: String) throws -> [String: Any] {
     try validateEnvironmentKey(key)
     let result = try decodeBridgeJSON(takeCString(icli_launchd_getenv_json(key)), "launchd response")
-    if result["status"] as? Int == Int(ESRCH) { return ["key": key, "exists": false] }
-    if let error = launchdStatusError(result, "getenv") { throw error }
+    if result["status"] as? Int == Int(ESRCH) {
+        return ["key": key, "exists": false]
+    }
+    if let error = launchdStatusError(result, "getenv") {
+        throw error
+    }
     var payload: [String: Any] = ["key": key, "exists": result["exists"] as? Bool ?? false]
-    if let value = result["value"] as? String { payload["value"] = value }
+    if let value = result["value"] as? String {
+        payload["value"] = value
+    }
     return payload
 }

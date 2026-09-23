@@ -1,13 +1,16 @@
+import Foundation
 import IcliPrivate
 import IcliSystem
-import Foundation
 
 private func amfiDeveloperMode(arm: Bool) throws -> [String: Any] {
     guard let raw = takeCString(icli_amfi_developer_mode_json(arm)),
-          let reply = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else {
+          let reply = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
+    else {
         throw IcliError.unavailable("amfid sent an unreadable Developer Mode reply.")
     }
-    if let error = reply["error"] as? String { throw IcliError.unavailable(error) }
+    if let error = reply["error"] as? String {
+        throw IcliError.unavailable(error)
+    }
     guard reply["success"] as? Bool == true else {
         let privilege = geteuid() == 0 ? "" : " Try again as root."
         throw IcliError.unavailable("amfid refused the Developer Mode request.\(privilege)")
