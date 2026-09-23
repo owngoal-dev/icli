@@ -3,3 +3,5 @@
 __pycache__/
 *.deb
 packaging/root/ 
+.claude/worktrees
+.claude
