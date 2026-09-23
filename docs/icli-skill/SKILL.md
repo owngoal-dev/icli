@@ -12,7 +12,7 @@ The tables below mark each command with two properties:
 - **Root**: `required` means icli refuses to run without root (use `sudo icli …`). `usually` means the command runs, but the files or launchd domain it changes normally need root. `no` means it works as the mobile user.
 - **Screen**: `unlocked` means the command exits with code 2 (`device_locked`) while the device is locked or its screen is off. `any` means it also runs while the device is locked.
 
-Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, button, clipboard), [device](reference/device.md), [apps](reference/apps.md) (app, url, sb), [files and logs](reference/files-logs.md) (fs, log), [packages](reference/packages.md) (pkg), [system](reference/system.md) (svc, prefs, account, env, proc, sec, net, tests).
+Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, button, clipboard), [device](reference/device.md) (device, location), [apps](reference/apps.md) (app, url, sb), [files and logs](reference/files-logs.md) (fs, log), [packages](reference/packages.md) (pkg), [system](reference/system.md) (svc, prefs, account, env, proc, sec, net, tests).
 
 ## Quick index
 
@@ -43,6 +43,8 @@ Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, bu
 | Get a screenshot, OCR and elements together | `icli screen describe` |
 | Get the model, iOS version, battery and jailbreak | `icli device info` |
 | Get brightness, volume and orientation | `icli device brightness get` / `volume get` / `rotation get` |
+| Simulate the GPS location, then stop | `icli location set 37.3349 -122.009` / `icli location clear` |
+| Read the current location | `icli location get` (check `fresh` and `simulated`) |
 | Rotate the screen or lock rotation | `icli device rotation set landscape-left` / `rotation lock set on` |
 | Read, write or list files | `icli fs read <p>` / `fs write <p> <text>` / `fs ls <dir>` |
 | Read or edit a plist | `icli fs plist <p>` / `icli fs plist-set <p> <key> '<json>'` |

@@ -124,6 +124,11 @@ char *icli_amfi_developer_mode_json(bool arm);
 /// powerd's Low Power Mode: 1 on, 0 off, -1 when the service is unavailable.
 int icli_low_power_mode_get(void);
 bool icli_low_power_mode_set(bool enabled);
+/// Location simulation through locationd; the location outlives the process.
+char *icli_location_simulate_json(double latitude, double longitude, double altitude, double horizontal_accuracy, double vertical_accuracy, double speed, double course);
+char *icli_location_clear_json(void);
+/// Waits up to `timeout` seconds for a fresh fix (at the target coordinate when `match`).
+char *icli_location_read_json(double timeout, bool match, double latitude, double longitude);
 
 char *icli_syslog_json(double seconds, const char *process, const char *level, int max_lines);
 char *icli_ioreg_json(const char *plane);

@@ -32,3 +32,19 @@ Developer Mode notes:
 
 - `devmode get` asks amfid and works as mobile. It matches `sysctl security.mac.amfi.developer_mode_status`.
 - `devmode enable` does nothing when Developer Mode is already on or armed. Otherwise it asks amfid to arm it: after the next restart the device asks the user to confirm, and only then is it on. amfid may refuse to arm it without root; the command then fails with `unavailable`. There is no command to turn Developer Mode off.
+
+## location
+
+| Command | Purpose | Key flags | Root | Screen |
+| --- | --- | --- | --- | --- |
+| `location set <latitude> <longitude>` | Simulate a fixed location for every app, then read it back to confirm | `--altitude 0`, `--horizontal-accuracy 5`, `--vertical-accuracy 5`, `--speed`, `--course` (speed and course default to unknown) | no | any |
+| `location clear` | Stop simulating | | no | any |
+| `location get` | The location CoreLocation reports: coordinates, altitude, accuracies, speed, course, `timestamp`, `age_seconds`, `fresh`, `simulated` | `--timeout 10` | no | any |
+
+Location notes:
+
+- The simulated location stays on after icli exits, for every app and user, until `location clear`. Always clear it when you are done.
+- Negative coordinates work without `--`: `icli location set -33.8688 151.2093`. Give a negative altitude as `--altitude=-10`.
+- `get` reads as a System Services location bundle, so it needs no permission prompt. `simulated` is CoreLocation's own flag for a software-simulated fix.
+- `fresh: false` means no new fix arrived within the timeout and the reading is locationd's last known location. `clear` waits until locationd stops refreshing the simulated fix, but until the next real fix `get` can still return the last simulated location with `fresh: false`.
+- A Wi-Fi-only iPad can reject real fixes for about 15 minutes after a simulated location far from the real one. To avoid that, run `location set` with the real coordinates (from `location get` before simulating), then `location clear`.

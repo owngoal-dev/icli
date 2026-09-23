@@ -862,6 +862,69 @@ def low_power_mode(d):
         assert d.cli('device', 'low-power', 'get')['enabled'] == original['enabled']
 
 
+def redact(entries):
+    """Keep the device's real location out of the saved report."""
+    for entry in entries:
+        entry['stdout'] = entry['stderr'] = '[redacted: real location]'
+        if 'location set' in entry['command']:
+            entry['command'] = entry['command'].split(' location set ')[0] + ' location set [redacted]'
+
+
+@case('location_simulation', 'location', ['location set', 'location clear', 'location get'])
+def location_simulation(d):
+    def at(reading, latitude, longitude):
+        return abs(reading['latitude'] - latitude) < 1e-6 and abs(reading['longitude'] - longitude) < 1e-6
+
+    for arguments in [['91', '10'], ['-90.5', '10'], ['10', '-180.5'], ['nan', '10'], ['10', 'inf'], ['10'], ['10', '20', '30'],
+                      ['10', '10', '--horizontal-accuracy=-1'], ['10', '10', '--vertical-accuracy=-1'],
+                      ['10', '10', '--speed=-1'], ['10', '10', '--course', '360'], ['10', '10', '--altitude', 'nan']]:
+        d.cli('location', 'set', *arguments, expected=1)
+    d.cli('location', 'get', '--timeout', '0', expected=1)
+    # locationd keeps the last simulated fix until a real one, and a Wi-Fi-only
+    # device rejects real fixes far from it for about 15 minutes, so the case
+    # ends by handing back the real location it found.
+    private = len(d.trace)
+    before = d.cli('location', 'get', '--timeout', '5', expected=None)
+    real = None if before.get('error') or before['simulated'] else (before['latitude'], before['longitude'])
+    redact(d.trace[private:])
+    try:
+        first = (-33.861234, 151.209876)
+        applied = d.cli('location', 'set', *map(str, first), '--altitude=-12.5', '--horizontal-accuracy', '7',
+                        '--vertical-accuracy', '4', '--speed', '3', '--course', '135')
+        assert applied['simulating'] and at(applied['location'], *first), applied
+        # The setter has exited: new processes, as mobile and as root, read the
+        # simulated fix, and it is still there after a pause.
+        for sudo in [False, True]:
+            reading = d.cli('location', 'get', '--timeout', '5', sudo=sudo)
+            assert reading['fresh'] and reading['simulated'] and at(reading, *first), reading
+            assert (reading['altitude'], reading['horizontal_accuracy'], reading['vertical_accuracy'],
+                    reading['speed'], reading['course']) == (-12.5, 7, 4, 3, 135), reading
+        time.sleep(15)
+        reading = d.cli('location', 'get', '--timeout', '5')
+        assert reading['fresh'] and reading['simulated'] and at(reading, *first), reading
+        second = (48.851234, 2.351234)
+        assert at(d.cli('location', 'set', *map(str, second))['location'], *second)
+        reading = d.cli('location', 'get', '--timeout', '5')
+        assert reading['fresh'] and reading['simulated'] and at(reading, *second), reading
+        assert reading['speed'] == -1 and reading['course'] == -1, reading
+        cleared = d.cli('location', 'clear')
+        assert cleared['simulating'] is False and not (cleared['location']['fresh'] and cleared['location']['simulated']), cleared
+        # Another process agrees: locationd no longer refreshes the simulated fix.
+        reading = d.cli('location', 'get', '--timeout', '3')
+        assert not (reading['fresh'] and reading['simulated']), reading
+        if reading['simulated']:
+            d.observations.append(f'After clear, locationd reported the last simulated location as stale '
+                                  f'({reading["age_seconds"]:.0f} s old).')
+    finally:
+        if real:
+            private = len(d.trace)
+            d.run([d.binary, 'location', 'set', *map(str, real), '--horizontal-accuracy', '30'])
+            redact(d.trace[private:])
+        d.cli('location', 'clear')
+    if real:
+        d.observations.append('The real location was handed back before the final clear.')
+
+
 @case('package_commands', 'packages', ['pkg list', 'pkg install', 'pkg remove', 'pkg tweaks', 'pkg status'])
 def packages(d):
     name = 'dev.owngoal.icli.installtest'
@@ -1588,7 +1651,7 @@ def observed_commands(cases, inventory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--group', choices=['all', 'runtime', 'ax', 'gestures', 'input', 'screen', 'logs', 'apps', 'controls', 'install', 'packages', 'security', 'network', 'system', 'reboot'], default='all')
+    parser.add_argument('--group', choices=['all', 'runtime', 'ax', 'gestures', 'input', 'screen', 'logs', 'apps', 'controls', 'install', 'packages', 'security', 'network', 'system', 'location', 'reboot'], default='all')
     parser.add_argument('--install', action='store_true')
     parser.add_argument('--skip-reboot', action='store_true', help='Leave out the reboot group (the run is then not a full run).')
     parser.add_argument('--case', action='append', dest='cases', help='Run only named cases (repeatable).')
