@@ -12,34 +12,56 @@ private func managedReceipt(_ bundleID: String) -> String {
     JailbreakRoot.current.jbrootPath("/var/lib/icli/apps/" + bundleID + ".json")
 }
 
-func installIPA(_ path: String) throws -> [String: Any] {
-    guard geteuid() == 0 else { throw IcliError.failed("IPA installation requires root; run sudo icli app install <file.ipa>") }
+/// An IPA extracted into a private staging directory, which the caller
+/// removes: exactly one Payload/*.app with a bundle identifier, a Mach-O
+/// executable and no symlink that leaves the bundle.
+struct StagedIPA {
+    let stage: String
+    let app: String
+    let bundleID: String
+    let executable: String
+}
+
+func stageIPA(_ path: String) throws -> StagedIPA {
     let manager = FileManager.default
     let stage = JailbreakRoot.current.scratchDirectory() + "/icli-install-" + UUID().uuidString
     try manager.createDirectory(atPath: stage, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    defer { try? manager.removeItem(atPath: stage) }
-    guard let raw = takeCString(icli_extract_ipa_json(path, stage)),
-          let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid IPA extraction response") }
-    if let error = result["error"] as? String { throw IcliError.failed(error) }
-    let payload = stage + "/Payload"
-    let bundles = try manager.contentsOfDirectory(atPath: payload).filter { $0.hasSuffix(".app") }
-    guard bundles.count == 1 else { throw IcliError.failed("IPA must contain exactly one Payload/*.app") }
-    let source = payload + "/" + bundles[0]
-    let infoData = try Data(contentsOf: URL(fileURLWithPath: source + "/Info.plist"))
-    guard let info = try PropertyListSerialization.propertyList(from: infoData, format: nil) as? [String: Any],
-          let bundleID = info["CFBundleIdentifier"] as? String,
-          let executable = info["CFBundleExecutable"] as? String, !executable.isEmpty,
-          !executable.contains("/"), executable != ".", executable != ".." else { throw IcliError.failed("IPA has invalid bundle metadata") }
-    _ = try machOInfo(at: source + "/" + executable)
-    let bundleRoot = URL(fileURLWithPath: source).resolvingSymlinksInPath().path + "/"
-    if let entries = manager.enumerator(at: URL(fileURLWithPath: source), includingPropertiesForKeys: [.isSymbolicLinkKey]) {
-        for case let item as URL in entries {
-            if try item.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true,
-               !item.resolvingSymlinksInPath().path.hasPrefix(bundleRoot) {
-                throw IcliError.failed("IPA bundle contains a symlink outside the app")
+    do {
+        guard let raw = takeCString(icli_extract_ipa_json(path, stage)),
+              let result = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw IcliError.failed("invalid IPA extraction response") }
+        if let error = result["error"] as? String { throw IcliError.failed(error) }
+        let payload = stage + "/Payload"
+        let bundles = try manager.contentsOfDirectory(atPath: payload).filter { $0.hasSuffix(".app") }
+        guard bundles.count == 1 else { throw IcliError.failed("IPA must contain exactly one Payload/*.app") }
+        let source = payload + "/" + bundles[0]
+        let infoData = try Data(contentsOf: URL(fileURLWithPath: source + "/Info.plist"))
+        guard let info = try PropertyListSerialization.propertyList(from: infoData, format: nil) as? [String: Any],
+              let bundleID = info["CFBundleIdentifier"] as? String,
+              let executable = info["CFBundleExecutable"] as? String, !executable.isEmpty,
+              !executable.contains("/"), executable != ".", executable != ".." else { throw IcliError.failed("IPA has invalid bundle metadata") }
+        _ = try machOInfo(at: source + "/" + executable)
+        let bundleRoot = URL(fileURLWithPath: source).resolvingSymlinksInPath().path + "/"
+        if let entries = manager.enumerator(at: URL(fileURLWithPath: source), includingPropertiesForKeys: [.isSymbolicLinkKey]) {
+            for case let item as URL in entries {
+                if try item.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true,
+                   !item.resolvingSymlinksInPath().path.hasPrefix(bundleRoot) {
+                    throw IcliError.failed("IPA bundle contains a symlink outside the app")
+                }
             }
         }
+        return StagedIPA(stage: stage, app: source, bundleID: bundleID, executable: executable)
+    } catch {
+        try? manager.removeItem(atPath: stage)
+        throw error
     }
+}
+
+func installIPA(_ path: String) throws -> [String: Any] {
+    guard geteuid() == 0 else { throw IcliError.failed("IPA installation requires root; run sudo icli app install <file.ipa>") }
+    let manager = FileManager.default
+    let staged = try stageIPA(path)
+    defer { try? manager.removeItem(atPath: staged.stage) }
+    let (stage, source, bundleID, executable) = (staged.stage, staged.app, staged.bundleID, staged.executable)
     let target = try managedAppPath(bundleID)
     let receipt = managedReceipt(bundleID)
     let installed = try? appInfo(bundleID)

@@ -100,8 +100,14 @@ public func killApp(_ bundleID: String, force: Bool) throws -> [String: Any] {
     throw IcliError.failed("app is still running: \(bundleID)")
 }
 
-public func installPackage(_ path: String) throws -> [String: Any] {
+/// Installs a .deb, registers a .app, or installs an .ipa into the
+/// bootstrap's /Applications or, with `container`, into its own app container.
+public func installPackage(_ path: String, container: Bool = false, registration: AppRegistrationType = .user) throws -> [String: Any] {
     guard FileManager.default.fileExists(atPath: path) else { throw IcliError.failed("package not found: \(path)") }
+    if container {
+        guard path.lowercased().hasSuffix(".ipa") else { throw IcliError.failed("--container installs only .ipa files") }
+        return try installIPAInContainer(path, registration: registration)
+    }
     if path.lowercased().hasSuffix(".deb") {
         return try installDebFile(path)
     }
@@ -118,6 +124,7 @@ public func installPackage(_ path: String) throws -> [String: Any] {
 public func uninstallApp(_ bundleID: String, force: Bool) throws -> [String: Any] {
     if !force { throw IcliError.forceRequired("uninstall \(bundleID)") }
     if let result = try uninstallManagedApp(bundleID) { return result }
+    if let result = try uninstallContainerApp(bundleID) { return result }
     guard icli_uninstall_app(bundleID) else {
         throw IcliError.failed("uninstall failed: \(bundleID)")
     }

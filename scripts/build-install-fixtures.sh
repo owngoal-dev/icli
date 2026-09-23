@@ -42,7 +42,26 @@ ent['application-identifier'] = info['CFBundleIdentifier']
 PY
 ldid -S"$root/selftest-entitlements.plist" "$selftest/IcliTestHost"
 ldid -S"$root/selftest-entitlements.plist" "$selftest"
-(cd "$root" && zip -qr icli-install-fixture.ipa Payload)
+(cd "$root" && rm -f icli-install-fixture.ipa && zip -qr icli-install-fixture.ipa Payload)
+# An App Store-shaped app for container installs: sandboxed in its data
+# container, without the TestHost's platform and no-sandbox entitlements.
+container="$root/container/Payload/IcliContainerFixture.app"
+rm -rf "$root/container"
+mkdir -p "$container"
+cp "$app/IcliTestHost" "$container/IcliTestHost"
+python3 - "$app" "$container" "$root" <<'PY'
+import plistlib, sys
+from pathlib import Path
+app, fixture, root = map(Path, sys.argv[1:])
+info = plistlib.loads((app / 'Info.plist').read_bytes())
+info['CFBundleIdentifier'] = 'dev.owngoal.icli.ContainerFixture'
+info['CFBundleDisplayName'] = 'icli Container Fixture'
+(fixture / 'Info.plist').write_bytes(plistlib.dumps(info))
+ent = {'application-identifier': info['CFBundleIdentifier'], 'get-task-allow': True}
+(root / 'container-entitlements.plist').write_bytes(plistlib.dumps(ent))
+PY
+ldid -S"$root/container-entitlements.plist" "$container"
+(cd "$root/container" && rm -f ../icli-container-fixture.ipa && zip -qr ../icli-container-fixture.ipa Payload)
 cat > "$root/deb/DEBIAN/control" <<CONTROL
 Package: dev.owngoal.icli.installtest
 Name: icli install acceptance fixture
