@@ -251,7 +251,10 @@ public func describeScreen() throws -> [String: Any] {
     do { payload["ocr"] = try recognizeImage(path: path, languages: ["zh-Hans", "en-US"], minConfidence: 0.3) }
     catch let error as IcliError { payload["ocr"] = error.payload }
     catch { payload["ocr"] = ["error": "failed", "message": error.localizedDescription] }
-    payload["context_changed"] = frontmostApp()["bundle_id"] as? String != frontmost["bundle_id"] as? String
+    let after = frontmostApp()
+    payload["context_changed"] = frontmost["verified"] as? Bool != true
+        || after["verified"] as? Bool != true
+        || after["bundle_id"] as? String != frontmost["bundle_id"] as? String
     return payload
 }
 

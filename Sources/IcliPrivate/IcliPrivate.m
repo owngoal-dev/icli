@@ -997,11 +997,11 @@ bool icli_open_url(const char *url) {
     return false;
 }
 
-// RunningBoard marks the focused foreground app with a FrontBoard
-// "Workspace-ForegroundFocal" assertion. iPadOS 18 answers nil from
-// SBSCopyFrontmostApplicationDisplayIdentifier even with an app in front.
+// The FrontBoard focal assertion identifies the app receiving input. The
+// older SpringBoard query may be stale even while another app is on screen.
 static NSString *runningBoardFocalApplication(void) {
-    dlopen("/System/Library/PrivateFrameworks/RunningBoardServices.framework/RunningBoardServices", RTLD_NOW);
+    if (!dlopen("/System/Library/PrivateFrameworks/RunningBoardServices.framework/RunningBoardServices", RTLD_NOW))
+        return nil;
     Class handleClass = NSClassFromString(@"RBSProcessHandle");
     Class identifierClass = NSClassFromString(@"RBSProcessIdentifier");
     SEL identifierSelector = NSSelectorFromString(@"identifierWithPid:");
@@ -1020,26 +1020,32 @@ static NSString *runningBoardFocalApplication(void) {
         free(processes);
         return nil;
     }
-    int (*pidPath)(int, void *, uint32_t) = dlsym(RTLD_DEFAULT, "proc_pidpath");
-    NSString *focal = nil;
-    for (size_t i = 0; i < length / sizeof(struct kinfo_proc) && !focal; i++) {
+    void *libproc = dlopen("/usr/lib/libproc.dylib", RTLD_NOW);
+    int (*pidPath)(int, void *, uint32_t) = libproc ? dlsym(libproc, "proc_pidpath") : NULL;
+    NSMutableSet<NSString *> *focalIDs = [NSMutableSet set];
+    for (size_t i = 0; i < length / sizeof(struct kinfo_proc) && focalIDs.count < 2; i++) {
         pid_t pid = processes[i].kp_proc.p_pid;
         char path[4096] = {0};
         // Only app bundles can be the frontmost application.
-        if (pid <= 0 || !pidPath || pidPath(pid, path, sizeof(path)) <= 0 || !strstr(path, ".app/")) {
+        if (pid <= 0 || !pidPath || pidPath(pid, path, sizeof(path)) <= 0) {
             continue;
         }
+        char *app = strstr(path, ".app/");
+        if (!app || strchr(app + 5, '/')) continue;
         @try {
             id identifier = ((id (*)(id, SEL, int))objc_msgSend)(identifierClass, identifierSelector, pid);
             id handle = ((id (*)(id, SEL, id, NSError **))objc_msgSend)(handleClass, handleSelector, identifier, NULL);
             NSString *bundleID = [[handle valueForKey:@"identity"] valueForKey:@"embeddedApplicationIdentifier"];
-            if (![bundleID isKindOfClass:[NSString class]] || !bundleID.length) {
+            if (![bundleID isKindOfClass:[NSString class]] || !bundleID.length ||
+                [bundleID containsString:@"WidgetRenderer"] || strstr(path, "WidgetRenderer")) {
                 continue;
             }
             for (id assertion in [[handle valueForKey:@"currentState"] valueForKey:@"assertions"]) {
                 NSString *domain = [assertion valueForKey:@"domain"];
-                if ([domain isKindOfClass:[NSString class]] && [domain containsString:@"Workspace-ForegroundFocal"]) {
-                    focal = bundleID;
+                if ([domain isKindOfClass:[NSString class]] &&
+                    ([domain containsString:@"Workspace-ForegroundFocal"] ||
+                     [domain containsString:@"com.apple.frontboard:SuspendableRole-UIFocal"])) {
+                    [focalIDs addObject:bundleID];
                     break;
                 }
             }
@@ -1048,22 +1054,92 @@ static NSString *runningBoardFocalApplication(void) {
         }
     }
     free(processes);
-    return focal;
+    if (libproc) dlclose(libproc);
+    return focalIDs.count == 1 ? focalIDs.anyObject : nil;
 }
 
 char *icli_frontmost_bundle_id(void) {
     icli_private_init();
-    NSString *bid = nil;
-    if (pSBSCopyFrontmostApplicationDisplayIdentifier) {
-        bid = pSBSCopyFrontmostApplicationDisplayIdentifier();
-    }
-    if (!bid.length) {
-        bid = runningBoardFocalApplication();
-    }
+    NSString *bid = runningBoardFocalApplication();
     if (!bid.length) {
         return NULL;
     }
     return strdup(bid.UTF8String);
+}
+
+char *icli_frontmost_app_json(void) {
+    icli_private_init();
+    NSString *bid = runningBoardFocalApplication();
+    if (bid.length) return icli_json_or_empty(@{@"bundle_id": bid, @"verified": @YES, @"source": @"runningboard"});
+    if (pSBSCopyFrontmostApplicationDisplayIdentifier)
+        bid = pSBSCopyFrontmostApplicationDisplayIdentifier();
+    return icli_json_or_empty(@{
+        @"bundle_id": bid.length ? bid : @"com.apple.springboard",
+        @"verified": @NO,
+        @"source": bid.length ? @"springboard_query" : @"unavailable",
+    });
+}
+
+char *icli_runningboard_apps_json(void) {
+    @autoreleasepool {
+        void *framework = dlopen("/System/Library/PrivateFrameworks/RunningBoardServices.framework/RunningBoardServices", RTLD_NOW);
+        Class identifierClass = NSClassFromString(@"RBSProcessIdentifier");
+        Class handleClass = NSClassFromString(@"RBSProcessHandle");
+        SEL identifierSelector = NSSelectorFromString(@"identifierWithPid:");
+        SEL handleSelector = NSSelectorFromString(@"handleForIdentifier:error:");
+        if (!framework || ![identifierClass respondsToSelector:identifierSelector] ||
+            ![handleClass respondsToSelector:handleSelector]) {
+            return icli_json_or_empty(@{@"error": @"RunningBoard process handles unavailable"});
+        }
+
+        void *libproc = dlopen("/usr/lib/libproc.dylib", RTLD_NOW);
+        int (*pidPath)(int, void *, uint32_t) = libproc ? dlsym(libproc, "proc_pidpath") : NULL;
+        if (!pidPath) {
+            if (libproc) dlclose(libproc);
+            return icli_json_or_empty(@{@"error": @"proc_pidpath unavailable"});
+        }
+
+        int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL};
+        size_t length = 0;
+        if (sysctl(mib, 3, NULL, &length, NULL, 0) != 0) {
+            dlclose(libproc);
+            return icli_json_or_empty(@{@"error": @(strerror(errno))});
+        }
+        length += 64 * sizeof(struct kinfo_proc);
+        struct kinfo_proc *processes = calloc(1, length);
+        if (!processes || sysctl(mib, 3, processes, &length, NULL, 0) != 0) {
+            int error = errno;
+            free(processes);
+            dlclose(libproc);
+            return icli_json_or_empty(@{@"error": processes ? @(strerror(error)) : @"process allocation failed"});
+        }
+
+        NSMutableArray *apps = [NSMutableArray array];
+        for (size_t i = 0; i < length / sizeof(struct kinfo_proc); i++) {
+            pid_t pid = processes[i].kp_proc.p_pid;
+            char path[4096] = {0};
+            if (pid <= 0 || pidPath(pid, path, sizeof(path)) <= 0) continue;
+            // Exclude helpers and extensions nested inside an application bundle.
+            char *app = strstr(path, ".app/");
+            if (!app || strchr(app + 5, '/')) continue;
+            @try {
+                id identifier = ((id (*)(id, SEL, int))objc_msgSend)(identifierClass, identifierSelector, pid);
+                id handle = ((id (*)(id, SEL, id, NSError **))objc_msgSend)(handleClass, handleSelector,
+                                                                             identifier, NULL);
+                id state = [handle valueForKey:@"currentState"];
+                if (![state respondsToSelector:@selector(isRunning)] ||
+                    !((BOOL (*)(id, SEL))objc_msgSend)(state, @selector(isRunning))) continue;
+                NSString *bundleID = [[handle valueForKey:@"identity"] valueForKey:@"embeddedApplicationIdentifier"];
+                if (![bundleID isKindOfClass:NSString.class] || !bundleID.length) continue;
+                [apps addObject:@{@"bundle_id": bundleID, @"pid": @(pid), @"executable": @(path)}];
+            } @catch (NSException *exception) {
+                (void)exception;
+            }
+        }
+        free(processes);
+        dlclose(libproc);
+        return icli_json_or_empty(@{@"apps": apps});
+    }
 }
 
 char *icli_app_handlers_json(const char *url_or_scheme) {

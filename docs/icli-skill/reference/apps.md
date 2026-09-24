@@ -6,8 +6,8 @@
 | --- | --- | --- | --- | --- |
 | `app list` | Installed apps with bundle ID, name, version, path | | no | unlocked |
 | `app search <query>` | Apps whose name or bundle ID matches | | no | unlocked |
-| `app running` | Running apps with PIDs | | no | unlocked |
-| `app frontmost` | Bundle ID and PID of the foreground app (`com.apple.springboard` on the home screen) | | no | unlocked |
+| `app running` | Live app processes with PIDs, from RunningBoard when available (`source` reports a process-list fallback) | | no | unlocked |
+| `app frontmost` | Foreground app bundle ID with `verified` and `source`; the home screen may report `com.apple.springboard` with `verified: false` | | no | unlocked |
 | `app info <bundle-id>` | LaunchServices record: bundle path, executable, version, entitlements | | no | unlocked |
 | `app launch <bundle-id>` | Launch and wait up to 5 s for the app to be frontmost | | no | unlocked |
 | `app open <url>` | Open a URL, optionally in a specific app | `--bundle <bundle-id>` | no | unlocked |

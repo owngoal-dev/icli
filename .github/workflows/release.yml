@@ -76,12 +76,12 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - Adds `listKeychainDatabaseMetadata(className:)` to IcliKit and `icli sec keychain database` to enumerate protected index metadata in the `genp`, `inet`, `cert`, and `keys` tables. The query selects no password or encrypted blob, omits protected BLOB attributes, and reports the source and per-table counts. It requires filesystem read permission, normally root; RootHide's bootstrap shell maps the database to `/rootfs/var/Keychains/keychain-2.db`.
-          - Security.framework Keychain listings now label their source as `security`; their access remains limited by the caller's granted access groups. Consumers merging the two sources should retain uncertain matches as possible duplicates.
-          - Includes the 0.6.2 iOS 27 app-registration fallback and 0.6.0 device features.
+          - `runningApps()` and `icli app running` list live application processes from RunningBoard, including bundle ID and PID. The response says `source: runningboard`; when that private API is unavailable it falls back to process-path matching with `source: processes`.
+          - `frontmostApp()` and `icli app frontmost` prefer a unique non-widget RunningBoard focal app. They recognize both FrontBoard focal assertion domains and return `verified: false` for an unconfirmed SpringBoard fallback. UI commands refuse to target an unverified foreground app.
+          - Includes the 0.6.3 Keychain metadata API and the 0.6.2 iOS 27 app-registration fallback.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
-          - These are CI-built artifacts; CI does not rerun device tests. Keychain database metadata and temporary item behavior were checked on a physical iPad (iOS 18.5, RootHide) before this tag. The iOS 27 app-registration fallback remains untested on device.
+          - These are CI-built artifacts; CI does not rerun device tests. RunningBoard app enumeration and focal detection were checked on a physical iPad8,9 (iOS 18.5, RootHide) before this tag: 43 live apps were listed, Settings was verified as focal, and the home screen was marked unverified. The iOS 27 app-registration fallback remains untested on device.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
           - Binary SHA-256: `{report['binary_sha256']}`.

@@ -7,7 +7,7 @@ The package exports the `IcliKit` and `IcliSystem` libraries and the `icli` exec
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.3"),
+    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.4"),
 ],
 targets: [
     .target(
@@ -30,6 +30,8 @@ let services = try listServices()
 let service = try serviceStatus("example.service")
 let launchdDescription = try printService("example.service")
 let keychainMetadata = try listKeychainDatabaseMetadata(className: nil)
+let running = try runningApps()             // source, apps, count; each app has a PID
+let frontmost = frontmostApp()               // bundle_id, verified, source
 
 // Run only after your UI obtains the user's installation intent.
 // The calling process must already be root for this operation.

@@ -59,6 +59,9 @@ bool icli_launch_app(const char *bundle_id);
 bool icli_open_url(const char *url);
 bool icli_open_url_in_app(const char *url, const char *bundle_id);
 char *icli_frontmost_bundle_id(void);
+char *icli_frontmost_app_json(void);
+/// Live application processes reported by RunningBoard, as a JSON object.
+char *icli_runningboard_apps_json(void);
 bool icli_uninstall_app(const char *bundle_id);
 bool icli_register_app(const char *path);
 bool icli_unregister_app(const char *path);

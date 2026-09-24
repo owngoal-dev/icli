@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.6.3_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.6.4_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 
@@ -72,11 +72,14 @@ Read the foreground app's accessibility tree, then use its text or identifiers i
 
 ```sh
 icli app frontmost
+icli app running
 icli ui tree
 icli ui tap --identifier counter.increment
 icli ui wait 'Ready element' --timeout 5
 icli ui wait-gone 'Loading' --timeout 10
 ```
+
+`app frontmost` marks a bundle ID `verified: true` only when RunningBoard has one non-widget focal app. A SpringBoard-query fallback is marked `verified: false`; UI commands stop if they cannot verify the target. `app running` reports its `source` as `runningboard` or `processes`.
 
 For coordinate input, read the screen dimensions first. Coordinates are **points** in the orientation shown on screen, including those returned by accessibility and OCR. On an iPad held in landscape, `screen info` reports a landscape width and height:
 

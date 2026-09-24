@@ -14,12 +14,25 @@ public func searchApps(_ query: String) throws -> [String: Any] {
 }
 
 public func frontmostApp() -> [String: Any] {
-    icli_private_init()
-    return ["bundle_id": takeCString(icli_frontmost_bundle_id()) ?? "com.apple.springboard"]
+    (try? decodeBridgeJSON(takeCString(icli_frontmost_app_json()), "frontmost application"))
+        ?? ["bundle_id": "com.apple.springboard", "verified": false, "source": "unavailable"]
 }
 
 public func runningApps() throws -> [String: Any] {
     let apps = try listApps()["apps"] as? [[String: Any]] ?? []
+    if let result = try? decodeBridgeJSON(takeCString(icli_runningboard_apps_json()), "RunningBoard applications"),
+       let rows = result["apps"] as? [[String: Any]]
+    {
+        let byID = Dictionary(apps.compactMap { app -> (String, [String: Any])? in
+            guard let id = app["bundle_id"] as? String else { return nil }
+            return (id, app)
+        }, uniquingKeysWith: { first, _ in first })
+        let running = rows.map { row -> [String: Any] in
+            let id = row["bundle_id"] as? String ?? ""
+            return byID[id, default: [:]].merging(row) { _, live in live }
+        }
+        return ["apps": running, "count": running.count, "source": "runningboard"]
+    }
     let processes = try listProcesses(filter: nil)["processes"] as? [[String: Any]] ?? []
     let running = apps.compactMap { app -> [String: Any]? in
         guard let process = processes.first(where: { processMatchesApp($0, app) }) else { return nil }
@@ -28,7 +41,7 @@ public func runningApps() throws -> [String: Any] {
         result["executable"] = process["executable"]
         return result
     }
-    return ["apps": running, "count": running.count]
+    return ["apps": running, "count": running.count, "source": "processes"]
 }
 
 private func processMatchesApp(_ process: [String: Any], _ app: [String: Any]) -> Bool {
@@ -40,7 +53,11 @@ private func processMatchesApp(_ process: [String: Any], _ app: [String: Any]) -
 }
 
 func frontmostPID() throws -> Int32 {
-    let bundleID = frontmostApp()["bundle_id"] as? String ?? "com.apple.springboard"
+    let frontmost = frontmostApp()
+    guard frontmost["verified"] as? Bool == true,
+          let bundleID = frontmost["bundle_id"] as? String else {
+        throw IcliError.failed("frontmost application could not be verified")
+    }
     let processes = try listProcesses(filter: nil)["processes"] as? [[String: Any]] ?? []
     if bundleID == "com.apple.springboard",
        let process = processes.first(where: { $0["name"] as? String == "SpringBoard" }),
