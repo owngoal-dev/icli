@@ -65,7 +65,14 @@ public func lowPowerMode() throws -> [String: Any] {
 /// through NSProcessInfo.
 public func setLowPowerMode(_ enabled: Bool) throws -> [String: Any] {
     let before = try lowPowerMode()["enabled"] as? Bool ?? false
-    guard icli_low_power_mode_set(enabled) else {
+    switch icli_low_power_mode_set(enabled) {
+    case 0:
+        break
+    case -1:
+        throw IcliError.unavailable("powerd's Low Power Mode setter is unavailable on this device.")
+    case -2:
+        throw IcliError.unavailable("powerd did not answer the Low Power Mode request within 3 seconds.")
+    default:
         throw IcliError.unavailable("powerd refused the Low Power Mode change. The process needs the com.apple.powerd.lowpowermode.allow entitlement.")
     }
     let deadline = Date().addingTimeInterval(2)

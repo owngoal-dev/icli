@@ -7,7 +7,7 @@ The package exports the `IcliKit` and `IcliSystem` libraries and the `icli` exec
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.4"),
+    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.5"),
 ],
 targets: [
     .target(

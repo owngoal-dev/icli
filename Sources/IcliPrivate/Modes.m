@@ -61,9 +61,30 @@ int icli_low_power_mode_get(void) {
     return ((long (*)(id, SEL))objc_msgSend)(service, get) == 1 ? 1 : 0;
 }
 
-bool icli_low_power_mode_set(bool enabled) {
+int icli_low_power_mode_set(bool enabled) {
     id service = lowPowerModeService();
+    SEL asyncSet = NSSelectorFromString(@"setPowerMode:fromSource:withCompletion:");
+    if ([service respondsToSelector:asyncSet]) {
+        dispatch_semaphore_t done = dispatch_semaphore_create(0);
+        __block BOOL accepted = NO;
+        void (^completion)(BOOL, NSError *) = ^(BOOL applied, NSError *error) {
+            accepted = applied && error == nil;
+            dispatch_semaphore_signal(done);
+        };
+        ((void (*)(id, SEL, long, NSString *, id))objc_msgSend)(
+            service, asyncSet, enabled ? 1 : 0, @"ControlCenter", completion
+        );
+        if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC)) != 0)
+            return -2;
+        return accepted ? 0 : -3;
+    }
+
+    // The synchronous selector can wait indefinitely on iOS 26. Only use it
+    // on older systems that do not expose the completion variant.
+    if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26) return -1;
     SEL set = NSSelectorFromString(@"setPowerMode:fromSource:");
-    if (![service respondsToSelector:set]) return false;
-    return ((BOOL (*)(id, SEL, long, NSString *))objc_msgSend)(service, set, enabled ? 1 : 0, @"ControlCenter");
+    if (![service respondsToSelector:set]) return -1;
+    return ((BOOL (*)(id, SEL, long, NSString *))objc_msgSend)(
+        service, set, enabled ? 1 : 0, @"ControlCenter"
+    ) ? 0 : -3;
 }

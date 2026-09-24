@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.6.4_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.6.5_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 

@@ -138,7 +138,8 @@ char *icli_audio_button_json(const char *button);
 char *icli_amfi_developer_mode_json(bool arm);
 /// powerd's Low Power Mode: 1 on, 0 off, -1 when the service is unavailable.
 int icli_low_power_mode_get(void);
-bool icli_low_power_mode_set(bool enabled);
+/// 0 on acceptance; -1 if unavailable, -2 on timeout, -3 on rejection.
+int icli_low_power_mode_set(bool enabled);
 /// Location simulation through locationd; the location outlives the process.
 char *icli_location_simulate_json(
     double latitude,

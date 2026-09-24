@@ -76,12 +76,12 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - `runningApps()` and `icli app running` list live application processes from RunningBoard, including bundle ID and PID. The response says `source: runningboard`; when that private API is unavailable it falls back to process-path matching with `source: processes`.
-          - `frontmostApp()` and `icli app frontmost` prefer a unique non-widget RunningBoard focal app. They recognize both FrontBoard focal assertion domains and return `verified: false` for an unconfirmed SpringBoard fallback. UI commands refuse to target an unverified foreground app.
-          - Includes the 0.6.3 Keychain metadata API and the 0.6.2 iOS 27 app-registration fallback.
+          - `icli device low-power set on|off` and `setLowPowerMode(_:)` prefer powerd's completion-based API, wait up to three seconds for its reply, and verify the resulting state. On systems before iOS 26 without that API, they retain the synchronous setter.
+          - The Low Power Mode change was tested on a physical iPad8,9 (iOS 18.5, RootHide): both transitions and a repeated request succeeded, and a separate process read back the state. The original off state was restored. The completion selector is available on that device; the iOS 26 behavior remains untested on device.
+          - Includes the 0.6.4 RunningBoard app-state APIs, the 0.6.3 Keychain metadata API, and the 0.6.2 iOS 27 app-registration fallback.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
-          - These are CI-built artifacts; CI does not rerun device tests. RunningBoard app enumeration and focal detection were checked on a physical iPad8,9 (iOS 18.5, RootHide) before this tag: 43 live apps were listed, Settings was verified as focal, and the home screen was marked unverified. The iOS 27 app-registration fallback remains untested on device.
+          - These are CI-built artifacts; CI does not rerun device tests. The iOS 27 app-registration fallback remains untested on device.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
           - Binary SHA-256: `{report['binary_sha256']}`.

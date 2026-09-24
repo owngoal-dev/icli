@@ -15,7 +15,7 @@
 | `device devmode get` | Developer Mode: `enabled`, `armed` (turns on after the next restart), `writable` (the device allows changing it) | | no | any |
 | `device devmode enable` | Arm Developer Mode when it is off; returns `already_enabled` and `restart_required`. Does not restart the device | | see notes | any |
 | `device low-power get` | Whether Low Power Mode is on (`method: powerd`) | | no | any |
-| `device low-power set <on\|off>` | Turn Low Power Mode on or off through powerd, like Control Center; checks the new state | | no | any |
+| `device low-power set <on\|off>` | Turn Low Power Mode on or off through powerd, like Control Center; waits up to 3 seconds for its reply, then checks the new state | | no | any |
 | `device network` | Interface addresses | | no | unlocked |
 | `device ioreg` | IORegistry dump | `--plane IOService` | no | unlocked |
 | `device bootlogo` | Render a screen-sized JPEG 2000 boot logo from a PNG/JPEG mark | `--mark <image>`, `--output <file.jp2>` (both required), `--dark`, `--width`, `--height`, `--mark-points 128` | no | any |
