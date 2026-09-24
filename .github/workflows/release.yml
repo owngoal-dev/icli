@@ -76,8 +76,8 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - Depends on libarchive.xcframework 1.0.0 and its `ArchiveKit` product. The libarchive binary is unchanged; the rename fixes "cannot load module 'LibArchive' as 'libarchive'" in Xcode 27 builds on case-insensitive volumes. Packages that depend on icli must also use libarchive.xcframework 1.0.0.
-          - Includes the 0.6.7 bootstrap reporting that distinguishes an absent bootstrap from rootful.
+          - Dependencies are minimum versions instead of exact pins: libarchive.xcframework from 1.0.0 (the `ArchiveKit` product) and Swift Argument Parser from 1.3.1. Packages that depend on icli can resolve newer compatible releases of either one.
+          - Includes the 0.6.8 move to ArchiveKit, which fixes "cannot load module 'LibArchive' as 'libarchive'" in Xcode 27 builds on case-insensitive volumes, and the 0.6.7 bootstrap reporting.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
           - CI-built binaries are verified by package checks; CI does not rerun device tests.

@@ -1,11 +1,11 @@
 # Third-Party Notices
 
-Swift Package Manager resolves Swift Argument Parser 1.3.1 from
+Swift Package Manager resolves Swift Argument Parser 1.3.1 or later from
 https://github.com/apple/swift-argument-parser. Its Apache-2.0 license with
 Swift Runtime Library Exception is preserved in
 `Resources/Licenses/swift-argument-parser.txt`.
 
-The ArchiveKit 1.0.0 Swift package is resolved from
+The ArchiveKit 1.0.0 or later Swift package is resolved from
 https://github.com/Lakr233/libarchive.xcframework. Its static XCFramework is
 linked into icli; no separate libarchive executable or dynamic framework is
 shipped. The package's MIT license and notices for libarchive, xz, zstd, and

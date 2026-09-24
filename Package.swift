@@ -13,8 +13,8 @@ let package = Package(
         .executable(name: "icli", targets: ["icli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.3.1"),
-        .package(url: "https://github.com/Lakr233/libarchive.xcframework.git", exact: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.1"),
+        .package(url: "https://github.com/Lakr233/libarchive.xcframework.git", from: "1.0.0"),
     ],
     targets: [
         // Read-only system state: Foundation, CoreFoundation and the launchd,
