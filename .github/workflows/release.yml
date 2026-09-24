@@ -76,12 +76,11 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - `icli device low-power set on|off` and `setLowPowerMode(_:)` prefer powerd's completion-based API, wait up to three seconds for its reply, and verify the resulting state. On systems before iOS 26 without that API, they retain the synchronous setter.
-          - The Low Power Mode change was tested on a physical iPad8,9 (iOS 18.5, RootHide): both transitions and a repeated request succeeded, and a separate process read back the state. The original off state was restored. The completion selector is available on that device; the iOS 26 behavior remains untested on device.
-          - Includes the 0.6.4 RunningBoard app-state APIs, the 0.6.3 Keychain metadata API, and the 0.6.2 iOS 27 app-registration fallback.
+          - `IcliKit.installIPAInContainer(_:registration:prepareApp:)` prepares a validated temporary app bundle before the existing container install, registration, and rollback path. This lets vphoned sign app code without maintaining a second installer. The CLI still preserves the IPA's original signature.
+          - Includes the 0.6.5 completion-based Low Power Mode setter, the 0.6.4 RunningBoard app-state APIs, the 0.6.3 Keychain metadata API, and the 0.6.2 iOS 27 app-registration fallback.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
-          - These are CI-built artifacts; CI does not rerun device tests. The iOS 27 app-registration fallback remains untested on device.
+          - These are CI-built artifacts; CI does not rerun device tests. The new preparation callback and iOS 27 app-registration fallback remain untested on a device in this release.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
           - Binary SHA-256: `{report['binary_sha256']}`.

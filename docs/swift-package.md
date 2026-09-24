@@ -7,7 +7,7 @@ The package exports the `IcliKit` and `IcliSystem` libraries and the `icli` exec
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.5"),
+    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.6"),
 ],
 targets: [
     .target(
@@ -60,7 +60,7 @@ Every `icli` command is a thin layer over a public IcliKit function, so a long-r
 | Clipboard | `clipboardInfo(imageOutput:)`, `clipboardImagePNG()`, `setClipboardImage(_:)`, next to `clipboardText()` and `setClipboard(_:)` |
 | Preferences | `readPreference`, `writePreference` and `deletePreference`, with `PreferenceUser` and `PreferenceValue`. Build a `PreferenceValue` directly, or parse command-line text with `init(text:type:)`. |
 | Raw input | `touch(_:x:y:normalized:)`, `touchSequence(_:normalized:)` with `TouchEvent`, `hidEvent(page:usage:down:)`, `hidPress(page:usage:)`. `TouchPhase` is `down`, `move` or `up` (UITouchPhase 0, 1 and 3). |
-| Container installs | `installIPAInContainer(_:registration:)` or `installPackage(_:container:registration:)`, with `AppRegistrationType`. `uninstallApp(_:force:)` removes container apps icli installed. |
+| Container installs | `installIPAInContainer(_:registration:)` or `installPackage(_:container:registration:)`, with `AppRegistrationType`. `installIPAInContainer(_:registration:prepareApp:)` lets an integrator prepare the validated temporary app bundle before container installation. `uninstallApp(_:force:)` removes container apps icli installed. |
 
 A call a device can't support throws `IcliError.unavailable` and leaves the device as it was. For example, a jailbroken device won't launch an app installed in a container unless the app is signed in a way CoreTrust accepts. The CLI refuses UI input while the device is locked. A library caller has to make that check itself.
 

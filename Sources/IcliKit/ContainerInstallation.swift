@@ -222,6 +222,16 @@ private func registerContainerApp(
 /// this way is upgraded in place; any other app with the identifier is left
 /// alone. A failed install removes what it added and restores an upgraded app.
 public func installIPAInContainer(_ path: String, registration: AppRegistrationType = .user) throws -> [String: Any] {
+    try installIPAInContainer(path, registration: registration, prepareApp: { _ in })
+}
+
+/// Runs `prepareApp` on the validated, temporary Payload/*.app before it is
+/// copied into a container. The path is removed when this call returns.
+public func installIPAInContainer(
+    _ path: String,
+    registration: AppRegistrationType,
+    prepareApp: (String) throws -> Void
+) throws -> [String: Any] {
     guard geteuid() == 0 else {
         throw IcliError.failed("container installation requires root; run sudo icli app install <file.ipa> --container")
     }
@@ -229,6 +239,7 @@ public func installIPAInContainer(_ path: String, registration: AppRegistrationT
     let manager = FileManager.default
     let staged = try stageIPA(path)
     defer { try? manager.removeItem(atPath: staged.stage) }
+    try prepareApp(staged.app)
     let bundleID = staged.bundleID
     let plugIns = try appPlugIns(of: staged.app, owner: bundleID)
     let existingContainer = try container("app", bundleID, create: false)["path"] as? String
