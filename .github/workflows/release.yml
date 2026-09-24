@@ -76,11 +76,11 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - `IcliKit.installIPAInContainer(_:registration:prepareApp:)` prepares a validated temporary app bundle before the existing container install, registration, and rollback path. This lets vphoned sign app code without maintaining a second installer. The CLI still preserves the IPA's original signature.
-          - Includes the 0.6.5 completion-based Low Power Mode setter, the 0.6.4 RunningBoard app-state APIs, the 0.6.3 Keychain metadata API, and the 0.6.2 iOS 27 app-registration fallback.
+          - Bootstrap reporting distinguishes an absent bootstrap from rootful: `layout` and `jbroot` are null unless a RootHide/rootless path is found or `/` is mounted read-write.
+          - RootHide discovery also accepts the loaded `systemhook.dylib` `get_jbroot` export for system-installed consumers such as vphoned.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
-          - These are CI-built artifacts; CI does not rerun device tests. The new preparation callback and iOS 27 app-registration fallback remain untested on a device in this release.
+          - The RootHide layout was checked on an iPad8,9 running iOS 18.5. CI-built binaries are separately verified by package checks; CI does not rerun device tests.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
           - Binary SHA-256: `{report['binary_sha256']}`.

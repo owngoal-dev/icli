@@ -33,10 +33,10 @@ public func deviceSnapshot() throws -> [String: Any] {
         "processor_count": info.processorCount,
         "storage": disk,
         "jailbreak": [
-            "layout": root.layout.rawValue,
-            "jbroot": root.jbroot,
+            "layout": root.layout.map { $0.rawValue as Any } ?? NSNull(),
+            "jbroot": root.layout == nil ? NSNull() : root.jbroot as Any,
             "source": root.source,
-        ],
+        ] as [String: Any],
     ]
 }
 

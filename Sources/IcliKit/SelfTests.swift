@@ -7,8 +7,8 @@ import IcliSystem
 /// checks; the separate acceptance runner covers interaction and system changes.
 public func runSelfTests(expectedLayout: String? = nil, registrationFixture: String? = nil) throws -> [String: Any] {
     let environment = try environmentReport()
-    if let expectedLayout, expectedLayout != JailbreakRoot.current.layout.rawValue {
-        throw IcliError.failed("Expected \(expectedLayout), detected \(JailbreakRoot.current.layout.rawValue); no tests were run.")
+    if let expectedLayout, expectedLayout != JailbreakRoot.current.layout?.rawValue {
+        throw IcliError.failed("Expected \(expectedLayout), detected \(JailbreakRoot.current.layout?.rawValue ?? "none"); no tests were run.")
     }
     var results: [[String: Any]] = []
     func check(_ name: String, _ body: () throws -> [String: Any]) {
@@ -53,7 +53,8 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
             "Bootstrap Applications directory is missing: \(path)"
         )
         _ = try FileManager.default.contentsOfDirectory(atPath: path)
-        return ["applications": path, "layout": JailbreakRoot.current.layout.rawValue]
+        return ["applications": path,
+                "layout": JailbreakRoot.current.layout.map { $0.rawValue as Any } ?? NSNull()]
     }
     check("processes") {
         let processes = try listProcesses(filter: nil)["processes"] as? [[String: Any]] ?? []

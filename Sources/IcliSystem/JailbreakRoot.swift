@@ -6,7 +6,7 @@ import IcliSystemPrivate
 public struct JailbreakRoot: Equatable {
     public enum Layout: String { case rootful, rootless, roothide }
 
-    public let layout: Layout
+    public let layout: Layout?
     public let jbroot: String
     public let source: String
     public static let current = detect()
@@ -40,11 +40,11 @@ public struct JailbreakRoot: Equatable {
     private static func detect() -> JailbreakRoot {
         let raw = takeCString(icli_bootstrap_json()) ?? "{}"
         let data = Data(raw.utf8)
-        let info = (try? JSONSerialization.jsonObject(with: data)) as? [String: String] ?? [:]
+        let info = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         return JailbreakRoot(
-            layout: Layout(rawValue: info["layout"] ?? "") ?? .rootful,
-            jbroot: info["jbroot"] ?? "/",
-            source: info["source"] ?? "unavailable"
+            layout: (info["layout"] as? String).flatMap(Layout.init(rawValue:)),
+            jbroot: info["jbroot"] as? String ?? "/",
+            source: info["source"] as? String ?? "unavailable"
         )
     }
 }

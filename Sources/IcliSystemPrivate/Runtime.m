@@ -5,6 +5,7 @@
 #import <mach-o/dyld.h>
 #import <unistd.h>
 #import <errno.h>
+#import <sys/mount.h>
 #import <sys/sysctl.h>
 
 // This process uses physical paths. Bootstrap tools may use vroot paths.
@@ -74,6 +75,21 @@ static void resolveBootstrap(void) {
             }
         }
         if (!bootstrapPrefix) {
+            void *hook = dlopen("systemhook.dylib", RTLD_NOLOAD);
+            if (hook) {
+                const char *(*getJB)(void) = dlsym(hook, "get_jbroot");
+                const char *prefix = getJB ? getJB() : NULL;
+                BOOL isDirectory = NO;
+                if (prefix && prefix[0] == '/' && strcmp(prefix, "/") != 0 &&
+                    [NSFileManager.defaultManager fileExistsAtPath:@(prefix) isDirectory:&isDirectory] && isDirectory) {
+                    bootstrapPrefix = @(prefix);
+                    rootfsPrefix = @"/rootfs";
+                    bootstrapSource = @"systemhook";
+                }
+                dlclose(hook);
+            }
+        }
+        if (!bootstrapPrefix) {
             bootstrapPrefix = access("/var/jb", F_OK) == 0 ? @"/var/jb" : @"/";
             rootfsPrefix = @"/";
             bootstrapSource = @"filesystem fallback";
@@ -84,13 +100,15 @@ static void resolveBootstrap(void) {
 
 char *icli_bootstrap_json(void) {
     resolveBootstrap();
+    struct statfs rootMount;
+    BOOL rootWritable = statfs("/", &rootMount) == 0 && !(rootMount.f_flags & MNT_RDONLY);
     NSString *layout = [rootfsPrefix isEqual:@"/rootfs"] || [bootstrapPrefix containsString:@".jbroot-"]
         ? @"roothide"
-        : ([bootstrapPrefix isEqual:@"/"] ? @"rootful" : @"rootless");
+        : ([bootstrapPrefix isEqual:@"/"] ? (rootWritable ? @"rootful" : nil) : @"rootless");
     return runtimeJSON(@{
-        @"jbroot": bootstrapPrefix,
+        @"jbroot": layout ? bootstrapPrefix : NSNull.null,
         @"rootfs": rootfsPrefix,
-        @"layout": layout,
+        @"layout": layout ?: NSNull.null,
         @"source": bootstrapSource
     });
 }

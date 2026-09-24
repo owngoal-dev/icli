@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.6.6_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.6.7_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 
@@ -198,6 +198,8 @@ A simulated location applies to every app and stays on after icli exits, until `
 ### Output and Device State
 
 Commands return JSON on standard output by default. Add `--human` for interactive reading. Runtime failures return an `error` code and a `message` and exit nonzero. Help, version output, and argument errors are handled separately by the argument parser.
+
+`device info` reports `jailbreak.layout` and `jailbreak.jbroot` as JSON `null` when no bootstrap is detected. A root at `/` is reported as `rootful` only when the root filesystem is mounted read-write. RootHide and rootless retain their discovered bootstrap paths.
 
 The former `shell` command was removed in 0.3.0. Use the filesystem and system command groups for operations implemented by icli.
 

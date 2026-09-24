@@ -267,6 +267,7 @@ private func acceptedArchitectures() -> Set<String> {
     case .rootless: ["iphoneos-arm64", "all"]
     case .roothide: ["iphoneos-arm64e", "all"]
     case .rootful: ["iphoneos-arm", "all"]
+    case nil: []
     }
 }
 
@@ -350,8 +351,11 @@ public func installDebFile(_ path: String, ignoreDependencies: Bool = false) thr
     }
     try validPackageName(name)
     let architecture = control["Architecture"] ?? ""
+    guard let layout = JailbreakRoot.current.layout else {
+        throw IcliError.failed("no jailbreak bootstrap detected")
+    }
     guard acceptedArchitectures().contains(architecture) else {
-        throw IcliError.failed("package architecture \(architecture) does not match the \(JailbreakRoot.current.layout.rawValue) bootstrap")
+        throw IcliError.failed("package architecture \(architecture) does not match the \(layout.rawValue) bootstrap")
     }
     var database = try DpkgDatabase()
     try database.acquireLock()

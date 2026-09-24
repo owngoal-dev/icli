@@ -89,8 +89,8 @@ public func environmentReport() throws -> [String: Any] {
         .reduce(into: [String: Bool]()) { $0[$1] = manager.isExecutableFile(atPath: root.binary($1)) }
     let version = ProcessInfo.processInfo.operatingSystemVersion
     return [
-        "layout": root.layout.rawValue,
-        "jbroot": root.jbroot,
+        "layout": root.layout.map { $0.rawValue as Any } ?? NSNull(),
+        "jbroot": root.layout == nil ? NSNull() : root.jbroot as Any,
         "jbroot_source": root.source,
         "rootfs_prefix": root.rootfsPath("/"),
         "ios_version": "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)",
