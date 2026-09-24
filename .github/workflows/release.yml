@@ -76,11 +76,11 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - Maintenance release: the code is simplified and reorganized, with no intended change to commands, JSON output or the public IcliKit API. `IcliPrivate.m` and the host commands are split into focused files, and long lines are wrapped at 120 columns.
+          - iOS 27 app registration: `app register`, `app refresh` and `sb uicache` fall back to LaunchServices' containerized interface when iOS 27 refuses the Info.plist registration and no record of the bundle's build exists, then read the record back. This needs lsd's embedded-registration check open, as the vphone firmware patches it; elsewhere on iOS 27 registration still fails. `registerAppAtPath` and container IPA installs share one helper for that call.
           - Includes the 0.6.0 device features (location simulation, Low Power Mode, Developer Mode, clipboard images, typed preferences, raw touch and HID input, container IPA installs), each a public IcliKit API.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
-          - These are CI-built artifacts; CI does not rerun device tests. Before release, the full acceptance suite passed on an iPad (iOS 18.5, RootHide) except the full reboot case, which was not run.
+          - These are CI-built artifacts; CI does not rerun device tests. No device was reachable for 0.6.2, so the iOS 27 fallback has not run on a device or the vphone VM; the last full acceptance run (0.6.1) passed on an iPad (iOS 18.5, RootHide) except the full reboot case.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
           - Binary SHA-256: `{report['binary_sha256']}`.
