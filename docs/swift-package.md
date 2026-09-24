@@ -7,7 +7,7 @@ The package exports the `IcliKit` and `IcliSystem` libraries and the `icli` exec
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.2"),
+    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.3"),
 ],
 targets: [
     .target(
@@ -29,6 +29,7 @@ let comparison = try compareDebianVersions("1.0~beta", "1.0")
 let services = try listServices()
 let service = try serviceStatus("example.service")
 let launchdDescription = try printService("example.service")
+let keychainMetadata = try listKeychainDatabaseMetadata(className: nil)
 
 // Run only after your UI obtains the user's installation intent.
 // The calling process must already be root for this operation.
@@ -38,6 +39,8 @@ let skippedScripts = result["scripts_not_run"] as? [String] ?? []
 ```
 
 Functions return Foundation dictionaries and throw `IcliError` or underlying Foundation errors. Handle `IcliError.code`, `.message`, or `.payload` in your own UI. Service APIs also include bootstrap/load, bootout/unload, enable/disable, start/stop, signal, remove, disabled-override, and launchd environment operations. Treat `completion: "partial"`, skipped maintainer scripts, and registration failures as incomplete setup. DEB handling supports local archives and existing dependency checks, not repository downloads or script/trigger execution. The caller supplies passwords directly to `setAccountPassword(user:password:)`; stdin handling belongs to the CLI.
+
+`listKeychainDatabaseMetadata(className:)` reads only the `genp`, `inet`, `cert`, and `keys` tables' index metadata. It requires filesystem permission to read `/var/Keychains/keychain-2.db` (normally root). RootHide's bootstrap shell reaches that file at `/rootfs/var/Keychains/keychain-2.db`, but an IcliKit process opens the real filesystem path. The result identifies `source: "database"`, `protectedMetadata: true`, and per-table counts. Only columns SQLite marks as text are included; protected BLOB attributes are omitted. It never includes passwords, decrypted data, or encrypted blobs. `listKeychain` uses Security.framework and remains limited by the calling process's access groups; its items identify `source: "security"`. Consumers combining these two results should preserve unmatched database rows and identify possible duplicates rather than hiding protected entries on an uncertain match.
 
 The API is synchronous and has not been audited for concurrent use. Serialize operations, especially package database mutations and UI interactions. Archive operations and waits can block; integrate them with your application's scheduling and lifecycle. Long-lived app hosts have only been checked for compilation through a separate consumer; the full behavior suite runs in the CLI process.
 

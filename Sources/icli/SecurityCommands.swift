@@ -15,7 +15,7 @@ extension Sec {
     struct Keychain: ParsableCommand {
         static var configuration = CommandConfiguration(
             abstract: "Keychain items",
-            subcommands: [List.self, Get.self, Add.self, Update.self, Delete.self],
+            subcommands: [List.self, Database.self, Get.self, Add.self, Update.self, Delete.self],
             defaultSubcommand: List.self
         )
         struct List: ParsableCommand {
@@ -27,7 +27,7 @@ extension Sec {
             @Option var server: String?
             @Option var group: String?
             func run() {
-                emit(output) {
+                emit(allowWhenLocked: true, output) {
                     try listKeychain(
                         className: `class`,
                         service: service,
@@ -40,6 +40,18 @@ extension Sec {
             }
         }
 
+        struct Database: ParsableCommand {
+            static var configuration = CommandConfiguration(
+                abstract: "Read protected Keychain database metadata (requires filesystem access)."
+            )
+            @OptionGroup var output: OutputOptions
+            @Option(name: .long, help: "genp, inet, cert, keys, or the full class name")
+            var `class`: String?
+            func run() {
+                emit(allowWhenLocked: true, output) { try listKeychainDatabaseMetadata(className: `class`) }
+            }
+        }
+
         struct Get: ParsableCommand {
             @OptionGroup var output: OutputOptions
             @Option var `class`: String = "generic_password"
@@ -48,7 +60,7 @@ extension Sec {
             @Option var server: String?
             @Option var group: String?
             func run() {
-                emit(output) {
+                emit(allowWhenLocked: true, output) {
                     try getKeychain(
                         className: `class`,
                         service: service,
@@ -70,7 +82,7 @@ extension Sec {
             @Option var group: String = defaultKeychainGroup
             @Option var data: String
             func run() {
-                emit(output) {
+                emit(allowWhenLocked: true, output) {
                     try addKeychain(
                         className: `class`,
                         service: service,
@@ -93,7 +105,7 @@ extension Sec {
             @Option var group: String = defaultKeychainGroup
             @Option var data: String
             func run() {
-                emit(output) {
+                emit(allowWhenLocked: true, output) {
                     try updateKeychain(
                         className: `class`,
                         service: service,
@@ -115,7 +127,7 @@ extension Sec {
             @Option var group: String = defaultKeychainGroup
             @Flag var force = false
             func run() {
-                emit(output) {
+                emit(allowWhenLocked: true, output) {
                     guard force else { throw IcliError.forceRequired("delete keychain item") }
                     return try deleteKeychain(
                         className: `class`,

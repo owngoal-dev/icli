@@ -30,7 +30,7 @@ iproxy 2333 22
 In another Mac terminal, upload the package from the repository directory and connect. Replace the version and account details as needed:
 
 ```sh
-scp -P 2333 .build/com.icli.icli_0.6.2_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
+scp -P 2333 .build/com.icli.icli_0.6.3_iphoneos-arm64.deb mobile@127.0.0.1:/tmp/icli.deb
 ssh -p 2333 mobile@127.0.0.1
 ```
 
@@ -54,7 +54,7 @@ The DEB installs a command-line executable and license notices. The executable i
 - **Apps**: List, launch, inspect, register, unregister, and refresh apps; inspect or repair their network policy. Install and remove local DEB packages or compatible IPA files, in the bootstrap or in their own app container.
 - **Files and logs**: Read, write, copy, move, link, and remove files; change permissions and ownership; read and edit property lists; capture live logs and read crash reports.
 - **Device controls**: Adjust brightness, volume, and rotation; use hardware button actions and the clipboard, including images; switch Low Power Mode; read and enable Developer Mode; simulate a location; request userspace or full reboots; render boot logos.
-- **System**: Manage launchd services, local DEB packages and repository source files, compare Debian and BaseBin versions, set account passwords through stdin, control system app visibility, restart SpringBoard, capture packets, and store test credentials in the `icli.test` Keychain access group.
+- **System**: Manage launchd services, local DEB packages and repository source files, compare Debian and BaseBin versions, set account passwords through stdin, control system app visibility, restart SpringBoard, capture packets, store test credentials in the `icli.test` Keychain access group, and read protected Keychain database metadata with filesystem permission.
 - **Preferences**: Read, write, and delete typed preference values like `defaults`, for mobile, root, or a plist path.
 - **System state**: Dump every service with launchd's own description, and read the kernel's jetsam bands, jetsam property lists, and memory pressure levels.
 
@@ -247,7 +247,7 @@ The optional registration test uses the signed `.build/install-fixtures/SelfTest
 
 These checks establish compatibility for the operations listed in the report. The broader acceptance suite below covers touch/keyboard interaction, device settings, installation, services, and reboots. RootHide-specific container and plugin behavior still needs testing on RootHide.
 
-The [acceptance report](docs/rootless-acceptance.md) is generated from the recorded test run and lists every case and every command entry point with its result; failed or untested entries stay visible. Acceptance covers rotation, package repositories, network capture, and Keychain operations on dedicated `icli.test` entries. Keychain commands operate only within that access group and do not read other apps' items. RootHide service inspection has been checked on an iOS 18.5 iPad; the complete acceptance suite, privileged RootHide mutations, other iOS versions, and other physical hardware still require separate testing.
+The [acceptance report](docs/rootless-acceptance.md) is generated from the recorded test run and lists every case and every command entry point with its result; failed or untested entries stay visible. Acceptance covers rotation, package repositories, network capture, and Keychain operations on dedicated `icli.test` entries. Security.framework queries remain limited by the calling process's access groups. `sec keychain database` separately reads protected metadata across groups when the process can read the database; it never returns item values or encrypted blobs. RootHide service inspection has been checked on an iOS 18.5 iPad; the complete acceptance suite, privileged RootHide mutations, other iOS versions, and other physical hardware still require separate testing.
 
 Device acceptance uses a separate TestHost app and installation fixtures, which are excluded from release packages. After building icli, prepare them on your Mac:
 

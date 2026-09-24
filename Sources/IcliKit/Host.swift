@@ -294,7 +294,7 @@ private func keychainQuery(
 }
 
 private func encodeKeychainItem(_ item: [String: Any], className: String, includeData: Bool) -> [String: Any] {
-    var copy: [String: Any] = ["class": className]
+    var copy: [String: Any] = ["class": className, "source": "security"]
     if let acct = item[kSecAttrAccount as String] {
         copy["account"] = "\(acct)"
     }

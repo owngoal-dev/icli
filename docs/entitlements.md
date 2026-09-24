@@ -109,6 +109,8 @@ OCR uses Vision and the captured image; there is no separate OCR entitlement in 
 
 The shipped CLI's access-group entitlement lists only `icli.test`. The library accepts a `group` argument and relies on the host's granted entitlements and system Keychain checks. A consumer's own identity/signing configuration does not automatically grant `icli.test`. Keep real credentials out of the acceptance fixture namespace and logs. This profile and test suite do not certify access to other apps' credentials.
 
+`listKeychainDatabaseMetadata` and `sec keychain database` read only SQLite index metadata from the system Keychain file. Their access is controlled by filesystem permissions, not an additional entitlement. An IcliKit process opens `/var/Keychains/keychain-2.db`; the RootHide bootstrap shell sees it at `/rootfs/var/Keychains/keychain-2.db`. The signed CLI can run with `sudo` when that file is restricted to `_securityd`.
+
 ## Verification and scope
 
 `make all` signs the CLI with the authoritative file. `scripts/check-packages.sh` extracts the signed entitlements using `ldid -e`, compares the entire plist with that file, and verifies both DEB layouts contain the same executable. [The acceptance report](rootless-acceptance.md) identifies the fully tested binary and device. RootHide service inspection has been checked on iOS 18.5; its full privileged acceptance suite remains pending.

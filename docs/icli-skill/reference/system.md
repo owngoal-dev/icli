@@ -47,15 +47,16 @@ Example: `printf '%s\n' "$NEWPASS" | sudo icli account set-password mobile`.
 
 ## sec
 
-Keychain commands only operate on items in the `icli.test` access group (the default `--group` for writes). They cannot read other apps' items.
+Security.framework Keychain commands use the calling process's access groups (`icli.test` is the default `--group` for writes). The separate `database` command can read protected metadata across groups when the process can read the system Keychain database. It never returns item values or encrypted blobs.
 
 | Command | Purpose | Key flags | Root | Screen |
 | --- | --- | --- | --- | --- |
-| `sec keychain list` | Matching items (metadata) | `--class generic_password\|internet_password\|certificate\|key\|identity`, `--service`, `--account`, `--server`, `--group` | no | unlocked |
-| `sec keychain get` | One item, including its data | same filters (class defaults to generic_password) | no | unlocked |
-| `sec keychain add` | Add an item | `--account` and `--data` required, `--service`, `--server`, `--label`, `--group icli.test` | no | unlocked |
-| `sec keychain update` | Replace an item's data | `--account` and `--data` required | no | unlocked |
-| `sec keychain delete` | Delete matching items | `--force` required | no | unlocked |
+| `sec keychain list` | Matching items (metadata) | `--class generic_password\|internet_password\|certificate\|key\|identity`, `--service`, `--account`, `--server`, `--group` | no | any; Security.framework may deny locked items |
+| `sec keychain database` | Protected database metadata, with source and per-table counts | `--class genp\|inet\|cert\|keys` | filesystem access (usually root) | any |
+| `sec keychain get` | One item, including its data | same filters (class defaults to generic_password) | no | any; Security.framework enforces access |
+| `sec keychain add` | Add an item | `--account` and `--data` required, `--service`, `--server`, `--label`, `--group icli.test` | no | any; Security.framework enforces access |
+| `sec keychain update` | Replace an item's data | `--account` and `--data` required | no | any; Security.framework enforces access |
+| `sec keychain delete` | Delete matching items | `--force` required | no | any; Security.framework enforces access |
 | `sec ssl-killswitch` | Look for SSL Kill Switch files | | no | unlocked |
 
 ## net

@@ -48,6 +48,8 @@ let deviceFeatureAPIs: [Any] = [
     uninstallApp as (String, Bool) throws -> [String: Any],
 ]
 precondition(deviceFeatureAPIs.count == 20)
+let keychainMetadataAPI: (String?) throws -> [String: Any] = listKeychainDatabaseMetadata
+_ = keychainMetadataAPI
 // A host builds these values from its own protocol, not from command-line text.
 let events = [TouchEvent(phase: .down, x: 0.5, y: 0.5, delayMS: 50), TouchEvent(phase: .up, x: 0.5, y: 0.5)]
 let decoded = try TouchEvent.list(fromJSON: #"[{"phase":"down","x":1,"y":2}]"#)

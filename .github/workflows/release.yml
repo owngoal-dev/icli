@@ -76,11 +76,12 @@ jobs:
           tag = os.environ['RELEASE_TAG']
           notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
 
-          - iOS 27 app registration: `app register`, `app refresh` and `sb uicache` fall back to LaunchServices' containerized interface when iOS 27 refuses the Info.plist registration and no record of the bundle's build exists, then read the record back. This needs lsd's embedded-registration check open, as the vphone firmware patches it; elsewhere on iOS 27 registration still fails. `registerAppAtPath` and container IPA installs share one helper for that call.
-          - Includes the 0.6.0 device features (location simulation, Low Power Mode, Developer Mode, clipboard images, typed preferences, raw touch and HID input, container IPA installs), each a public IcliKit API.
+          - Adds `listKeychainDatabaseMetadata(className:)` to IcliKit and `icli sec keychain database` to enumerate protected index metadata in the `genp`, `inet`, `cert`, and `keys` tables. The query selects no password or encrypted blob, omits protected BLOB attributes, and reports the source and per-table counts. It requires filesystem read permission, normally root; RootHide's bootstrap shell maps the database to `/rootfs/var/Keychains/keychain-2.db`.
+          - Security.framework Keychain listings now label their source as `security`; their access remains limited by the caller's granted access groups. Consumers merging the two sources should retain uncertain matches as possible duplicates.
+          - Includes the 0.6.2 iOS 27 app-registration fallback and 0.6.0 device features.
           - Swift Package library products: **IcliKit** and **IcliSystem**.
           - CI checks architecture, firmware-only package dependency, entitlements, system-linked libraries, package ownership, matching binaries, and absence of process-launch imports.
-          - These are CI-built artifacts; CI does not rerun device tests. No device was reachable for 0.6.2, so the iOS 27 fallback has not run on a device or the vphone VM; the last full acceptance run (0.6.1) passed on an iPad (iOS 18.5, RootHide) except the full reboot case.
+          - These are CI-built artifacts; CI does not rerun device tests. Keychain database metadata and temporary item behavior were checked on a physical iPad (iOS 18.5, RootHide) before this tag. The iOS 27 app-registration fallback remains untested on device.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
           - Binary SHA-256: `{report['binary_sha256']}`.
