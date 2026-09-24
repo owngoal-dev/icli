@@ -1,13 +1,13 @@
 # Using IcliKit from Swift Package Manager
 
-The package exports the `IcliKit` and `IcliSystem` libraries and the `icli` executable. An iOS app or package manager can link either library and call its functions in-process. It does not need to install or launch the CLI. The `IcliKit` product includes its private Objective-C bridge and statically linked LibArchive dependency; Argument Parser and the CLI's embedded Info.plist belong only to the executable target. Library targets declare no unsafe build flags.
+The package exports the `IcliKit` and `IcliSystem` libraries and the `icli` executable. An iOS app or package manager can link either library and call its functions in-process. It does not need to install or launch the CLI. The `IcliKit` product includes its private Objective-C bridge and statically linked ArchiveKit dependency; Argument Parser and the CLI's embedded Info.plist belong only to the executable target. Library targets declare no unsafe build flags.
 
 `IcliKit` requires an iOS 16 or later arm64 device and a compatible bootstrap for privileged device operations. This is an on-device library, not a macOS host SDK. Simulator runtime is not supported or tested. For read-only system state alone, [`IcliSystem`](#the-iclisystem-product) has an iOS 15 floor and compiles for the simulator and Mac Catalyst.
 
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.7"),
+    .package(url: "https://github.com/owngoal-dev/icli.git", from: "0.6.8"),
 ],
 targets: [
     .target(
@@ -90,7 +90,7 @@ Also `serviceStatus(_:)`, `printService(_:)` and the shared `IcliError`, `takeCS
 | Deployment floor | iOS 15.0 — the whole package declares `.iOS(.v15)`; the CLI itself is still built and packaged for iOS 16 |
 | Links | Foundation and CoreFoundation only |
 | Resolved at runtime | launchd's bootstrap pipe and `memorystatus_control` through libSystem, `LSApplicationWorkspace` through `NSClassFromString` after `dlopen`, `libroot`/`libroothide` through `dlopen` |
-| Not linked | UIKit, IOKit, Vision, AVFoundation, CoreGraphics, Security, LibArchive |
+| Not linked | UIKit, IOKit, Vision, AVFoundation, CoreGraphics, Security, ArchiveKit |
 | Builds for | iOS device, iOS simulator (`arm64-apple-ios15.0-simulator`) and Mac Catalyst (`arm64-apple-ios15.0-macabi`) |
 
 Off a jailbroken device the calls fail cleanly rather than crashing: every private symbol it names is exported by libSystem in the iPhoneOS, iPhoneSimulator and macOS SDKs, so nothing is link-guarded, and a missing class, service or bootstrap turns into an empty list, an `IcliError` or an error field. Simulator and Catalyst runtime behaviour is compile-verified only; `listApps()` there returns whatever LaunchServices answers, which on macOS is usually nothing.

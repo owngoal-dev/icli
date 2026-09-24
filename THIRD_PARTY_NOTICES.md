@@ -5,7 +5,7 @@ https://github.com/apple/swift-argument-parser. Its Apache-2.0 license with
 Swift Runtime Library Exception is preserved in
 `Resources/Licenses/swift-argument-parser.txt`.
 
-The LibArchive 0.1.1 Swift package is resolved from
+The ArchiveKit 1.0.0 Swift package is resolved from
 https://github.com/Lakr233/libarchive.xcframework. Its static XCFramework is
 linked into icli; no separate libarchive executable or dynamic framework is
 shipped. The package's MIT license and notices for libarchive, xz, zstd, and

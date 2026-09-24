@@ -2,7 +2,7 @@ import Foundation
 import IcliSystem
 
 /// The read-only system product on its own: no IcliKit, no private bridge
-/// import, and no UIKit, Vision or LibArchive in the link.
+/// import, and no UIKit, Vision or ArchiveKit in the link.
 let systemAPIs: [Any] = [
     deviceSnapshot as () throws -> [String: Any],
     listProcesses as (String?) throws -> [String: Any],
