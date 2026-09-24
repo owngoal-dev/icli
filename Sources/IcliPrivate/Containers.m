@@ -1,5 +1,6 @@
 #import "IcliPrivate.h"
 #import "IcliJSON.h"
+#import "RegistrationInternal.h"
 #import <Foundation/Foundation.h>
 #import <dlfcn.h>
 
@@ -17,11 +18,6 @@
 - (NSURL *)url;
 - (id)destroyContainerWithCompletion:(void (^)(id))completion;
 - (BOOL)registerApplicationDictionary:(NSDictionary *)dict;
-- (BOOL)registerContainerizedApplicationWithInfoDictionaries:(NSArray *)infos
-                                               operationUUID:(NSUUID *)uuid
-                                              requestContext:(id)context
-                                                saveObserver:(id)observer
-                                           registrationError:(NSError **)error;
 @end
 
 static Class containerClass(const char *kind) {
@@ -96,16 +92,6 @@ bool icli_register_app_dictionary(const char *plist_xml) {
     if (![dict isKindOfClass:NSDictionary.class] || !ws) return false;
     if ([ws respondsToSelector:@selector(registerApplicationDictionary:)] && [ws registerApplicationDictionary:dict])
         return true;
-    // Newer LaunchServices refuse the call above and take the containerized
-    // form, which answers NO even when it succeeds; the caller reads the
-    // registration back either way.
-    SEL containerized = @selector(registerContainerizedApplicationWithInfoDictionaries:operationUUID:requestContext:saveObserver:registrationError:);
-    if (![ws respondsToSelector:containerized]) return false;
-    NSError *error = nil;
-    [ws registerContainerizedApplicationWithInfoDictionaries:@[dict]
-                                               operationUUID:[NSUUID UUID]
-                                              requestContext:nil
-                                                saveObserver:nil
-                                           registrationError:&error];
-    return error == nil;
+    // The caller reads the registration back either way.
+    return icli_ls_register_containerized(ws, dict, NULL);
 }

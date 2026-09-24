@@ -1,14 +1,35 @@
 #import "IcliPrivate.h"
 #import "IcliJSON.h"
+#import "RegistrationInternal.h"
 #import <Foundation/Foundation.h>
 
 @interface NSObject (IcliLS)
++ (id)applicationProxyForIdentifier:(NSString *)identifier;
 - (NSArray *)allInstalledApplications;
 - (BOOL)uninstallApplication:(NSString *)bundleID withOptions:(id)options;
 - (BOOL)registerApplication:(NSURL *)url;
 - (BOOL)unregisterApplication:(NSURL *)url;
 - (BOOL)registerApplicationDictionary:(NSDictionary *)dict;
+- (BOOL)registerContainerizedApplicationWithInfoDictionaries:(NSArray *)infos
+                                               operationUUID:(NSUUID *)uuid
+                                              requestContext:(id)context
+                                                saveObserver:(id)observer
+                                           registrationError:(NSError **)error;
 @end
+
+BOOL icli_ls_register_containerized(id workspace, NSDictionary *info, NSError **error) {
+    SEL containerized = @selector(
+    registerContainerizedApplicationWithInfoDictionaries:operationUUID:requestContext:saveObserver:registrationError:);
+    if (!info || ![workspace respondsToSelector:containerized]) return NO;
+    NSError *registrationError = nil;
+    [workspace registerContainerizedApplicationWithInfoDictionaries:@[info]
+                                                      operationUUID:[NSUUID UUID]
+                                                     requestContext:nil
+                                                       saveObserver:nil
+                                                  registrationError:&registrationError];
+    if (error) *error = registrationError;
+    return registrationError == nil;
+}
 
 bool icli_uninstall_app(const char *bundle_id) {
     icli_private_init();
@@ -48,6 +69,47 @@ static BOOL recordIsReplaceable(id proxy) {
 static NSString *normalizedAppPath(NSString *path);
 static NSDictionary<NSString *, id> *registeredAppsByPath(void);
 
+/// What the containerized interface is given for a bundle outside any
+/// container: the keys vpregister sends, the set shown to register
+/// bootstrap apps on iOS 27, with the dictionary's application type, the
+/// settings-bundle mark, and not deletable, as uicache registers them.
+static NSDictionary *containerizedRecord(NSDictionary *dict, NSString *bundleID) {
+    NSMutableDictionary *record = [@{
+        @"Path": dict[@"Path"],
+        @"CFBundleIdentifier": bundleID,
+        @"CodeInfoIdentifier": bundleID,
+        @"ApplicationType": dict[@"ApplicationType"],
+        @"CompatibilityState": @0,
+        @"SignerIdentity": @"Apple iPhone OS Application Signing",
+        @"SignerOrganization": @"Apple Inc.",
+        @"IsAdHocSigned": @YES,
+        @"SignatureVersion": @132352,
+        @"IsDeletable": @NO,
+    } mutableCopy];
+    if (dict[@"HasSettingsBundle"]) record[@"HasSettingsBundle"] = dict[@"HasSettingsBundle"];
+    return record;
+}
+
+/// Registers `dict` (an Info.plist with Path and ApplicationType) through the
+/// containerized interface, then waits up to a second for LaunchServices to
+/// list this build of the bundle at its path.
+static BOOL registerContainerized(id ws, NSDictionary *dict) {
+    NSString *bundleID = dict[@"CFBundleIdentifier"];
+    if (![bundleID isKindOfClass:NSString.class] || !bundleID.length) return NO;
+    if (!icli_ls_register_containerized(ws, containerizedRecord(dict, bundleID), NULL)) return NO;
+    Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+    if (![proxyClass respondsToSelector:@selector(applicationProxyForIdentifier:)]) return NO;
+    NSString *path = normalizedAppPath(dict[@"Path"]);
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (attempt) usleep(100 * 1000);
+        id proxy = [proxyClass applicationProxyForIdentifier:bundleID];
+        NSString *registeredPath = icli_ls_string(icli_ls_value(proxy, @"bundleURL"));
+        if (registeredPath && [normalizedAppPath(registeredPath) isEqual:path])
+            return registeredBuildIsCurrent(proxy, dict);
+    }
+    return NO;
+}
+
 /// On iOS 26, registerApplication: refused a new bundle (Saily's) and
 /// answered YES for one it already had without reading it again, and it never
 /// records HasSettingsBundle, without which the Settings app shows no page
@@ -56,6 +118,12 @@ static NSDictionary<NSString *, id> *registeredAppsByPath(void);
 /// Info.plist instead, unless it holds what that registration would drop. A
 /// registration whose record cannot be read back is left as it is, and one
 /// that leaves a record of another build has failed.
+///
+/// iOS 27 answers registerApplicationDictionary: with NO and registers
+/// nothing, so when that leaves no record of this build, the dictionary is
+/// registered through the containerized interface, which works where lsd lets
+/// the caller through. A current record wrong only about the settings bundle
+/// is kept rather than replaced this way.
 static BOOL registerAppAtPath(NSString *path) {
     id ws = icli_ls_workspace();
     if (!ws || path.length == 0) {
@@ -74,7 +142,7 @@ static BOOL registerAppAtPath(NSString *path) {
     if (current && [icli_ls_value(proxy, @"hasSettingsBundle") boolValue] == hasSettingsBundle) {
         return YES;
     }
-    if (!info || ![ws respondsToSelector:@selector(registerApplicationDictionary:)]) {
+    if (!info) {
         return current;
     }
     NSMutableDictionary *dict = [info mutableCopy];
@@ -85,7 +153,10 @@ static BOOL registerAppAtPath(NSString *path) {
     if (hasSettingsBundle) {
         dict[@"HasSettingsBundle"] = @YES;
     }
-    return [ws registerApplicationDictionary:dict] || current;
+    if ([ws respondsToSelector:@selector(registerApplicationDictionary:)] && [ws registerApplicationDictionary:dict]) {
+        return YES;
+    }
+    return current || registerContainerized(ws, dict);
 }
 
 bool icli_register_app(const char *path) {
