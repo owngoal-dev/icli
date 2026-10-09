@@ -10,7 +10,29 @@
 #include <sys/stat.h>
 #include <xlocale.h>
 
-static const uint64_t kArchiveByteLimit = 1024ULL * 1024 * 1024;
+// Decompression-bomb guards, sized for large games: one entry and the whole
+// archive may each expand to 8 GiB, across at most 400,000 entries.
+static const uint64_t kArchiveByteLimit = 8ULL * 1024 * 1024 * 1024;
+static const NSUInteger kArchiveEntryLimit = 400000;
+
+static NSString *gibibytes(uint64_t bytes) {
+    return [NSString stringWithFormat:@"%.2f GiB", (double)bytes / (1024.0 * 1024 * 1024)];
+}
+
+static NSString *overLimit(uint64_t bytes) {
+    return [NSString stringWithFormat:@"%@, over the %llu GiB limit", gibibytes(bytes), kArchiveByteLimit >> 30];
+}
+
+/// Adds the sizes the remaining entries declare to `size`. Their headers are
+/// read without their data, so the error can say how far over the limit the
+/// archive is.
+static uint64_t expandedSize(struct archive *reader, uint64_t size) {
+    struct archive_entry *entry;
+    while (archive_read_next_header(reader, &entry) == ARCHIVE_OK)
+        if (archive_entry_filetype(entry) == AE_IFREG && archive_entry_size(entry) > 0)
+            size += (uint64_t)archive_entry_size(entry);
+    return size;
+}
 
 char *icli_archive_with_utf8_names(char *(^body)(void)) {
     // uselocale, not setlocale: callers such as vphoned read archives on
@@ -86,7 +108,10 @@ NSString *icli_archive_extract(
     struct archive_entry *entry;
     int status = ARCHIVE_OK;
     while (!failure && (status = archive_read_next_header(reader, &entry)) == ARCHIVE_OK) {
-        if (++*count > 50000) { failure = @"archive contains too many entries"; break; }
+        if (++*count > kArchiveEntryLimit) {
+            failure = [NSString stringWithFormat:@"archive contains more than %lu entries", (unsigned long)kArchiveEntryLimit];
+            break;
+        }
         const char *rawPath = archive_entry_pathname(entry);
         NSString *relative = rawPath ? [NSString stringWithUTF8String:rawPath] : nil;
         if (!relative.length || relative.isAbsolutePath || [relative.pathComponents containsObject:@".."]) {
@@ -130,8 +155,10 @@ NSString *icli_archive_extract(
                 failure = error.localizedDescription;
         } else if (type == AE_IFREG || archive_entry_hardlink(entry)) {
             if (archive_entry_hardlink(entry)) { failure = @"archive contains a hard link"; break; }
-            if (archive_entry_size(entry) < 0 || (uint64_t)archive_entry_size(entry) > kArchiveByteLimit) {
-                failure = @"archive entry exceeds one GiB";
+            if (archive_entry_size(entry) < 0) { failure = @"archive entry has an invalid size"; break; }
+            if ((uint64_t)archive_entry_size(entry) > kArchiveByteLimit) {
+                failure = [NSString stringWithFormat:@"archive entry %@ is %@",
+                    relative, overLimit((uint64_t)archive_entry_size(entry))];
                 break;
             }
             int fd = open(
@@ -142,9 +169,15 @@ NSString *icli_archive_extract(
             if (fd < 0) { failure = @(strerror(errno)); break; }
             char buffer[65536];
             la_ssize_t bytes;
+            // An entry streamed with a data descriptor may declare no size.
+            uint64_t declared = *total + (uint64_t)archive_entry_size(entry);
             while ((bytes = archive_read_data(reader, buffer, sizeof(buffer))) > 0) {
                 *total += (uint64_t)bytes;
-                if (*total > kArchiveByteLimit) { failure = @"archive expands beyond one GiB"; break; }
+                if (*total > kArchiveByteLimit) {
+                    failure = [@"archive expands to " stringByAppendingString:
+                        overLimit(expandedSize(reader, MAX(declared, *total)))];
+                    break;
+                }
                 size_t offset = 0;
                 while (offset < (size_t)bytes) {
                     ssize_t written = write(fd, buffer + offset, (size_t)bytes - offset);
