@@ -115,10 +115,13 @@ private let launchdNoService = 113
 private let launchdServiceConfigureDenied = 144
 
 /// Walks the system domain, then the user domain, of a launchd list response,
-/// skipping a domain that reports ENOSERVICE.
+/// skipping a domain that reports ENOSERVICE or was not asked (iOS 15 has no
+/// user domain for daemons).
 private func forEachLaunchdDomain(in result: [String: Any], _ body: (String, [String: Any]) -> Void) throws {
     for domain in ["system", "user"] {
-        let record = result[domain] as? [String: Any] ?? [:]
+        guard let record = result[domain] as? [String: Any] else {
+            continue
+        }
         let status = record["status"] as? Int ?? 0
         if status == launchdNoService {
             continue

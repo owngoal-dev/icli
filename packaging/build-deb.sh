@@ -29,7 +29,7 @@ Name: icli
 Version: $VERSION
 Architecture: $ARCH
 Maintainer: icli
-Depends: firmware (>= 16.0)
+Depends: firmware (>= 15.0)
 Section: Development
 Description: On-device iOS control CLI
 CONTROL

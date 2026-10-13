@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := all
 SHELL    := /bin/sh
 SDK      ?= $(shell xcrun --sdk iphoneos --show-sdk-path)
-TARGET   ?= arm64-apple-ios16.0
+TARGET   ?= arm64-apple-ios15.0
 SWIFT    ?= swift
 LDID     ?= ldid
 INSTALL  ?= /var/jb/usr/bin/icli
@@ -24,6 +24,10 @@ SWIFT_FLAGS := --configuration $(CONFIGURATION) --triple $(TARGET) --sdk $(SDK) 
 all:
 	$(SWIFT) build $(SWIFT_FLAGS)
 	cp "$$($(SWIFT) build $(SWIFT_FLAGS) --show-bin-path)/icli" $(BIN)
+	# SwiftPM stamps the triple's version as the SDK too. Frameworks branch on
+	# the linked SDK, so keep the 16.0 the CLI was stamped with before its
+	# floor moved to 15.0: newer systems take the same paths as they did.
+	xcrun vtool -set-build-version ios 15.0 16.0 -replace -output $(BIN) $(BIN)
 	$(LDID) -S$(ENT) $(BIN)
 	python3 scripts/verify-binary.py
 

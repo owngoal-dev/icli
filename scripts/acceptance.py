@@ -850,6 +850,14 @@ def rotation(d):
 def developer_mode(d):
     status = d.cli('device', 'devmode', 'get')
     assert all(isinstance(status[key], bool) for key in ['enabled', 'armed', 'writable']), status
+    major = int(d.run(['sysctl', '-n', 'kern.osproductversion']).stdout.strip().split('.')[0])
+    if major < 16:
+        # No Developer Mode before iOS 16, so nothing gates and amfid is not asked.
+        assert status == {'enabled': True, 'armed': False, 'writable': False}, status
+        assert d.cli('device', 'devmode', 'get', sudo=True) == status
+        enabled = d.cli('device', 'devmode', 'enable')
+        assert enabled['enabled'] and enabled['already_enabled'] and not enabled['restart_required'], enabled
+        return
     # The kernel's own record of the state, read outside icli.
     kernel = d.run(['sysctl', '-n', 'security.mac.amfi.developer_mode_status'])
     assert kernel.returncode == 0 and status['enabled'] == (kernel.stdout.strip() == '1'), (status, kernel.stdout)

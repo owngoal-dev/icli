@@ -991,7 +991,8 @@ bool icli_open_url(const char *url) {
     if (!url) {
         return false;
     }
-    NSURL *u = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
+    NSString *text = [NSString stringWithUTF8String:url];
+    NSURL *u = text ? [NSURL URLWithString:text] : nil;
     if (!u) {
         return false;
     }

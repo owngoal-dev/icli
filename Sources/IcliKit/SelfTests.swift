@@ -39,8 +39,8 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
     check("device") {
         let info = try collectDeviceSnapshot()
         try requireSelfTest(
-            ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 16,
-            "Requires iOS 16 or later.",
+            ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 15,
+            "Requires iOS 15 or later.",
         )
         try requireSelfTest((info["memory_bytes"] as? UInt64 ?? 0) > 0, "Device memory was not reported.")
         return info

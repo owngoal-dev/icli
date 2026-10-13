@@ -17,18 +17,18 @@ entitlements = plistlib.loads(subprocess.check_output(['ldid', '-e', str(binary)
 assert entitlements == plistlib.loads((root / 'Resources/icli.entitlements').read_bytes())
 assert subprocess.check_output(['lipo', '-archs', str(binary)], text=True).strip() == 'arm64'
 build = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(binary)], text=True)
-# The package floor is iOS 15 so IcliSystem can be linked there. SwiftPM 6.4
-# stamps the CLI from the Makefile's 16.0 triple, older ones from the package
-# floor; either runs on the iOS 16 the DEB's firmware dependency requires.
-assert 'platform IOS' in build and ('minos 16.0' in build or 'minos 15.0' in build), build
+# The CLI, the package and the DEB's firmware dependency share one floor.
+assert 'platform IOS' in build and 'minos 15.0' in build and 'sdk 16.0' in build, build
 loads = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
 for load in loads:
     name = load.strip().split(' (')[0]
     assert name.startswith(('/System/Library/', '/usr/lib/')), name
     assert 'libarchive' not in name, 'libarchive must be statically linked'
 report = {'version': version, 'binary_sha256': digest, 'architecture': 'arm64',
-          'minimum_ios': '16.0', 'system_loads': loads, 'packages': []}
-report.update(runpy.run_path(str(root / 'scripts/verify-binary.py'))['verify_no_process_imports'](binary))
+          'minimum_ios': '15.0', 'system_loads': loads, 'packages': []}
+verifier = runpy.run_path(str(root / 'scripts/verify-binary.py'))
+report.update(verifier['verify_no_process_imports'](binary))
+report.update(verifier['verify_floor_imports'](binary))
 for kind, arch, prefix in [('rootless', 'iphoneos-arm64', 'var/jb'), ('roothide', 'iphoneos-arm64e', '')]:
     package = root / f'.build/com.icli.icli_{version}_{arch}.deb'
     folder = root / '.build/package-check' / kind / prefix
@@ -38,7 +38,7 @@ for kind, arch, prefix in [('rootless', 'iphoneos-arm64', 'var/jb'), ('roothide'
     assert subprocess.check_output(['dpkg-deb', '-f', str(package), 'Architecture'], text=True).strip() == arch
     assert subprocess.check_output(['dpkg-deb', '-f', str(package), 'Version'], text=True).strip() == version
     dependencies = subprocess.check_output(['dpkg-deb', '-f', str(package), 'Depends'], text=True).strip()
-    assert dependencies == 'firmware (>= 16.0)', dependencies
+    assert dependencies == 'firmware (>= 15.0)', dependencies
     archive = subprocess.check_output(['dpkg-deb', '--fsys-tarfile', str(package)])
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         members = tar.getmembers()

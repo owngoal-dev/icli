@@ -17,11 +17,14 @@ bool icli_platform_binary(void) {
 }
 
 // reboot3(2) accepts the request; completion is only provable by reconnecting.
-extern int reboot3(uint64_t flags, ...);
+// Weak: it came with userspace reboot, and no iOS 15.0 export table has been
+// read to prove the floor has it. Where it exists the binding is the same.
+extern int reboot3(uint64_t flags, ...) __attribute__((weak_import));
 #define RB2_USERREBOOT 0x2000000000000000ULL
 #define RB2_FULLREBOOT 0x8000000000000000ULL
 
 int icli_reboot(bool userspace) {
+    if (!reboot3) return ENOSYS;
     errno = 0;
     if (reboot3(userspace ? RB2_USERREBOOT : RB2_FULLREBOOT, 0) == 0) return 0;
     return errno ?: EIO;

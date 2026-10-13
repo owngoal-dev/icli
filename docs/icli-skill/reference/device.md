@@ -33,7 +33,7 @@ Reboot notes:
 
 Developer Mode notes:
 
-- `devmode get` asks amfid and works as mobile. It matches `sysctl security.mac.amfi.developer_mode_status`.
+- `devmode get` asks amfid and works as mobile. It matches `sysctl security.mac.amfi.developer_mode_status`. iOS 15 has no Developer Mode: it reports enabled, not armed and not writable without asking amfid, and `devmode enable` answers already enabled.
 - `devmode enable` does nothing when Developer Mode is already on or armed. Otherwise it asks amfid to arm it: after the next restart the device asks the user to confirm, and only then is it on. amfid may refuse to arm it without root; the command then fails with `unavailable`. There is no command to turn Developer Mode off.
 
 ## location

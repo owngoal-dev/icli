@@ -2,7 +2,7 @@
 
 The package exports the `IcliKit`, `IcliSystem` and `IcliLaunch` libraries and the `icli` executable. An iOS app or package manager can link either library and call its functions in-process. It does not need to install or launch the CLI. The `IcliKit` product includes its private Objective-C bridge and statically linked ArchiveKit dependency; Argument Parser and the CLI's embedded Info.plist belong only to the executable target. Library targets declare no unsafe build flags.
 
-`IcliKit` requires an iOS 16 or later arm64 device and a compatible bootstrap for privileged device operations. This is an on-device library, not a macOS host SDK. Simulator runtime is not supported or tested. For read-only system state alone, [`IcliSystem`](#the-iclisystem-product) has an iOS 15 floor and compiles for the simulator and Mac Catalyst.
+`IcliKit` requires an iOS 15 or later arm64 device and a compatible bootstrap for privileged device operations. This is an on-device library, not a macOS host SDK. Simulator runtime is not supported or tested. For read-only system state alone, [`IcliSystem`](#the-iclisystem-product) has an iOS 15 floor and compiles for the simulator and Mac Catalyst.
 
 ```swift
 // Package.swift
@@ -92,13 +92,13 @@ Also `serviceStatus(_:)`, `printService(_:)`, `servicePlistPaths(_:)` (what `svc
 
 | Property | Value |
 | --- | --- |
-| Deployment floor | iOS 15.0 — the whole package declares `.iOS(.v15)`; the CLI itself is still built and packaged for iOS 16 |
+| Deployment floor | iOS 15.0 — the whole package declares `.iOS(.v15)`, and the CLI is built and packaged for it |
 | Links | Foundation and CoreFoundation only |
 | Resolved at runtime | launchd's bootstrap pipe and `memorystatus_control` through libSystem, `LSApplicationWorkspace` through `NSClassFromString` after `dlopen`, `libroot`/`libroothide` through `dlopen` |
 | Not linked | UIKit, IOKit, Vision, AVFoundation, CoreGraphics, Security, ArchiveKit |
 | Builds for | iOS device, iOS simulator (`arm64-apple-ios15.0-simulator`) and Mac Catalyst (`arm64-apple-ios15.0-macabi`) |
 
-Anywhere other than a device running custom firmware, the calls fail cleanly rather than crashing: every private symbol it names is exported by libSystem in the iPhoneOS, iPhoneSimulator and macOS SDKs, so nothing is link-guarded, and a missing class, service or bootstrap turns into an empty list, an `IcliError` or an error field. Simulator and Catalyst runtime behaviour is compile-verified only; `listApps()` there returns whatever LaunchServices answers, which on macOS is usually nothing.
+Anywhere other than a device running custom firmware, the calls fail cleanly rather than crashing: every private symbol it links by name is exported by libSystem in the iPhoneOS, iPhoneSimulator and macOS SDKs and by iOS 15.0 itself — `scripts/floor-imports.txt` lists them and the build fails on any other, because an SDK exporting a symbol does not mean the floor does (xpc_user_sessions_get_foreground_uid is iOS 16 and stopped an iOS 15 app at launch); anything newer is resolved with `dlsym` or weak-imported, and a missing class, service or bootstrap turns into an empty list, an `IcliError` or an error field. Simulator and Catalyst runtime behaviour is compile-verified only; `listApps()` there returns whatever LaunchServices answers, which on macOS is usually nothing.
 
 ### Entitlements the host needs
 
@@ -157,4 +157,4 @@ python3 scripts/check-package-consumer.py
 python3 scripts/check-package-consumer.py --device
 ```
 
-This builds separate iOS executables against a local Git snapshot tagged with the package version, using an exact-version source-control dependency: `IcliKit` at the iOS 16 triple and `IcliSystem` at the iOS 15 one, from a consumer package that declares the iOS 15 floor. It verifies product selection, public imports, transitive linkage, the floor a consumer may declare, and compatibility with SwiftPM's dependency build restrictions. `--device` signs the test executable with its own application identity and the CLI capability profile, then checks environment reporting, Debian version comparison, installed package state, Developer Mode and Low Power Mode status on the device. It also checks that `writePreference` refuses a value that isn't a property list before anything is written. The build references every 0.6.0 device-feature API with its full type, so the check fails if one stops being public or changes signature. The consumer source is in [Tests/PackageConsumer](../Tests/PackageConsumer); evidence is saved to `.build/package-consumer-verification.json`.
+This builds separate iOS executables against a local Git snapshot tagged with the package version, using an exact-version source-control dependency: `IcliKit`, `IcliSystem` and `IcliLaunch` at the iOS 15 triple, from a consumer package that declares the iOS 15 floor. It verifies product selection, public imports, transitive linkage, the floor a consumer may declare, and compatibility with SwiftPM's dependency build restrictions. `--device` signs the test executable with its own application identity and the CLI capability profile, then checks environment reporting, Debian version comparison, installed package state, Developer Mode and Low Power Mode status on the device. It also checks that `writePreference` refuses a value that isn't a property list before anything is written. The build references every 0.6.0 device-feature API with its full type, so the check fails if one stops being public or changes signature. The consumer source is in [Tests/PackageConsumer](../Tests/PackageConsumer); evidence is saved to `.build/package-consumer-verification.json`.

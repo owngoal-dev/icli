@@ -21,7 +21,12 @@ private func amfiDeveloperMode(arm: Bool) throws -> [String: Any] {
 /// Developer Mode as amfid reports it. `enabled` is the current state,
 /// `armed` means it turns on after the next restart once the user confirms,
 /// and `writable` is whether this device lets the state change at all.
+/// Before iOS 16 there is no Developer Mode and nothing to ask amfid: the
+/// developer features it gates are always allowed, so it reads as enabled.
 public func developerModeStatus() throws -> [String: Any] {
+    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 16 {
+        return ["enabled": true, "armed": false, "writable": false]
+    }
     let reply = try amfiDeveloperMode(arm: false)
     return [
         "enabled": reply["status"] as? Bool ?? false,

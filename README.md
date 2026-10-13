@@ -2,7 +2,7 @@
 
 Control your iPhone from the command line. Tap and swipe, enter text, inspect accessibility elements, capture screenshots, and read on-screen text, with JSON output for scripts and automation.
 
-icli runs on the device itself. Use it in a device terminal or over SSH from your Mac. It requires an arm64 device running iOS 16 or later on custom firmware with a compatible bootstrap.
+icli runs on the device itself. Use it in a device terminal or over SSH from your Mac. It requires an arm64 device running iOS 15 or later on custom firmware with a compatible bootstrap.
 
 icli is a single, self-contained executable. It performs its work in-process using iOS frameworks and a statically linked archive library, without spawning subprocesses or invoking bootstrap tools. No additional runtime packages are required. `icli env` reports the detected environment, `spawns_processes: false`, and an empty `external_tools_used` object.
 
@@ -17,7 +17,7 @@ Download a DEB from [GitHub Releases](https://github.com/owngoal-dev/icli/releas
 | Rootless (`/var/jb`) | `iphoneos-arm64` | Tested on the project's rootless vphone |
 | RootHide | `iphoneos-arm64e` | Experimental; service inspection verified on iOS 18.5, full acceptance pending |
 
-Both packages contain the same arm64 executable. The architecture label identifies the bootstrap layout. iOS 16 is the minimum deployment target; the [acceptance report](docs/rootless-acceptance.md) records the environment actually tested.
+Both packages contain the same arm64 executable. The architecture label identifies the bootstrap layout. iOS 15 is the minimum deployment target; the [acceptance report](docs/rootless-acceptance.md) records the environment actually tested.
 
 For the initial DEB installation below, use the bootstrap's `dpkg` and an account with permission to install packages. To connect over USB, you also need an SSH server on the device and `iproxy` on your Mac. These are installation and connection tools; icli does not invoke them.
 
@@ -237,7 +237,7 @@ The version comes from `Resources/Info.plist`. `make deb` builds the rootless pa
 
 The **DEB Release** GitHub Actions workflow builds both layouts and publishes DEBs, `SHA256SUMS`, and `package-verification.json`. It runs for version tags or can be dispatched with an existing tag. CI artifacts have their own hashes and package checks; device acceptance applies to the specific binary recorded in its report. Repository changes use ordinary incremental commits; published version tags remain fixed.
 
-`make` runs the SwiftPM iOS build, copies the executable to `.build/icli`, and signs it with `ldid` using the repository's entitlements. It does not require an Apple development certificate. To compile without signing, use `swift build -c release --triple arm64-apple-ios16.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" --scratch-path .build/swiftpm --product icli --force-resolved-versions`.
+`make` runs the SwiftPM iOS build, copies the executable to `.build/icli`, and signs it with `ldid` using the repository's entitlements. It does not require an Apple development certificate. To compile without signing, use `swift build -c release --triple arm64-apple-ios15.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" --scratch-path .build/swiftpm --product icli --force-resolved-versions`.
 
 ## Testing and Compatibility
 

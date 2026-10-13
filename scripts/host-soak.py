@@ -18,7 +18,7 @@ package = root / 'Tests/HostSoak'
 scratch = root / '.build/host-soak'
 sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
 command = ['swift', 'build', '--package-path', str(package), '--scratch-path', str(scratch), '-c', 'release',
-           '--triple', 'arm64-apple-ios16.0', '--sdk', sdk, '--product', 'IcliHostSoak']
+           '--triple', 'arm64-apple-ios15.0', '--sdk', sdk, '--product', 'IcliHostSoak']
 subprocess.run(command, check=True)
 binary = Path(subprocess.check_output(command + ['--show-bin-path'], text=True).strip()) / 'IcliHostSoak'
 signed = scratch / 'IcliHostSoak'

@@ -2,6 +2,7 @@
 #import "SystemJSON.h"
 #import <Foundation/Foundation.h>
 #import <xpc/xpc.h>
+#import <dlfcn.h>
 #import <mach/mach.h>
 #import <errno.h>
 #import <string.h>
@@ -79,7 +80,22 @@ static id objectFromXPC(xpc_object_t value) {
     return [NSString stringWithFormat:@"<%s>", xpc_type_get_name(type)];
 }
 
-extern uint64_t xpc_user_sessions_get_foreground_uid(uint64_t);
+/// The uid whose launchd domain holds the foreground user's jobs, or false
+/// when there is no such domain to ask. libxpc exports
+/// xpc_user_sessions_get_foreground_uid from iOS 16 on, with the user-session
+/// model that moved LaunchDaemons into the foreground user's domain; linked by
+/// name, an iOS 15 dyld refuses to start any binary that carries this file.
+/// On iOS 15 every daemon lives in the system domain alone.
+static bool foregroundUID(uint64_t *uid) {
+    static uid_t (*lookup)(void *);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        lookup = dlsym(RTLD_DEFAULT, "xpc_user_sessions_get_foreground_uid");
+    });
+    if (!lookup) return false;
+    *uid = lookup(NULL);
+    return true;
+}
 
 // Domain types: 1 = system, 2 = a user (handle = uid), 7 = resolved from the
 // caller, which is what launchctl load/unload send on iOS 15 and later.
@@ -163,10 +179,11 @@ char *icli_launchd_enable_json(const char *label, bool enable) {
 /// domain's record carries that one "service"; without, every "services" entry.
 static char *domainListJSON(const char *label) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
-    uint64_t domains[2][2] = {{DomainSystem, 0}, {DomainUser, xpc_user_sessions_get_foreground_uid(0)}};
+    uint64_t domains[2][2] = {{DomainSystem, 0}, {DomainUser, 0}};
     NSString *keys[2] = {@"system", @"user"};
+    int count = foregroundUID(&domains[1][1]) ? 2 : 1;
     const char *field = label ? "service" : "services";
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < count; i++) {
         xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
         if (label) xpc_dictionary_set_string(message, "name", label);
         xpc_object_t reply = NULL;
@@ -179,10 +196,10 @@ static char *domainListJSON(const char *label) {
     return icli_system_json(result);
 }
 
-/// launchd's view of one label: the system domain record and, because iOS
-/// runs LaunchDaemons inside the foreground user's domain behind a system
-/// proxy, the user-domain record that carries the real pid. Either may be
-/// absent (status LaunchdNoSuchService).
+/// launchd's view of one label: the system domain record and, because iOS 16
+/// and later run LaunchDaemons inside the foreground user's domain behind a
+/// system proxy, the user-domain record that carries the real pid. Either may
+/// be absent (status LaunchdNoSuchService); iOS 15 has no "user" record.
 char *icli_launchd_service_json(const char *label) {
     return domainListJSON(label);
 }
@@ -216,18 +233,37 @@ char *icli_launchd_disabled_json(void) {
             NSString *name =
                 [parts[0] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\t \""]];
             NSString *state = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-            overrides[name] = @([state isEqualToString:@"disabled"]);
+            // iOS 16's launchd says disabled / enabled; iOS 15's said true / false.
+            overrides[name] = @([state isEqualToString:@"disabled"] || [state isEqualToString:@"true"]);
         }
     }
     vm_deallocate(mach_task_self(), address, size);
     return icli_system_json(@{@"status": @(status), @"message": @(xpc_strerror(status)), @"disabled": overrides});
 }
 
+/// The domains a service action tries, in order: the foreground user's first
+/// where it holds the real job, then the system's. Returns how many it filled.
+/// The names are string literals, which live as long as the image.
+static int serviceDomains(uint64_t domains[2][2], NSString *__unsafe_unretained names[2]) {
+    int count = 0;
+    uint64_t uid = 0;
+    if (foregroundUID(&uid)) {
+        domains[count][0] = DomainUser;
+        domains[count][1] = uid;
+        names[count++] = @"user";
+    }
+    domains[count][0] = DomainSystem;
+    domains[count][1] = 0;
+    names[count++] = @"system";
+    return count;
+}
+
 static int launchdServiceRoutine(uint64_t routine, xpc_object_t message, NSString **domainName) {
-    uint64_t domains[2][2] = {{DomainUser, xpc_user_sessions_get_foreground_uid(0)}, {DomainSystem, 0}};
-    NSString *domainNames[2] = {@"user", @"system"};
+    uint64_t domains[2][2];
+    NSString *__unsafe_unretained domainNames[2];
+    int count = serviceDomains(domains, domainNames);
     int status = LaunchdNoSuchService;
-    for (int i = 0; i < 2 && status == LaunchdNoSuchService; i++) {
+    for (int i = 0; i < count && status == LaunchdNoSuchService; i++) {
         status = launchdRoutine(routine, domains[i][0], domains[i][1], message, NULL);
         *domainName = domainNames[i];
     }
@@ -270,12 +306,13 @@ char *icli_launchd_print_json(const char *label) {
     if (vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE) != KERN_SUCCESS) {
         return icli_system_json(@{@"status": @(ENOMEM), @"message": @(xpc_strerror(ENOMEM))});
     }
-    uint64_t domains[2][2] = {{DomainUser, xpc_user_sessions_get_foreground_uid(0)}, {DomainSystem, 0}};
-    NSString *domainNames[2] = {@"user", @"system"};
+    uint64_t domains[2][2];
+    NSString *__unsafe_unretained domainNames[2];
+    int count = serviceDomains(domains, domainNames);
     int status = LaunchdNoSuchService;
     uint64_t written = 0;
     NSString *domainName = @"system";
-    for (int i = 0; i < 2 && status == LaunchdNoSuchService; i++) {
+    for (int i = 0; i < count && status == LaunchdNoSuchService; i++) {
         memset((void *)address, 0, size);
         xpc_object_t message = serviceMessage(label);
         xpc_dictionary_set_value(message, "shmem", xpc_shmem_create((void *)address, size));

@@ -49,7 +49,7 @@ def build(product, triple):
     subprocess.run(command, check=True)
     return Path(subprocess.check_output(command + ['--show-bin-path'], text=True).strip()) / product
 
-output = build('IcliPackageConsumer', 'arm64-apple-ios16.0')
+output = build('IcliPackageConsumer', 'arm64-apple-ios15.0')
 # The read-only product at the package's floor: an app that deploys to iOS 15
 # can link IcliSystem, which the library product is there to allow.
 system_output = build('IcliSystemConsumer', 'arm64-apple-ios15.0')
@@ -71,6 +71,10 @@ system_binary = work / 'IcliSystemConsumer'
 shutil.copy2(system_output, system_binary)
 launch_binary = work / 'IcliLaunchConsumer'
 shutil.copy2(launch_output, launch_binary)
+# The library shapes an app links, checked on their own: dead-stripping can
+# leave an import here that the CLI never reaches.
+verify_floor_imports = runpy.run_path(str(root / 'scripts/verify-binary.py'))['verify_floor_imports']
+floor_imports = {path.name: verify_floor_imports(path) for path in [binary, system_binary, launch_binary]}
 report = {'version': version, 'product': 'IcliKit', 'dependency_kind': 'source-control exact version',
           'unsigned_consumer_binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
           'system_product': 'IcliSystem', 'system_minimum_ios': '15.0',
@@ -104,6 +108,7 @@ if args.device:
     report['signed_consumer_binary_sha256'] = digest
     report['application_identifier'] = identifier
     report['device_result'] = json.loads(result.stdout)
+report['floor_imports'] = floor_imports
 (root / '.build/package-consumer-verification.json').write_text(json.dumps(report, indent=2) + '\n')
 print('PASS external versioned Swift Package consumer:', binary)
 print('PASS iOS 15 IcliSystem consumer:', system_binary)
