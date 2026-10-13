@@ -58,7 +58,7 @@ The DEB installs a command-line executable and license notices. The executable i
 - **Preferences**: Read, write, and delete typed preference values like `defaults`, for mobile, root, or a plist path.
 - **System state**: Dump every service with launchd's own description, and read the kernel's jetsam bands, jetsam property lists, and memory pressure levels.
 
-OCR uses Apple's Vision framework. If system text recognition is unavailable, the command returns an `unavailable` error. A successful scan with no recognized text returns an empty result.
+OCR uses Apple's Vision framework. If system text recognition is unavailable, the command returns an `unavailable` error; that includes a process with no Metal device, such as one started over SSH on iOS 15, where Vision would otherwise crash. A successful scan with no recognized text returns an empty result.
 
 ## Command Line
 

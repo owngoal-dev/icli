@@ -2,6 +2,7 @@ import Foundation
 import IcliLaunch
 import IcliPrivate
 import IcliSystem
+import Metal
 import UIKit
 import Vision
 
@@ -179,6 +180,11 @@ public func recognizeScreen(languages: [String], minConfidence: Float) throws ->
 private func recognizeImage(path: String, languages: [String], minConfidence: Float) throws -> [String: Any] {
     guard let image = UIImage(contentsOfFile: path), let cgImage = image.cgImage else {
         throw IcliError.failed("OCR image missing")
+    }
+    // Without a Metal device, as in a process started over SSH on iOS 15,
+    // Vision's CoreImage context falls back to OpenGL ES and crashes.
+    guard MTLCreateSystemDefaultDevice() != nil else {
+        throw IcliError.unavailable("System text recognition is unavailable on this device.")
     }
     let pointSize = pointSizeMatching(image: cgImage)
     do {
