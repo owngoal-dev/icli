@@ -260,7 +260,8 @@ public func describeScreen() throws -> [String: Any] {
         ],
     ]
     do { payload["elements"] = try uiElements() }
-    catch { payload["elements"] = ["error": error.localizedDescription] }
+    catch let error as IcliError { payload["elements"] = error.payload }
+    catch { payload["elements"] = ["error": "failed", "message": error.localizedDescription] }
     do { payload["ocr"] = try recognizeImage(path: path, languages: ["zh-Hans", "en-US"], minConfidence: 0.3) }
     catch let error as IcliError { payload["ocr"] = error.payload }
     catch { payload["ocr"] = ["error": "failed", "message": error.localizedDescription] }
