@@ -37,6 +37,10 @@ char *icli_location_simulate_json(
     double speed,
     double course
 ) {
+    // Without Location Services the read-back that confirms a simulation can
+    // only fail, so the caller would wait for a clear before hearing why.
+    if (![CLLocationManager locationServicesEnabled])
+        return icli_json(@{@"error": @"Location Services are turned off"});
     CLLocation *location = [[CLLocation alloc] initWithCoordinate:CLLocationCoordinate2DMake(latitude, longitude)
                                                          altitude:altitude
                                                horizontalAccuracy:horizontal_accuracy
@@ -83,12 +87,19 @@ char *icli_location_clear_json(void) {
 // bundle, so icli reads as one of the System Services location bundles,
 // which are authorized unless turned off in Settings.
 static CLLocationManager *systemServiceManager(NSString **bundlePath) {
+    // iOS 15 has no initWithEffectiveBundlePath:, only the NSBundle form.
+    SEL byPath = NSSelectorFromString(@"initWithEffectiveBundlePath:");
+    SEL byBundle = NSSelectorFromString(@"initWithEffectiveBundle:");
+    BOOL hasPath = [CLLocationManager instancesRespondToSelector:byPath];
+    if (!hasPath && ![CLLocationManager instancesRespondToSelector:byBundle]) return nil;
     for (NSString *name in @[@"SystemCustomization", @"TimeZone", @"CompassCalibration"]) {
         NSString *path = [NSString stringWithFormat:@"/System/Library/LocationBundles/%@.bundle", name];
+        id argument = hasPath ? path : [NSBundle bundleWithPath:path];
+        if (!argument) continue;
         CLLocationManager *manager = ((id (*)(id, SEL, id))objc_msgSend)(
             [CLLocationManager alloc],
-            NSSelectorFromString(@"initWithEffectiveBundlePath:"),
-            path
+            hasPath ? byPath : byBundle,
+            argument
         );
         CLAuthorizationStatus status = manager.authorizationStatus;
         if (status == kCLAuthorizationStatusAuthorizedAlways || status == kCLAuthorizationStatusAuthorizedWhenInUse) {
