@@ -39,8 +39,9 @@ git('-c', 'user.name=Package Test', '-c', 'user.email=package-test@localhost',
 git('tag', version)
 shutil.copytree(root / 'Tests/PackageConsumer', consumer, ignore=shutil.ignore_patterns('.build', '.swiftpm', 'Package.resolved'))
 manifest = consumer / 'Package.swift'
-manifest.write_text(manifest.read_text().replace('.package(path: "../..")',
+manifest.write_text(manifest.read_text().replace('.package(name: "icli", path: "../..")',
                     f'.package(url: "{snapshot.as_uri()}", exact: "{version}")'))
+assert snapshot.as_uri() in manifest.read_text(), 'the consumer manifest no longer names the path dependency'
 sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
 
 def build(product, triple):

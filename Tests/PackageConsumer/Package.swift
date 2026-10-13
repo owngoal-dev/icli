@@ -12,7 +12,10 @@ let package = Package(
         .executable(name: "IcliSystemConsumer", targets: ["IcliSystemConsumer"]),
         .executable(name: "IcliLaunchConsumer", targets: ["IcliLaunchConsumer"]),
     ],
-    dependencies: [.package(path: "../..")],
+    // A path dependency is named after its directory; the name keeps "icli"
+    // valid from a checkout or worktree under any other directory name.
+    // scripts/check-package-consumer.py swaps this for a tagged snapshot.
+    dependencies: [.package(name: "icli", path: "../..")],
     targets: [
         .executableTarget(
             name: "IcliPackageConsumer",

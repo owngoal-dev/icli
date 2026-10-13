@@ -8,7 +8,9 @@ let package = Package(
     name: "IcliHostSoak",
     platforms: [.iOS(.v15)],
     products: [.executable(name: "IcliHostSoak", targets: ["IcliHostSoak"])],
-    dependencies: [.package(path: "../..")],
+    // A path dependency is named after its directory; the name keeps "icli"
+    // valid from a checkout or worktree under any other directory name.
+    dependencies: [.package(name: "icli", path: "../..")],
     targets: [
         .executableTarget(
             name: "IcliHostSoak",
