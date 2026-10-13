@@ -56,11 +56,11 @@ Key names: `return`/`enter`, `delete`/`backspace`, `tab`, `escape`, `space`, `up
 | --- | --- | --- | --- |
 | `button home` | Home button: go to the home screen | no | unlocked |
 | `button power` | Side button: turns the screen off (locks) | no | unlocked |
-| `button wake` | Turn the screen on; does not enter a passcode | no | any |
+| `button wake` | Turn the screen on and, without a passcode, dismiss the lock screen; does not enter a passcode; does nothing when already awake and unlocked | no | any |
 | `button volume-up` / `button volume-down` | Hardware volume event, with a fallback to the audio controller | no | unlocked |
 | `button mute` | Toggle mute of the active audio category | no | unlocked |
 
-After `button power`, only lock-exempt commands work until `button wake`. If the device has a passcode, a person has to unlock it.
+After `button power`, only lock-exempt commands work until `button wake`. If the device has a passcode, `button wake` stops at the lit lock screen and a person has to unlock it. The result reports `locked` and `screen_off` as observed after the wake.
 
 ## clipboard
 

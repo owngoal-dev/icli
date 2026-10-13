@@ -207,7 +207,7 @@ Commands return JSON on standard output by default. Add `--human` for interactiv
 
 The former `shell` command was removed in 0.3.0. Use the filesystem and system command groups for operations implemented by icli.
 
-Most commands reject execution while the device is locked or the screen is off. Device and screen information, screenshots, `button wake`, and live logs remain available. `button wake` wakes the screen; it does not remove a passcode.
+Most commands reject execution while the device is locked or the screen is off. Device and screen information, screenshots, `button wake`, and live logs remain available. `button wake` wakes the screen and, without a passcode, dismisses the lock screen; it does not enter a passcode, and it does nothing when the device is already awake and unlocked.
 
 Audio buttons try hardware events first and fall back to the system audio controller when needed. Their JSON reports the method and resulting state. `button mute` toggles the active audio category's mute state; physical ringer-switch behavior has not been verified.
 

@@ -106,7 +106,8 @@ public func pressButton(_ name: String) throws -> [String: Any] {
     }
     if name == "wake" {
         guard icli_wake() else { throw IcliError.failed("wake failed") }
-        return ["button": name]
+        let lock = icli_lock_status()
+        return ["button": name, "locked": lock.locked, "screen_off": lock.screen_off]
     }
     guard icli_hid_button(name) else { throw IcliError.failed("unknown or failed button: \(name)") }
     return ["button": name]

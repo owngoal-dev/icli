@@ -1006,10 +1006,34 @@ bool icli_open_url(const char *url) {
     return false;
 }
 
+// Polls for up to `seconds` for the screen to be on and, without a passcode,
+// for the lock screen to be gone.
+static bool waitAwake(bool passcode, CFTimeInterval seconds) {
+    CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + seconds;
+    for (;;) {
+        IcliLockStatus st = icli_lock_status();
+        if (!st.screen_off && (passcode || !st.locked)) return true;
+        if (CFAbsoluteTimeGetCurrent() >= deadline) return false;
+        icli_settle(0.05);
+    }
+}
+
+// On an unlocked device a Menu press would send the front app home, and on a
+// lit passcode lock screen it would only open the passcode pad. From a blank
+// screen SpringBoard spends the first press on waking and ignores presses for
+// about 0.3 s, so the lock screen needs a later press to go away.
 bool icli_wake(void) {
     icli_private_init();
+    IcliLockStatus st = icli_lock_status();
+    if (!st.locked && !st.screen_off) return true;
+    bool passcode = icli_passcode_set();
     if (pSBSUndimScreen) {
         pSBSUndimScreen();
     }
-    return icli_hid_button("home");
+    if (waitAwake(passcode, st.screen_off ? 0.6 : 0)) return true;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (!icli_hid_button("home")) return false;
+        if (waitAwake(passcode, 0.6)) return true;
+    }
+    return true;
 }

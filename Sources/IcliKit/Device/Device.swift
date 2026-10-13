@@ -49,9 +49,20 @@ public func setBrightness(_ value: Double) throws {
     guard value.isFinite, (0 ... 1).contains(value) else {
         throw IcliError.failed("brightness must be between 0 and 1")
     }
+    let before = icli_brightness_get()
     guard icli_brightness_set(value) else { throw IcliError.failed("could not set brightness") }
-    Thread.sleep(forTimeInterval: 0.1)
-    guard abs(icli_brightness_get() - value) <= 0.02 else {
+    // A real panel can take a moment to report the new level.
+    let deadline = Date().addingTimeInterval(0.5)
+    var level = icli_brightness_get()
+    while abs(level - value) > 0.02, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.05)
+        level = icli_brightness_get()
+    }
+    guard abs(level - value) <= 0.02 else {
+        // A virtual display reports a fixed level and has no CoreBrightness state.
+        if abs(level - before) < 0.001, icli_auto_brightness() < 0 {
+            throw IcliError.unavailable("This display has no adjustable backlight.")
+        }
         throw IcliError.unavailable("The device did not apply the requested brightness.")
     }
 }
