@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reject process-launch imports, and strong imports iOS 15.0 may not export, in the shipped Mach-O."""
 from pathlib import Path
+import os
 import re
 import subprocess
 
@@ -21,9 +22,14 @@ def sdk_declared_names():
     """Every identifier any public header in the iPhoneOS SDK spells."""
     sdk = Path(subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip())
     names = set()
+    # os.walk, not rglob: several frameworks in the SDK are symlinks, and
+    # rglob does not follow a symlinked directory (SafariServices is one)
     for folder in [sdk / 'usr/include', sdk / 'System/Library/Frameworks']:
-        for header in folder.rglob('*.h'):
-            names.update(re.findall(r'[A-Za-z_$][A-Za-z0-9_$]*', header.read_text(errors='ignore')))
+        for directory, _, files in os.walk(folder, followlinks=True):
+            for file in files:
+                if file.endswith('.h'):
+                    text = (Path(directory) / file).read_text(errors='ignore')
+                    names.update(re.findall(r'[A-Za-z_$][A-Za-z0-9_$]*', text))
     return names
 
 
