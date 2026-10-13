@@ -10,10 +10,12 @@ import json
 import os
 import plistlib
 import hashlib
+import re
 from pathlib import Path
 import shlex
 import struct
 import subprocess
+import sys
 import time
 import uuid
 import zlib
@@ -33,8 +35,13 @@ def case(name, group, tools):
     return register
 
 
+# Where each layout's package puts icli, as the SSH shell names it: a RootHide
+# shell sees the jbroot as /.
+BINARIES = {'rootless': '/var/jb/usr/bin/icli', 'roothide': '/usr/bin/icli', 'rootful': '/usr/bin/icli'}
+
+
 class Device:
-    def __init__(self):
+    def __init__(self, layout='rootless'):
         self.env = os.environ.copy()
         self.password = self.env.get('ICLI_SSH_PASSWORD', '')
         self.prefix = ['sshpass', '-e'] if self.password else []
@@ -43,18 +50,31 @@ class Device:
         self.host = self.env.get('ICLI_SSH_HOST', '127.0.0.1')
         self.port = self.env.get('ICLI_SSH_PORT', '2333')
         self.user = self.env.get('ICLI_SSH_USER', 'mobile')
-        self.binary = self.env.get('ICLI_BINARY', '/var/jb/usr/bin/icli')
+        self.binary = self.env.get('ICLI_BINARY') or BINARIES[layout]
         self.options = ['-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new',
                         '-o', 'UserKnownHostsFile=' + str(ROOT / '.build/acceptance-known-hosts')]
         self.trace = []
         self.observations = []
-        self.layout = 'rootless'
+        self.layout = layout
         self.jbroot = '/var/jb'
+        self.demote = None
 
     def configure(self):
         # icli works on physical paths; a RootHide shell sees the jbroot as /
         # and the physical root under /rootfs, so shell checks translate paths.
         self.jbroot = self.cli('env')['jbroot'].rstrip('/') or '/'
+        # Cases that check a command fails without privileges run it as mobile;
+        # a root login drops to mobile through the bootstrap's sudo or su.
+        if self.user == 'root':
+            for demote in ['sudo -n -H -u mobile', 'su mobile -c']:
+                self.demote = demote
+                if self.run('id -u', unprivileged=True).stdout.strip() == '501':
+                    break
+                self.demote = None
+
+    @property
+    def can_drop_privileges(self):
+        return self.user != 'root' or self.demote is not None
 
     def jb(self, path):
         """Physical path of a path inside the bootstrap."""
@@ -78,19 +98,23 @@ class Device:
                     return stripped[len(self.jbroot):]
         return '/rootfs' + path
 
-    def run(self, command, timeout=35, sudo=False):
+    def run(self, command, timeout=35, sudo=False, unprivileged=False, input=None):
         command = shlex.join(command) if isinstance(command, list) else command
         # A root login is already privileged, for a device without sudo.
         sudo = sudo and self.user != 'root'
         if sudo:
             command = 'sudo -S -p "" ' + command
+            input = self.password + '\n' + (input or '')
+        if unprivileged and self.user == 'root':
+            assert self.demote, 'a root login found no sudo or su to run a command as mobile'
+            command = self.demote + ' ' + (shlex.quote(command) if self.demote.startswith('su ') else command)
         start = time.monotonic()
         # Exit 255 is ssh's own failure (a dropped or refused login), not the
         # command's; some guests refuse a password login now and then.
         for attempt in range(4):
             result = subprocess.run(self.prefix + ['ssh', '-p', self.port] + self.options +
                                     [self.user + '@' + self.host, command],
-                                    env=self.env, input=(self.password + '\n') if sudo else None,
+                                    env=self.env, input=input or '',
                                     capture_output=True, text=True, timeout=timeout)
             ssh_failed = result.returncode == 255 and ('Permission denied' in result.stderr or 'Connection' in result.stderr)
             if not ssh_failed:
@@ -103,8 +127,8 @@ class Device:
         result.icli_trace = trace
         return result
 
-    def cli(self, *arguments, expected=0, timeout=35, sudo=False):
-        result = self.run([self.binary] + list(arguments), timeout=timeout, sudo=sudo)
+    def cli(self, *arguments, expected=0, timeout=35, sudo=False, unprivileged=False, input=None):
+        result = self.run([self.binary] + list(arguments), timeout=timeout, sudo=sudo, unprivileged=unprivileged, input=input)
         result.icli_trace['cli_arguments'] = list(arguments)
         assert expected is None or result.returncode == expected, f'exit {result.returncode}, expected {expected}: {result.stdout[:1000]} {result.stderr[:500]}'
         try:
@@ -161,6 +185,16 @@ class Device:
                        [str(package), self.user + '@' + self.host + ':/tmp/icli-acceptance.deb'], env=self.env, check=True)
         result = self.run(['dpkg', '-i', '/tmp/icli-acceptance.deb'], sudo=True)
         assert result.returncode == 0, result.stdout + result.stderr
+
+
+def refused_unprivileged(d, *arguments, input=None):
+    """Checks that mobile cannot run a privileged command. A root login runs it
+    as mobile, and skips the check when it has no way to drop privileges."""
+    if not d.can_drop_privileges:
+        d.observations.append(f'icli {" ".join(arguments[:3])} was not checked unprivileged: '
+                              'the root login has neither sudo nor su to run it as mobile.')
+        return None
+    return d.cli(*arguments, expected=1, unprivileged=True, input=input)
 
 
 @case('device_snapshot', 'runtime', ['device info', 'screen info'])
@@ -259,7 +293,12 @@ def touch_double(d):
 @case('touch_swipe', 'gestures', ['screen swipe'])
 def touch_swipe(d):
     d.fixture()
-    d.cli('screen', 'swipe', '--from-x', '180', '--from-y', '625', '--to-x', '180', '--to-y', '560', '--seconds', '0.4')
+    # TestHost's scroll view spans y 550-650 and x 24-384; a 320x568 screen shows
+    # only its top-left, so the swipe starts in the part on screen. The pan keeps
+    # tracking once the finger leaves the view.
+    screen = d.cli('screen', 'info')
+    x, y = min(180, screen['width'] / 2), (550 + min(650, screen['height'])) / 2
+    d.cli('screen', 'swipe', '--from-x', str(x), '--from-y', str(y), '--to-x', str(x), '--to-y', str(y - 65), '--seconds', '0.4')
     time.sleep(0.3)
     assert d.state().get('scroll_y', 0) > 20
 
@@ -463,7 +502,7 @@ def clipboard_image(d):
         assert copied['image']['width'] == 37 and copied['image']['height'] == 23 and 'public.png' in copied['types'], copied
         # Another process as mobile and as root sees the same image.
         for sudo in [False, True]:
-            seen = d.cli('clipboard', 'get', sudo=sudo)
+            seen = d.cli('clipboard', 'get', sudo=sudo, unprivileged=not sudo and d.can_drop_privileges)
             assert seen['has_image'] and seen['image'] == copied['image'] and seen['text'] == '' and seen['items'] == 1, seen
         written = d.cli('clipboard', 'get', '--image-output', output)
         png = base64.b64decode(d.cli('fs', 'read', output, '--binary')['content'])
@@ -518,21 +557,32 @@ def brightness_volume(d):
     if auto:
         d.observations.append('Auto-brightness is on, so the level read back after brightness set is not asserted: '
                               'the ambient-light controller may move it within seconds.')
+    backlight = True
     try:
         for value in [0.25, 0.65]:
-            applied = d.cli('device', 'brightness', 'set', str(value))
-            assert applied['brightness'] == value and applied.get('auto_brightness', False) == auto, applied
-            assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
-            time.sleep(0.2)
-            if not auto:
-                assert abs(d.cli('device', 'brightness', 'get')['brightness']-value) < 0.03
+            if backlight:
+                applied = d.cli('device', 'brightness', 'set', str(value), expected=None)
+                # A virtual display without a backlight reports no auto-brightness
+                # and keeps its level; icli says so instead of claiming success.
+                if applied.get('error') == 'unavailable' and 'auto_brightness' not in reading:
+                    backlight = False
+                    d.observations.append('brightness set reported unavailable and brightness get has no auto_brightness '
+                                          f'field, so the display has no backlight to set ({applied["message"]}); '
+                                          'only volume was tested.')
+                else:
+                    assert applied.get('brightness') == value and applied.get('auto_brightness', False) == auto, applied
+                    assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
+                    time.sleep(0.2)
+                    if not auto:
+                        assert abs(d.cli('device', 'brightness', 'get')['brightness']-value) < 0.03
             d.cli('device', 'volume', 'set', str(value))
             time.sleep(0.2)
             assert abs(d.cli('device', 'volume', 'get')['volume']-value) < 0.03
         d.cli('device', 'brightness', 'set', '1.1', expected=1)
         d.cli('device', 'volume', 'set', 'nan', expected=1)
     finally:
-        d.cli('device', 'brightness', 'set', str(original_b))
+        if backlight:
+            d.cli('device', 'brightness', 'set', str(original_b))
         d.cli('device', 'volume', 'set', str(original_v))
 
 
@@ -592,10 +642,13 @@ def install_ipa_container(d):
             if launch.returncode == 0:
                 assert any(a['bundle_id'] == bundle for a in d.cli('app', 'running')['apps']), 'launched app is not running'
             else:
-                assert 'did not become frontmost' in launch.stdout, launch.stdout
-                d.observations.append(f'{bundle} installed and registered but did not launch: this device does not run its '
-                                      'ad-hoc signature from an app container (the kernel log names the CMS blob). '
-                                      'The same binary launches from the bootstrap install.')
+                # FrontBoard either refuses the launch outright (iOS 15) or starts
+                # a process that never comes forward; other errors still fail.
+                message = json.loads(launch.stdout)['message']
+                assert 'did not become frontmost' in message or message == 'launch refused: ' + bundle, launch.stdout
+                d.observations.append(f'{bundle} installed and registered but did not launch ({message}): this device does '
+                                      'not run its ad-hoc signature from an app container (where this was diagnosed, the '
+                                      'kernel log named the CMS blob). The same binary launches from the bootstrap install.')
             upgraded = d.cli('app', 'install', package, '--container', '--registration', 'system', timeout=150, sudo=True)
             assert upgraded['upgraded'] and upgraded['bundle_container'] == container and upgraded['data_container'] == data, upgraded
             assert upgraded['plugins'] == plugins and upgraded['unregistered_plugins'] == [], upgraded
@@ -653,16 +706,26 @@ def home_power(d):
             time.sleep(0.3)
         d.cli('screen', 'tap', '100', '245', expected=2)
         assert d.cli('screen', 'shot', '--base64')['data']
-    finally:
+        # One wake must bring the display back, and without a passcode unlock it.
         d.cli('button', 'wake')
-    time.sleep(0.4)
-    info = d.cli('screen', 'info')
-    assert not info['screen_off'], info
-    if passcode:
-        assert info['locked'], info
-        d.wait_unlocked('button power')
-    else:
-        assert not info['locked'], info
+        time.sleep(0.4)
+        info = d.cli('screen', 'info')
+        assert not info['screen_off'], info
+        if passcode:
+            assert info['locked'], info
+            d.wait_unlocked('button power')
+        else:
+            assert not info['locked'], info
+    finally:
+        # A failure above must not leave a locked device to every later case.
+        if not passcode:
+            deadline = time.monotonic() + 3
+            while True:
+                info = d.cli('screen', 'info', expected=None)
+                if info.get('locked') is False and info.get('screen_off') is False or time.monotonic() > deadline:
+                    break
+                d.cli('button', 'wake', expected=None)
+                time.sleep(0.3)
     d.fixture()
 
 
@@ -716,6 +779,11 @@ def raster_ocr(d):
         assert not oracle['texts'], oracle
         d.observations.append('System Vision OCR is unavailable; direct OCR and screen description report it explicitly, '
                               'independently confirmed by TestHost (ok=%s, error=%r).' % (oracle['ok'], oracle['error']))
+    elif d.cli('screen', 'info')['height'] < 750:
+        # TestHost draws the OCR sample at y 670-750, below a 568-point screen.
+        assert result['engine'] == 'vision', result
+        d.observations.append("The screen is shorter than TestHost's OCR sample (y 670-750), so the recognized text "
+                              "and its positions were not checked; OCR itself ran.")
     else:
         assert result['engine'] == 'vision'
         for text, expected_y in [('HELLO 123', 691), ('中文测试', 726)]:
@@ -850,7 +918,7 @@ def rotation(d):
 def developer_mode(d):
     status = d.cli('device', 'devmode', 'get')
     assert all(isinstance(status[key], bool) for key in ['enabled', 'armed', 'writable']), status
-    major = int(d.run(['sysctl', '-n', 'kern.osproductversion']).stdout.strip().split('.')[0])
+    major = int(d.cli('device', 'info')['ios_version'].split('.')[0])
     if major < 16:
         # No Developer Mode before iOS 16, so nothing gates and amfid is not asked.
         assert status == {'enabled': True, 'armed': False, 'writable': False}, status
@@ -859,7 +927,8 @@ def developer_mode(d):
         assert enabled['enabled'] and enabled['already_enabled'] and not enabled['restart_required'], enabled
         return
     # The kernel's own record of the state, read outside icli.
-    kernel = d.run(['sysctl', '-n', 'security.mac.amfi.developer_mode_status'])
+    # The bootstrap's sysctl: a rootless login's PATH has no /var/jb/usr/sbin.
+    kernel = d.run([d.sh(d.jb('/usr/sbin/sysctl')), '-n', 'security.mac.amfi.developer_mode_status'])
     assert kernel.returncode == 0 and status['enabled'] == (kernel.stdout.strip() == '1'), (status, kernel.stdout)
     # amfid answers a status request without root or entitlements; root sees the same.
     assert d.cli('device', 'devmode', 'get', sudo=True) == status
@@ -907,6 +976,14 @@ def time_zone(d):
         for name in ['Mars/Olympus', '../etc/passwd', 'Asia']:
             d.cli('device', 'timezone', 'set', name, expected=1)
         assert d.cli('device', 'timezone', 'get')['identifier'] == zones[-1]
+        # Setting a zone turned the automatic zone off; turn it on and off
+        # again whatever the original setting, which finally restores.
+        for value in [True, False]:
+            applied = d.cli('device', 'timezone', 'automatic', 'on' if value else 'off')
+            assert applied['automatic'] is value and applied['changed'], applied
+            assert d.cli('device', 'timezone', 'get')['automatic'] is value
+            assert d.cli('device', 'timezone', 'automatic', 'on' if value else 'off')['changed'] is False
+        d.cli('device', 'timezone', 'automatic', 'maybe', expected=1)
     finally:
         d.cli('device', 'timezone', 'set', original['identifier'], expected=None)
         if original['automatic']:
@@ -935,7 +1012,8 @@ def darwin_notifications(d):
     assert d.cli('notify', 'post', '', expected=1)['error'] == 'failed'
     # notifyd may reserve com.apple.system. names for root: it refuses mobile's
     # post, or (iOS 26) accepts it and never delivers it. Root always posts them.
-    system = d.cli('notify', 'post', 'com.apple.system.icli.acceptance', '--state', '1', expected=None)
+    system = d.cli('notify', 'post', 'com.apple.system.icli.acceptance', '--state', '1', expected=None,
+                   unprivileged=d.can_drop_privileges)
     assert system.get('error') == 'unavailable' or system['posted'], system
     assert d.cli('notify', 'post', 'com.apple.system.icli.acceptance', sudo=True)['delivered']
 
@@ -963,9 +1041,22 @@ def location_simulation(d):
     # device rejects real fixes far from it for about 15 minutes, so the case
     # ends by handing back the real location it found.
     private = len(d.trace)
-    before = d.cli('location', 'get', '--timeout', '5', expected=None)
+    try:
+        before = d.cli('location', 'get', '--timeout', '5', expected=None)
+        off_exit = d.trace[-1]['exit']
+    finally:
+        redact(d.trace[private:])
+    if before.get('message') == 'Location Services are turned off':
+        # locationd hands out no fix, simulated or real, with the switch off;
+        # setting one must say so at once rather than time out.
+        d.observations.append('Location Services are turned off on this device, so only the refusal was tested; '
+                              'turn them on in Settings > Privacy for the full round trip.')
+        start = time.monotonic()
+        refused = d.cli('location', 'set', '-33.861234', '151.209876', expected=off_exit)
+        assert refused == {'error': before['error'], 'message': before['message']}, refused
+        assert time.monotonic() - start < 5, 'location set did not fail fast with Location Services off'
+        return
     real = None if before.get('error') or before['simulated'] else (before['latitude'], before['longitude'])
-    redact(d.trace[private:])
     try:
         first = (-33.861234, 151.209876)
         applied = d.cli('location', 'set', *map(str, first), '--altitude=-12.5', '--horizontal-accuracy', '7',
@@ -974,7 +1065,7 @@ def location_simulation(d):
         # The setter has exited: new processes, as mobile and as root, read the
         # simulated fix, and it is still there after a pause.
         for sudo in [False, True]:
-            reading = d.cli('location', 'get', '--timeout', '5', sudo=sudo)
+            reading = d.cli('location', 'get', '--timeout', '5', sudo=sudo, unprivileged=not sudo and d.can_drop_privileges)
             assert reading['fresh'] and reading['simulated'] and at(reading, *first), reading
             assert (reading['altitude'], reading['horizontal_accuracy'], reading['vertical_accuracy'],
                     reading['speed'], reading['course']) == (-12.5, 7, 4, 3, 135), reading
@@ -1112,7 +1203,7 @@ def launchd_services(d):
         assert d.cli('svc', 'disable', label, sudo=True)['changed'] is False
         assert d.cli('svc', 'enable', label, sudo=True)['changed'] is True
         assert d.cli('svc', 'status', label)['enabled'] is True
-        d.cli('svc', 'disable', label, expected=1)
+        refused_unprivileged(d, 'svc', 'disable', label)
         removed = d.cli('svc', 'remove', label, sudo=True)
         assert removed['accepted'] is True
         time.sleep(0.5)
@@ -1248,11 +1339,13 @@ def preferences_roundtrip(d):
     }
     read_type = {'json': 'dictionary'}
     keys = {kind: f'{kind}-{token}' for kind in values}
-    # RootHide keeps a jailbroken process's non-Apple domains in the jbroot,
-    # so the plist is under the shell's /var/mobile there and under the
-    # physical path elsewhere.
-    mobile_plists = ['/var/mobile/Library/Preferences/' + domain + '.plist', d.sh('/var/mobile/Library/Preferences/' + domain + '.plist')]
-    root_plists = ['/var/root/Library/Preferences/' + domain + '.plist', d.sh('/var/root/Library/Preferences/' + domain + '.plist')]
+    # The bootstrap's cfprefsd keeps a jailbroken process's non-Apple domains
+    # in the jbroot (Dopamine's /var/jb/var/mobile, RootHide's jbroot that its
+    # shell sees as /var/mobile); elsewhere they stay at the physical path.
+    def plists(home):
+        path = home + '/Library/Preferences/' + domain + '.plist'
+        return list(dict.fromkeys([d.sh(d.jb(path)), d.sh(path)]))
+    mobile_plists, root_plists = plists('/var/mobile'), plists('/var/root')
     path_domain = f'/tmp/icli-prefs-{token}.plist'
 
     def on_disk(paths, sudo=False):
@@ -1277,7 +1370,7 @@ def preferences_roundtrip(d):
             written = d.cli('prefs', 'write', '--type', kind, domain, keys[kind], '--', text)
             assert written['value'] == expected and written['type'] == read_type.get(kind, kind) and written['user'] == 'mobile', written
         for sudo in [False, True]:
-            listed = d.cli('prefs', 'read', domain, sudo=sudo)
+            listed = d.cli('prefs', 'read', domain, sudo=sudo, unprivileged=not sudo and d.can_drop_privileges)
             assert listed['user'] == 'mobile', listed
             for kind, (_, expected) in values.items():
                 assert listed['values'][keys[kind]] == {'value': expected, 'type': read_type.get(kind, kind)}, (kind, listed)
@@ -1327,48 +1420,97 @@ def preferences_roundtrip(d):
             d.cli('prefs', 'delete', domain, key, expected=None)
         d.cli('prefs', 'delete', domain, 'root-' + token, '--user', 'root', expected=None, sudo=True)
         d.run(['rm', '-f', d.sh(path_domain)])
-        # Only remove the scratch plists once they no longer hold anything.
+        # Only remove the scratch plists once they no longer hold anything;
+        # cfprefsd may still be flushing the deletions above.
         for paths, sudo in [(mobile_plists, False), (root_plists, True)]:
             for path in paths:
-                _, stored = on_disk([path], sudo)
-                if not stored:
-                    d.run(['rm', '-f', path], sudo=sudo)
+                deadline = time.monotonic() + 5
+                while d.run(['test', '-e', path], sudo=sudo).returncode == 0:
+                    _, stored = on_disk([path], sudo)
+                    if not stored:
+                        d.run(['rm', '-f', path], sudo=sudo)
+                    elif time.monotonic() > deadline:
+                        d.observations.append(f'{path} still holds {sorted(stored)} and was left in place.')
+                        break
+                    if time.monotonic() > deadline:
+                        d.observations.append(f'{path} could not be removed.')
+                        break
+                    time.sleep(0.5)
 
 
 @case('account_password', 'system', ['account set-password'])
 def account_password(d):
-    password = d.password
-    assert password, 'account_password needs ICLI_SSH_PASSWORD so the runner can log in with the new value and restore the original'
+    # The case changes mobile's password and puts the current one back, so it
+    # must know it: the login password for a mobile login, ICLI_MOBILE_PASSWORD
+    # for any other login (root's password is not mobile's).
+    password = d.password if d.user == 'mobile' else d.env.get('ICLI_MOBILE_PASSWORD', '')
+    assert password, ('account_password needs mobile\'s current password to log in with the new value and restore the '
+                      'original: ICLI_SSH_PASSWORD for a mobile login, ICLI_MOBILE_PASSWORD otherwise')
     temporary = 'icli-acceptance-' + uuid.uuid4().hex[:12]
     passwd = d.sh(d.jb('/etc/master.passwd'))
-    snapshot = d.run(['sh', '-c', f'grep ^mobile {passwd} | cut -d: -f2'], sudo=True)
+
+    def login(secret, command='id -u', input=None):
+        # Password only: a key would log in whatever the password is.
+        return subprocess.run(['sshpass', '-e', 'ssh', '-p', d.port, '-o', 'NumberOfPasswordPrompts=1', '-o', 'PubkeyAuthentication=no'] +
+                              d.options + ['mobile@' + d.host, command], env=dict(d.env, SSHPASS=secret), input=input or '',
+                              capture_output=True, text=True, timeout=60)
+
+    # Prove the password the case will restore is mobile's before changing anything.
+    first = login(password)
+    assert first.returncode == 0 and first.stdout.strip() == '501', 'mobile does not log in with the password the case would restore: ' + first.stderr
+    snapshot = d.run(['sh', '-c', f'grep ^mobile: {passwd} | cut -d: -f2'], sudo=True)
     before = snapshot.stdout.strip()
     snapshot.icli_trace['stdout'] = '<redacted account hash>'
-    assert before.startswith('$6$'), 'expected a sha512-crypt hash for mobile'
-    d.cli('account', 'set-password', 'mobile', expected=1)
-    assert d.run([d.binary, 'account', 'set-password', 'nobody-here'], sudo=True).returncode == 1
+    # Procursus stores sha512-crypt; a stock iOS account database holds 13-character DES hashes.
+    des = re.fullmatch(r'[./0-9A-Za-z]{13}', before) is not None
+    assert before.startswith('$6$') or des, 'expected a sha512-crypt or DES hash for mobile'
+    # Only root may change a password. These run while the runner's login still
+    # works, and carry mobile's current password, so a broken check changes nothing.
+    refused_unprivileged(d, 'account', 'set-password', 'mobile', input=password + '\n')
+    assert d.run([d.binary, 'account', 'set-password', 'nobody-here'], sudo=True, input=password + '\n').returncode == 1
+    # sudo reads its password from stdin only when it asks for one; -k makes it ask
+    # even with cached credentials, so icli always gets the line after it.
+    asks = d.user != 'root' and d.run('sudo -n -k true').returncode != 0
 
     def change(current, new):
-        result = subprocess.run(d.prefix + ['ssh', '-p', d.port] + d.options + [d.user + '@' + d.host, 'sudo -S -p "" ' + shlex.join([d.binary, 'account', 'set-password', 'mobile'])],
-                                env=dict(d.env, SSHPASS=current), input=current + '\n' + new + '\n', capture_output=True, text=True, timeout=60)
+        command = shlex.join([d.binary, 'account', 'set-password', 'mobile'])
+        if d.user != 'root':
+            command = 'sudo -S -k -p "" ' + command
+        # A mobile login authenticates with mobile's password as it is now.
+        result = subprocess.run(d.prefix + ['ssh', '-p', d.port] + d.options + [d.user + '@' + d.host, command],
+                                env=dict(d.env, SSHPASS=current) if d.user == 'mobile' else d.env,
+                                input=(current + '\n' if asks else '') + new + '\n', capture_output=True, text=True, timeout=60)
         d.trace.append({'command': 'account set-password mobile (stdin)', 'cli_arguments': ['account', 'set-password', 'mobile'], 'exit': result.returncode, 'seconds': 0, 'stdout': result.stdout[:2000], 'stderr': result.stderr[:500]})
         assert result.returncode == 0, result.stdout + result.stderr
         return json.loads(result.stdout)
 
-    changed = change(password, temporary)
+    restored = None
     try:
+        changed = change(password, temporary)
         assert changed['user'] == 'mobile' and changed['spwd_db_records'] == 3 and changed['scheme'] == 'sha512crypt', changed
-        login = subprocess.run(d.prefix + ['ssh', '-p', d.port, '-o', 'NumberOfPasswordPrompts=1'] + d.options + [d.user + '@' + d.host, f'sudo -S -p "" sh -c "id -u; grep ^mobile {passwd} | cut -d: -f2"'],
-                               env=dict(d.env, SSHPASS=temporary), input=temporary + '\n', capture_output=True, text=True, timeout=60)
-        assert login.returncode == 0 and login.stdout.splitlines()[0] == '0', 'new password rejected by sshd or sudo: ' + login.stderr
-        stored = login.stdout.splitlines()[1]
+        # The new password must log in, and sudo must take it, before anything else runs.
+        check = login(temporary, f'sudo -S -p "" sh -c "id -u; grep ^mobile: {passwd} | cut -d: -f2"', input=temporary + '\n')
+        assert check.returncode == 0 and check.stdout.splitlines()[0] == '0', 'new password rejected by sshd or sudo: ' + check.stderr
+        stored = check.stdout.splitlines()[1]
         assert stored != before and stored == subprocess.run(['openssl', 'passwd', '-6', '-salt', changed['salt'], '-stdin'], input=temporary + '\n', capture_output=True, text=True, check=True).stdout.strip(), 'stored hash does not match sha512-crypt'
         assert temporary not in json.dumps(d.trace), 'password leaked into the trace'
     finally:
-        restored = change(temporary, password)
-    assert restored['spwd_db_records'] == 3
-    assert d.run(['id', '-u'], sudo=True).stdout.strip() == '0', 'original password no longer works'
+        # The second attempt covers a change that never took, for a mobile login.
+        for current in [temporary, password]:
+            try:
+                restored = change(current, password)
+                break
+            except (AssertionError, ValueError, subprocess.TimeoutExpired):
+                pass
+        back = login(password)
+        if restored is None or back.returncode != 0 or back.stdout.strip() != '501':
+            # The console only, never the report: an operator needs it to recover.
+            print(f'[account_password] could not restore mobile\'s password; it may still be {temporary}', file=sys.stderr, flush=True)
+            raise AssertionError('mobile\'s original password no longer logs in; the temporary password is on the runner\'s console')
+    assert restored['spwd_db_records'] == 3, restored
     d.observations.append('The new password is read from stdin and never appears in argv or the trace; the rootfs account database is untouched, so the stock system password remains valid for iOS itself.')
+    if des:
+        d.observations.append('mobile had a DES hash; set-password always writes sha512-crypt, so mobile now has a sha512-crypt hash of the same password rather than the original DES string.')
 
 
 @case('environment_report', 'runtime', ['env info', 'env basebin'])
@@ -1461,7 +1603,8 @@ def request_reboot(d, userspace=False):
 @case('userspace_reboot', 'reboot', ['device reboot'])
 def userspace_reboot(d):
     d.cli('device', 'reboot', '--userspace', sudo=True, expected=1)
-    d.cli('device', 'reboot', '--userspace', '--force', expected=1)
+    # As root this would restart the device; the helper never runs it privileged.
+    refused_unprivileged(d, 'device', 'reboot', '--userspace', '--force')
     before = d.cli('device', 'info')
     session, boot = before['boot_session_uuid'], before['boot_time']
     names = ['logd', 'notifyd', 'SpringBoard']
@@ -1527,7 +1670,7 @@ def repositories(d):
 def system_dumps(d):
     # jetsam's priority list needs root; without it the field says why and the
     # rest of the snapshot stands.
-    unprivileged = d.cli('device', 'jetsam')
+    unprivileged = d.cli('device', 'jetsam', unprivileged=d.can_drop_privileges)
     assert unprivileged['memory'].get('hw_memsize', 0) > 0, unprivileged['memory']
     assert 'priorities' in unprivileged or unprivileged.get('priorities_error'), sorted(unprivileged)
     privileged = d.cli('device', 'jetsam', sudo=True)
@@ -1536,7 +1679,7 @@ def system_dumps(d):
     assert any(row['name'] == 'SpringBoard' for row in rows), 'SpringBoard is not in a jetsam band'
     dump = d.cli('svc', 'dump', timeout=180)
     assert dump['count'] > 50 and dump['described'] + len(dump['errors']) >= dump['count'], {k: dump[k] for k in ['count', 'described']}
-    d.cli('sec', 'keychain', 'database', expected=1)
+    refused_unprivileged(d, 'sec', 'keychain', 'database')
     keychain = d.cli('sec', 'keychain', 'database', sudo=True)
     assert keychain['source'] == 'database' and keychain['count'] == len(keychain['items']), sorted(keychain)
     assert all(item['protectedMetadata'] is True for item in keychain['items'])
@@ -1754,8 +1897,7 @@ def main():
                         help='Bootstrap layout the device is expected to use.')
     args = parser.parse_args()
     (ROOT / '.build').mkdir(exist_ok=True)
-    device = Device()
-    device.layout = args.layout
+    device = Device(args.layout)
     if args.install:
         device.install()
     fingerprint = device.run(['sha256sum', device.binary])
@@ -1799,23 +1941,31 @@ def main():
                 and (not args.cases or c[0] in args.cases)
                 and not (args.skip_reboot and c[1] == 'reboot')]
     report['planned_cases'] = [c[0] for c in selected]
-    for name, group, tools, test in selected:
+    try:
+        for name, group, tools, test in selected:
+            device.trace = []
+            device.observations = []
+            start = time.monotonic()
+            try:
+                test(device)
+                result = {'name': name, 'tools': tools, 'passed': True}
+            except Exception as error:
+                result = {'name': name, 'tools': tools, 'passed': False, 'error': str(error)}
+            result['seconds'] = round(time.monotonic()-start, 3)
+            result['trace'] = device.trace
+            result['observations'] = device.observations
+            report['cases'].append(result)
+            report['completed_run'] = len(report['cases']) == len(report['planned_cases'])
+            print(('PASS' if result['passed'] else 'FAIL') + ' ' + name + ' ' + result.get('error', ''), flush=True)
+            report['untested_commands'] = sorted(set(inventory) - observed_commands(report['cases'], inventory))
+            Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    finally:
+        # file_roundtrip and extended_files write here; it would outlive the run.
         device.trace = []
-        device.observations = []
-        start = time.monotonic()
         try:
-            test(device)
-            result = {'name': name, 'tools': tools, 'passed': True}
-        except Exception as error:
-            result = {'name': name, 'tools': tools, 'passed': False, 'error': str(error)}
-        result['seconds'] = round(time.monotonic()-start, 3)
-        result['trace'] = device.trace
-        result['observations'] = device.observations
-        report['cases'].append(result)
-        report['completed_run'] = len(report['cases']) == len(report['planned_cases'])
-        print(('PASS' if result['passed'] else 'FAIL') + ' ' + name + ' ' + result.get('error', ''), flush=True)
-        report['untested_commands'] = sorted(set(inventory) - observed_commands(report['cases'], inventory))
-        Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2))
+            device.run(['rm', '-rf', device.sh('/var/tmp/icli-acceptance')], sudo=True)
+        except subprocess.TimeoutExpired:
+            print('could not remove /var/tmp/icli-acceptance from the device', flush=True)
     complete = not report['full_run'] or not report['untested_commands']
     return 0 if report['cases'] and complete and all(case['passed'] for case in report['cases']) else 1
 
