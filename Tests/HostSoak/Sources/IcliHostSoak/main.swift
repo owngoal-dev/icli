@@ -214,7 +214,11 @@ check("envelope_nan", printedText.contains("\"value\" : \"nan\""), printedText)
 // domain back after a sync, so its file goes once cfprefsd has settled.
 try? FileManager.default.removeItem(atPath: scratch)
 sleep(1)
-try? FileManager.default.removeItem(atPath: "/var/mobile/Library/Preferences/\(domain).plist")
+let preferences = "/var/mobile/Library/Preferences/\(domain).plist"
+// Dopamine's cfprefsd keeps a non-Apple domain inside the jbroot.
+for path in Set([preferences, JailbreakRoot.current.jbrootPath(preferences)]) {
+    try? FileManager.default.removeItem(atPath: path)
+}
 
 report["iterations"] = iterations
 report["failures"] = failures

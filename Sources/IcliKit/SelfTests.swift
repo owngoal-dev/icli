@@ -11,7 +11,11 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
         throw IcliError.failed("Expected \(expectedLayout), detected \(JailbreakRoot.current.layout?.rawValue ?? "none"); no tests were run.")
     }
     var results: [[String: Any]] = []
-    func check(_ name: String, _ body: () throws -> [String: Any]) {
+    func check(
+        _ name: String,
+        skipWhenUnavailable: Bool = false,
+        _ body: () throws -> [String: Any]
+    ) {
         let start = ProcessInfo.processInfo.systemUptime
         do {
             let details = try body()
@@ -19,6 +23,14 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
                 "name": name,
                 "result": "passed",
                 "details": details,
+                "seconds": ProcessInfo.processInfo.systemUptime - start,
+            ])
+        } catch let IcliError.unavailable(message) where skipWhenUnavailable {
+            // The device lacks the capability; nothing of icli's was tested.
+            results.append([
+                "name": name,
+                "result": "skipped",
+                "message": message,
                 "seconds": ProcessInfo.processInfo.systemUptime - start,
             ])
         } catch {
@@ -134,7 +146,7 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
             }
         }
     }
-    check("ocr") {
+    check("ocr", skipWhenUnavailable: true) {
         try requireSelfTestUnlocked()
         let result = try recognizeScreen(languages: ["en-US"], minConfidence: 0.3)
         return [

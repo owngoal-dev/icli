@@ -248,7 +248,7 @@ icli tests --expect-layout rootless
 icli tests --expect-layout rootless --registration-fixture /tmp/SelfTestFixture.app > /tmp/icli-selftest.json
 ```
 
-Use `roothide` or `rootful` for the corresponding target. A layout mismatch stops before any tests run. The JSON report records the environment, each test's result and duration, pass/fail/skip counts, and capabilities not tested. A failed test exits nonzero; `complete` is false if any check fails or is skipped. `--human` gives a readable report.
+Use `roothide` or `rootful` for the corresponding target. A layout mismatch stops before any tests run. The JSON report records the environment, each test's result and duration, pass/fail/skip counts, and capabilities not tested. A failed test exits nonzero; `complete` is false if any check fails or is skipped. OCR is skipped, not failed, on a device without system text recognition. `--human` gives a readable report.
 
 The suite exercises device information, bootstrap paths, process enumeration, LaunchServices, file write/read/copy/move, Debian version ordering, decoded screenshots, accessibility, OCR, and a temporary Keychain item in `icli.test`. Unlock the screen and leave an accessible app open. Temporary files and the Keychain item are removed; cleanup failures fail the test. Screen text and screenshot data are not included in the report.
 

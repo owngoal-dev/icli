@@ -1347,6 +1347,8 @@ def preferences_roundtrip(d):
         return list(dict.fromkeys([d.sh(d.jb(path)), d.sh(path)]))
     mobile_plists, root_plists = plists('/var/mobile'), plists('/var/root')
     path_domain = f'/tmp/icli-prefs-{token}.plist'
+    # Dopamine's cfprefsd keeps a path domain under /tmp inside the jbroot.
+    path_domain_files = list(dict.fromkeys([d.sh(d.jb(path_domain)), d.sh(path_domain)]))
 
     def on_disk(paths, sudo=False):
         for path in paths:
@@ -1393,7 +1395,9 @@ def preferences_roundtrip(d):
         # An absolute path to a .plist is a domain of its own.
         d.cli('prefs', 'write', path_domain, 'answer', '42', '--type', 'int')
         assert d.cli('prefs', 'read', path_domain)['values'] == {'answer': {'value': 42, 'type': 'int'}}
-        wait_on_disk([d.sh(path_domain)], lambda stored: stored == {'answer': 42})
+        stored_at, _ = wait_on_disk(path_domain_files, lambda stored: stored == {'answer': 42})
+        if stored_at != d.sh(path_domain):
+            d.observations.append(f'The path domain {path_domain} was flushed to {stored_at}')
 
         for kind, key in keys.items():
             removed = d.cli('prefs', 'delete', domain, key, sudo=kind == 'int')
@@ -1419,7 +1423,7 @@ def preferences_roundtrip(d):
         for key in keys.values():
             d.cli('prefs', 'delete', domain, key, expected=None)
         d.cli('prefs', 'delete', domain, 'root-' + token, '--user', 'root', expected=None, sudo=True)
-        d.run(['rm', '-f', d.sh(path_domain)])
+        d.run(['rm', '-f'] + path_domain_files)
         # Only remove the scratch plists once they no longer hold anything;
         # cfprefsd may still be flushing the deletions above.
         for paths, sudo in [(mobile_plists, False), (root_plists, True)]:
@@ -1717,13 +1721,18 @@ def system_inspection(d):
 def on_device_self_tests(d):
     d.fixture()
     # Verify capability results against an independent command invocation.
-    # Vision is unavailable on some vphone builds; self-tests must fail honestly.
+    # Vision is unavailable on some vphone builds and without a Metal device;
+    # the self-test then skips OCR, and any other OCR error must fail it.
     ocr = d.cli('screen', 'ocr', expected=None)
-    expected_failures = {'ocr'} if ocr.get('error') else set()
+    ocr_unavailable = ocr.get('error') == 'unavailable'
+    expected_failures = {'ocr'} if ocr.get('error') and not ocr_unavailable else set()
 
     def verify_report(report, skipped, additional_failures=()):
         failures = expected_failures | set(additional_failures)
+        skipped += ocr_unavailable
         assert {row['name'] for row in report['tests'] if row['result'] == 'failed'} == failures, report
+        ocr_row = next(row for row in report['tests'] if row['name'] == 'ocr')
+        assert ocr_row['result'] == ('skipped' if ocr_unavailable else 'passed' if 'ocr' not in failures else 'failed'), ocr_row
         assert report['status'] == (1 if failures else 0), report
         assert report['failed'] == len(failures) and report['skipped'] == skipped, report
         assert report['passed'] + report['failed'] + report['skipped'] == len(report['tests']), report
@@ -1916,7 +1925,8 @@ def main():
     device.configure()
     # Install cases read these fixtures from the physical /tmp, which a
     # RootHide shell sees as /rootfs/tmp, so stage them for every run.
-    for name in ['icli-install-fixture.deb', 'icli-install-fixture.ipa', 'icli-container-fixture.ipa']:
+    fixtures = ['icli-install-fixture.deb', 'icli-install-fixture.ipa', 'icli-container-fixture.ipa']
+    for name in fixtures:
         fixture = ROOT / '.build/install-fixtures' / name
         if fixture.exists():
             device.upload(fixture, '/tmp/' + name)
@@ -1963,9 +1973,10 @@ def main():
         # file_roundtrip and extended_files write here; it would outlive the run.
         device.trace = []
         try:
-            device.run(['rm', '-rf', device.sh('/var/tmp/icli-acceptance')], sudo=True)
+            device.run(['rm', '-rf', device.sh('/var/tmp/icli-acceptance')]
+                       + [device.sh('/tmp/' + name) for name in fixtures], sudo=True)
         except subprocess.TimeoutExpired:
-            print('could not remove /var/tmp/icli-acceptance from the device', flush=True)
+            print('could not remove /var/tmp/icli-acceptance and the fixtures from the device', flush=True)
     complete = not report['full_run'] or not report['untested_commands']
     return 0 if report['cases'] and complete and all(case['passed'] for case in report['cases']) else 1
 
