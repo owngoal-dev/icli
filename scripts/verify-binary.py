@@ -28,7 +28,8 @@ def sdk_declared_names():
         for directory, _, files in os.walk(folder, followlinks=True):
             for file in files:
                 if file.endswith('.h'):
-                    text = (Path(directory) / file).read_text(errors='ignore')
+                    # a comment declares nothing: proc_pidinfo is spelled in one
+                    text = re.sub(r'/\*.*?\*/|//[^\n]*', ' ', (Path(directory) / file).read_text(errors='ignore'), flags=re.S)
                     names.update(re.findall(r'[A-Za-z_$][A-Za-z0-9_$]*', text))
     return names
 

@@ -87,13 +87,15 @@ static id objectFromXPC(xpc_object_t value) {
 /// name, an iOS 15 dyld refuses to start any binary that carries this file.
 /// On iOS 15 every daemon lives in the system domain alone.
 static bool foregroundUID(uint64_t *uid) {
-    static uid_t (*lookup)(void *);
+    static uint64_t (*lookup)(uint64_t);
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        lookup = dlsym(RTLD_DEFAULT, "xpc_user_sessions_get_foreground_uid");
+        // libxpc's own, not the first image that exports the name
+        void *xpc = dlopen("/usr/lib/system/libxpc.dylib", RTLD_LAZY | RTLD_NOLOAD);
+        if (xpc) lookup = dlsym(xpc, "xpc_user_sessions_get_foreground_uid");
     });
     if (!lookup) return false;
-    *uid = lookup(NULL);
+    *uid = lookup(0);
     return true;
 }
 

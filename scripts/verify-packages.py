@@ -18,7 +18,11 @@ assert entitlements == plistlib.loads((root / 'Resources/icli.entitlements').rea
 assert subprocess.check_output(['lipo', '-archs', str(binary)], text=True).strip() == 'arm64'
 build = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(binary)], text=True)
 # The CLI, the package and the DEB's firmware dependency share one floor.
-assert 'platform IOS' in build and 'minos 15.0' in build and 'sdk 16.0' in build, build
+# The SDK is the one it was built with: a lower stamp sends newer systems
+# down their old-SDK compatibility paths.
+sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-version'], text=True).strip()
+fields = [line.split() for line in build.splitlines()]
+assert ['platform', 'IOS'] in fields and ['minos', '15.0'] in fields and ['sdk', sdk] in fields, build
 loads = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
 for load in loads:
     name = load.strip().split(' (')[0]
