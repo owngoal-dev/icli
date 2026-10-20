@@ -54,6 +54,32 @@ bool icli_hid_text(const char *text);
 bool icli_hid_button(const char *name);
 bool icli_wake(void);
 
+/// What the icli_pointer_ calls return.
+enum {
+    ICLI_POINTER_OK = 0,
+    /// The system does not have the private IOKit symbols.
+    ICLI_POINTER_UNAVAILABLE = 1,
+    /// IOHIDUserDeviceCreate refused to make the device.
+    ICLI_POINTER_REFUSED = 2,
+    /// The device exists but iOS has not put an event service over it yet.
+    ICLI_POINTER_NOT_READY = 3,
+    /// The report or the event could not be made or delivered.
+    ICLI_POINTER_FAILED = 4,
+};
+
+/// Puts the virtual pointer at x, y: 0…1 from the top-left corner of the
+/// interface as it is shown. Creates the pointing device on first use; it
+/// lives as long as the process. `buttons` are the buttons held from then on,
+/// bit 0 primary, bit 1 secondary, bit 2 middle; a negative value keeps the
+/// ones held.
+int icli_pointer_move(double x, double y, int buttons);
+/// Presses or releases buttons where the pointer is.
+int icli_pointer_buttons(int buttons);
+/// One scroll event to the view under the pointer. `phase` is an
+/// IOHIDEventPhaseBits value: 1 began, 2 changed, 4 ended, 8 cancelled. dx and
+/// dy are interface points, with a browser wheel event's signs.
+int icli_pointer_scroll(int phase, double dx, double dy);
+
 bool icli_open_url(const char *url);
 bool icli_open_url_in_app(const char *url, const char *bundle_id);
 /// Live application processes reported by RunningBoard, as a JSON object.

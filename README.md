@@ -48,7 +48,7 @@ The DEB installs a command-line executable and license notices. The executable i
 
 ## Features
 
-- **Touch and keyboard**: Tap, swipe, press and hold, drag along a path, enter Unicode text, and send keyboard shortcuts. Send single touch down, move and up events, or raw HID key events.
+- **Touch and keyboard**: Tap, swipe, press and hold, drag along a path, enter Unicode text, and send keyboard shortcuts. Send single touch down, move and up events, or raw HID key events. On an iPad, click and scroll with a virtual pointer, as a trackpad does.
 - **Accessibility**: Read the UI tree, find elements by text, identifier, or role, tap a match, and wait for an element to appear or disappear.
 - **Screenshots and OCR**: Save JPEG screenshots, return images as Base64, recognize text, or collect an image, OCR results, and accessibility elements together.
 - **Apps**: List, launch, inspect, register, unregister, and refresh apps; inspect or repair their network policy. Install and remove local DEB packages or compatible IPA files, in the bootstrap or in their own app container.
@@ -108,6 +108,14 @@ icli screen touch-sequence --events '[{"phase":"down","x":100,"y":245,"delay_ms"
 icli input hid 7 0xE1 --down
 icli input hid 7 4
 icli input hid 7 0xE1 --up
+```
+
+On an iPad, `screen click` and `screen scroll` use a virtual pointer, as a trackpad does. A click is a pointer click rather than a touch, and a scroll moves the view under the pointer by exactly the deltas given, with no momentum. `--button secondary` opens the context menu under the pointer, and `--hover 0.5` rests the pointer on the point before it clicks, so hover effects show first. `--normalized` takes 0…1 of the interface as it is shown. The pointer exists only while the command runs. iOS on an iPhone uses it only through AssistiveTouch's pointer devices.
+
+```sh
+icli screen click 100 245
+icli screen click 100 245 --button secondary
+icli screen scroll 400 500 --dy 300
 ```
 
 `input paste` sends Unicode keyboard events; it does not read the clipboard. `input type` sends one grapheme at a time. Use `icli clipboard get` and `icli clipboard set 'shared text'` for clipboard text. `clipboard get` also reports the pasteboard types, change count and any image; `--image-output /tmp/clip.png` saves the image, and `clipboard set --image /tmp/photo.png` copies one. icli reads and writes the system pasteboard without a prompt. When another app later reads that text programmatically, iOS may show its standard paste permission prompt for that app; user-initiated pastes such as `icli input key cmd+v` are not prompted.

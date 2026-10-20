@@ -67,7 +67,7 @@ Entitlements do not make a process root. Package installation/removal, account p
 | `com.apple.QuartzCore.displayable-context` | `true` | QuartzCore display context profile. |
 | `com.apple.QuartzCore.global-capture` | `true` | Device display capture client profile. |
 | `com.apple.QuartzCore.secure-mode` | `true` | QuartzCore capture profile; no protected-content guarantee. |
-| `com.apple.security.iokit-user-client-class` | `IOHIDLibUserClient`, `IOHIDEventServiceFastPathUserClient`, `IOSurfaceRootUserClient`, `IOSurfaceAcceleratorClient`, `IOMobileFramebufferUserClient`, `AppleJPEGDriverUserClient`, `IOHIDUserDevice` | IOKit client class allowlist: HID input/events, IOSurface/display capture, image acceleration, and HID user devices. |
+| `com.apple.security.iokit-user-client-class` | `IOHIDLibUserClient`, `IOHIDEventServiceFastPathUserClient`, `IOSurfaceRootUserClient`, `IOSurfaceAcceleratorClient`, `IOMobileFramebufferUserClient`, `AppleJPEGDriverUserClient`, `IOHIDUserDevice`, `IOHIDResourceDeviceUserClient` | IOKit client class allowlist: HID input/events, IOSurface/display capture, image acceleration, and HID user devices. `IOHIDResourceDeviceUserClient` is the one `IOHIDUserDeviceCreate` opens for the virtual pointer (`screen click`, `screen scroll`, the `pointer` calls); without it the kernel logs `deny(1) iokit-open-user-client IOHIDResourceDeviceUserClient` and the device is refused. Verified on an iPadOS 26.6.2 vphone, where `com.apple.developer.hid.virtual.device` was not needed. |
 
 OCR uses Vision and the captured image; there is no separate OCR entitlement in this profile. A host's normal UIKit presentation, privacy strings, and user permission flows remain the host's responsibility.
 

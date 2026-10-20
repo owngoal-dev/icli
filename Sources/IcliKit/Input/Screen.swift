@@ -432,7 +432,7 @@ private func pointSizeMatching(image: CGImage) -> CGSize {
     return CGSize(width: metrics.height, height: metrics.width)
 }
 
-private func validateDuration(_ value: Double, name: String, maximum: Double = 60, allowZero: Bool = false) throws {
+func validateDuration(_ value: Double, name: String, maximum: Double = 60, allowZero: Bool = false) throws {
     guard value.isFinite, value <= maximum, allowZero ? value >= 0 : value > 0 else {
         throw IcliError.failed("\(name) must be \(allowZero ? "nonnegative" : "positive") and at most \(maximum) seconds")
     }

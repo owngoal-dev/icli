@@ -312,6 +312,37 @@ def touch_drag(d):
     assert state.get('drag_events', 0) > 3 and state['drag_x'] > 180
 
 
+def pointer_answers(d):
+    """iPadOS answers the virtual pointer; iOS on an iPhone only through AssistiveTouch."""
+    if d.cli('device', 'info').get('model', '').startswith('iPad'):
+        return True
+    d.observations.append('The pointer cases checked only that the virtual pointer is created: this is not an iPad.')
+    return False
+
+
+@case('pointer_click', 'gestures', ['screen click'])
+def pointer_click(d):
+    d.fixture()
+    result = d.cli('screen', 'click', '100', '245')
+    assert result['button'] == 1 and result['count'] == 1, result
+    time.sleep(0.2)
+    if pointer_answers(d):
+        assert d.state()['counter'] == 1
+
+
+@case('pointer_scroll', 'gestures', ['screen scroll'])
+def pointer_scroll(d):
+    d.fixture()
+    # The same part of TestHost's scroll view that touch_swipe uses.
+    screen = d.cli('screen', 'info')
+    x, y = min(180, screen['width'] / 2), (550 + min(650, screen['height'])) / 2
+    result = d.cli('screen', 'scroll', str(x), str(y), '--dy', '120')
+    assert result['dy'] == 120, result
+    time.sleep(0.3)
+    if pointer_answers(d):
+        assert d.state().get('scroll_y', 0) > 20
+
+
 def in_testhost(d, body):
     """Runs body with a reset TestHost in front. On a shared device another client can
     take the foreground or reset TestHost mid-run, so a failure is retried once."""

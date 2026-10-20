@@ -4,16 +4,19 @@ import IcliKit
 
 struct Screen: ParsableCommand {
     static var configuration = CommandConfiguration(
-        abstract: "Touch, screenshot, OCR",
+        abstract: "Touch, pointer, screenshot, OCR",
         subcommands: [
             Tap.self, Swipe.self, LongPress.self, DoubleTap.self, Drag.self, Touch.self,
-            TouchSequence.self, Shot.self, Info.self, OCR.self, Describe.self
+            TouchSequence.self, Click.self, Scroll.self, Shot.self, Info.self, OCR.self, Describe.self
         ],
     )
 }
 
 private let normalizedHelp: ArgumentHelp =
     "x and y are 0–1 in the fixed portrait digitizer space instead of UI points."
+
+private let pointerNormalizedHelp: ArgumentHelp =
+    "x and y are 0–1 of the interface as it is shown instead of UI points."
 
 extension Screen {
     struct Tap: ParsableCommand {
@@ -127,6 +130,49 @@ extension Screen {
         @Flag(help: normalizedHelp) var normalized = false
         func run() {
             emit(output) { try touchSequence(TouchEvent.list(fromJSON: events), normalized: normalized) }
+        }
+    }
+
+    struct Click: ParsableCommand {
+        static var configuration = CommandConfiguration(
+            abstract: "Click with a virtual pointer, as a trackpad does on an iPad.",
+            discussion: "The pointer exists only while the command runs. iOS on an iPhone uses it only through AssistiveTouch's pointer devices.",
+        )
+        @OptionGroup var output: OutputOptions
+        @Argument var x: Double
+        @Argument var y: Double
+        @Option(help: "primary, secondary or middle.") var button = "primary"
+        @Option(help: "1 for a click, 2 for a double click, 3 for a triple click.") var count = 1
+        @Option(help: "Seconds each press is held.") var hold = 0.05
+        @Option(help: "Seconds the pointer rests on x, y before the first press.") var hover = 0.0
+        @Flag(help: pointerNormalizedHelp) var normalized = false
+        func run() {
+            emit(output) {
+                try pointerClick(
+                    x: x, y: y, normalized: normalized, button: PointerButtons(name: button), count: count, hold: hold,
+                    hover: hover,
+                )
+            }
+        }
+    }
+
+    struct Scroll: ParsableCommand {
+        static var configuration = CommandConfiguration(
+            abstract: "Scroll the view under a virtual pointer, as a trackpad does on an iPad.",
+            discussion: "dx and dy are points with a browser wheel's signs: positive dy goes toward the end of the content. The pointer exists only while the command runs.",
+        )
+        @OptionGroup var output: OutputOptions
+        @Argument var x: Double
+        @Argument var y: Double
+        @Option var dx = 0.0
+        @Option var dy = 0.0
+        @Option var seconds = 0.3
+        @Option var steps = 15
+        @Flag(help: pointerNormalizedHelp) var normalized = false
+        func run() {
+            emit(output) {
+                try pointerScrollGesture(x: x, y: y, normalized: normalized, dx: dx, dy: dy, seconds: seconds, steps: steps)
+            }
         }
     }
 

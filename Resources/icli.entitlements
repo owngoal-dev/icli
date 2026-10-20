@@ -164,6 +164,7 @@
 		<string>IOMobileFramebufferUserClient</string>
 		<string>AppleJPEGDriverUserClient</string>
 		<string>IOHIDUserDevice</string>
+		<string>IOHIDResourceDeviceUserClient</string>
 	</array>
 </dict>
 </plist>
