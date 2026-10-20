@@ -1,6 +1,6 @@
 # Entitlements and execution requirements
 
-[Resources/icli.entitlements](../Resources/icli.entitlements) is the authoritative signing profile for the shipped CLI. This inventory covers all 67 keys and their exact configured values. The complete profile is tested together on the rootless vphone; individual keys have **not** been tested by removing them one at a time. Descriptions below explain each capability's intended role, not a claim that every key is necessary on every iOS release. Private capabilities depend on the OS and bootstrap.
+[Resources/icli.entitlements](../Resources/icli.entitlements) is the authoritative signing profile for the shipped CLI. This inventory covers all 71 keys and their exact configured values. The complete profile has been tested on vphones; individual keys have **not** all been tested by removing them one at a time. Descriptions below explain each capability's intended role, not a claim that every key is necessary on every iOS release. Private capabilities depend on the OS and bootstrap.
 
 When linking **IcliKit**, **IcliSystem** or **IcliLaunch**, entitlements must be granted to the final calling executable or app. [The Swift Package guide](swift-package.md#entitlements-the-host-needs) maps the read-only `IcliSystem` calls onto the keys below and says which of those are verified, and [its IcliLaunch section](swift-package.md#the-iclilaunch-product) does the same for launching. SwiftPM does not apply this file to consumers or sign them. Use your own `application-identifier` and `com.apple.application-identifier`; the `com.icli.icli` values identify the CLI. Integrate only the feature groups your host needs using its existing signing process. Ordinary provisioning cannot grant this private platform profile.
 
@@ -77,6 +77,7 @@ OCR uses Vision and the captured image; there is no separate OCR entitlement in 
 | --- | --- | --- |
 | `com.apple.private.xpc.launchd.per-user-lookup` | `true` | Query services in the foreground user's launchd domain. |
 | `com.apple.private.xpc.service-configure` | `true` | Required for service mutations such as start and stop. Declaring it does not grant every launchctl operation; launchd also checks the calling process and its privileges. |
+| `com.apple.private.xpc.service-attach` | `true` | Required for kickstart on iOS 27. With service-configure alone launchd returned status 144; adding this key let the same binary kickstart a running test job. |
 | `com.apple.private.xpc.launchd.userspace-reboot` | `true` | Userspace reboot request capability; root is also required. |
 | `com.apple.private.logging.stream` | `true` | Unified log streaming. |
 | `com.apple.diagnosticd.stream` | `true` | Diagnostic service log stream access. |

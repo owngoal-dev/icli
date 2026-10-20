@@ -182,12 +182,19 @@ public func startService(_ label: String) throws -> [String: Any] {
 /// unchanged.
 public func kickstartService(_ label: String, kill: Bool) throws -> [String: Any] {
     try validateServiceLabel(label)
+    guard geteuid() == 0 else { throw IcliError.failed("kickstart requires root") }
+    let previousPID = kill ? nil : try serviceStatus(label)["pid"] as? Int
     var result = try serviceActionResult(
         takeCString(icli_launchd_kickstart_json(label, kill)),
         label: label,
         action: "kickstart",
         benignStatuses: [Int(EALREADY)],
     )
+    // iOS 27 answers success and the existing pid for an already running
+    // job, rather than EALREADY. Compare the process launchd reports.
+    if !kill, let previousPID, previousPID > 0, result["pid"] as? Int == previousPID {
+        result["unchanged"] = true
+    }
     result["kill"] = kill
     return result
 }

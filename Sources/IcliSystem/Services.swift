@@ -13,7 +13,8 @@ public func launchdStatusError(_ result: [String: Any], _ action: String) -> Icl
         return .failed("\(action) requires root (launchd status \(status))")
     }
     if status == launchdServiceConfigureDenied {
-        return .failed("\(action) requires launchctl service-configure privilege (launchd status \(status))")
+        let privilege = action == "kickstart" ? "service-attach" : "service-configure"
+        return .failed("\(action) requires launchctl \(privilege) privilege (launchd status \(status))")
     }
     if status != 0 {
         return .failed("\(action) failed: launchd status \(status) (\(result["message"] as? String ?? ""))")
@@ -110,8 +111,8 @@ public func serviceStatus(_ label: String) throws -> [String: Any] {
 /// launchd's ENOSERVICE: nothing with that label is loaded in the domain.
 private let launchdNoService = 113
 
-/// launchd's status when the caller lacks the `launchctl` service-configure
-/// privilege; observed from launchd replies, not from a public header.
+/// launchd's status when the caller lacks a `launchctl` mutation privilege
+/// (service-configure, or service-attach for kickstart); observed from replies.
 private let launchdServiceConfigureDenied = 144
 
 /// Walks the system domain, then the user domain, of a launchd list response,

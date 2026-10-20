@@ -776,7 +776,11 @@ def raster_ocr(d):
         assert result['error'] == 'unavailable' and result['message'], result
         assert described['ocr']['error'] == 'unavailable', described['ocr']
         d.cli('url', 'open', 'icli-test://ocr')
-        oracle = d.state()['ocr']
+        deadline = time.monotonic() + 30
+        while 'ocr' not in (state := d.state()) and time.monotonic() < deadline:
+            time.sleep(0.25)
+        assert 'ocr' in state, 'TestHost did not finish its independent OCR request'
+        oracle = state['ocr']
         # Vision can fail without an NSError when its text models are missing.
         assert not oracle['texts'], oracle
         d.observations.append('System Vision OCR is unavailable; direct OCR and screen description report it explicitly, '
@@ -1230,6 +1234,64 @@ def launchd_services(d):
         d.cli('svc', 'unload', plist, sudo=True, expected=None)
         d.run(['rm', '-rf', d.sh(plist), d.sh(folder), d.sh('/tmp/icli-daemon.plist')], sudo=True)
     assert d.cli('svc', 'status', label)['loaded'] is False
+
+
+@case('launchd_kickstart_upgrade', 'system', ['svc kickstart'])
+def launchd_kickstart_upgrade(d):
+    label = 'dev.owngoal.icli.kickstarttest'
+    folder = d.jb('/var/tmp/icli-kickstart-' + uuid.uuid4().hex)
+    program = folder + '/daemon'
+    marker = folder + '/version.txt'
+    plist = d.jb(f'/Library/LaunchDaemons/{label}.plist')
+    body = plistlib.dumps({'Label': label, 'ProgramArguments': [program, marker],
+                          'RunAtLoad': True, 'ThrottleInterval': 1}).decode()
+    assert not d.cli('svc', 'status', label)['loaded']
+    assert d.run(['mkdir', d.sh(folder)]).returncode == 0
+    try:
+        for version in [1, 2]:
+            d.upload(ROOT / f'.build/install-fixtures/kickstart-daemon-{version}', folder + f'/daemon-{version}')
+        assert d.run(['chown', '-R', 'root:wheel', d.sh(folder)], sudo=True).returncode == 0
+        assert d.run(['cp', d.sh(folder + '/daemon-1'), d.sh(program)], sudo=True).returncode == 0
+        d.cli('fs', 'write', plist, body, sudo=True)
+        d.cli('svc', 'bootstrap', plist, sudo=True)
+
+        def observed(version, previous_pid=None):
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                result = d.run(['cat', d.sh(marker)])
+                words = result.stdout.split()
+                if result.returncode == 0 and len(words) == 2 and words[0] == str(version):
+                    pid = int(words[1])
+                    if pid > 0 and pid != previous_pid:
+                        status = d.cli('svc', 'status', label)
+                        assert status['running'] and status['pid'] == pid, status
+                        return pid
+                time.sleep(0.25)
+            raise AssertionError(f'daemon version {version} did not start: {result.stdout}')
+
+        first = observed(1)
+        unchanged = d.cli('svc', 'kickstart', label, sudo=True)
+        assert unchanged['accepted'] and unchanged['unchanged'], unchanged
+        assert observed(1) == first
+        # Atomic replacement preserves the running old image while changing
+        # what launchd will execute, as a package upgrade does.
+        assert d.run(['mv', d.sh(folder + '/daemon-2'), d.sh(program)], sudo=True).returncode == 0
+        assert d.cli('svc', 'start', label, sudo=True)['accepted']
+        assert observed(1) == first
+        assert d.cli('svc', 'kickstart', label, sudo=True)['unchanged']
+        assert observed(1) == first
+        restarted = d.cli('svc', 'kickstart', '-k', label, sudo=True)
+        assert restarted['accepted'] and restarted['kill'], restarted
+        second = observed(2, first)
+        assert restarted['pid'] == second, restarted
+        d.observations.append({'old_pid': first, 'new_pid': second, 'running_version': 2})
+        refused_unprivileged(d, 'svc', 'kickstart', '-k', label)
+        d.cli('svc', 'kickstart', 'bad label!', sudo=True, expected=1)
+        d.cli('svc', 'kickstart', label + '.missing', sudo=True, expected=1)
+    finally:
+        d.cli('svc', 'bootout', plist, sudo=True, expected=None)
+        d.run(['rm', '-rf', d.sh(plist), d.sh(folder)], sudo=True)
+    assert not d.cli('svc', 'status', label)['loaded']
 
 
 @case('app_registration_refresh', 'apps', ['app refresh', 'app unregister-dir', 'app register', 'app unregister'])

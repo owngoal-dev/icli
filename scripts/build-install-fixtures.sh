@@ -27,6 +27,12 @@ Path(entitlements).write_bytes(plistlib.dumps(ent))
 PY
 }
 mkdir -p "$app" "$root/deb/DEBIAN" "$root/deb/var/mobile/Library/Caches/icli-install-test"
+for version in 1 2; do
+  xcrun clang -target arm64-apple-ios15.0 -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+    -Wall -Wextra -Werror -DICLI_DAEMON_VERSION="$version" Tests/LaunchdKickstart/main.c \
+    -o "$root/kickstart-daemon-$version"
+  ldid -S "$root/kickstart-daemon-$version"
+done
 cp .build/testhost-app/IcliTestHost "$app/IcliTestHost"
 stamp "$app" dev.owngoal.icli.InstallFixture 'icli Install Fixture' "$root/entitlements.plist"
 ldid -S"$root/entitlements.plist" "$app"

@@ -270,7 +270,7 @@ Device acceptance uses a separate TestHost app and installation fixtures, which 
 ./scripts/build-install-fixtures.sh
 ```
 
-Install `.build/icli-testhost_1.0_iphoneos-arm64.deb` on the device and upload the `.ipa` and `.deb` from `.build/install-fixtures/` to the device's `/tmp/`. Then run from your Mac:
+Install the matching icli DEB first, then `.build/icli-testhost_1.0_iphoneos-arm64.deb` (or its RootHide counterpart): TestHost's maintainer scripts register it through the installed CLI. Upload the `.ipa` and `.deb` from `.build/install-fixtures/` to the device's `/tmp/`. Keep TestHost full screen on iPad and dismiss system dialogs before testing; the fixture's coordinates assume a full-screen window. Then run from your Mac:
 
 ```sh
 python3 scripts/acceptance.py --install --report .build/acceptance-release.json

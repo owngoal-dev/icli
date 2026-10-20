@@ -69,6 +69,8 @@ Every `icli` command is a thin layer over a public IcliKit function, so a long-r
 
 A call a device can't support throws `IcliError.unavailable` and leaves the device as it was. For example, a device running custom firmware won't launch an app installed in a container unless the app is signed in a way CoreTrust accepts. The CLI refuses UI input while the device is locked. A library caller has to make that check itself.
 
+`kickstartService(_:kill:)` starts a loaded launchd job immediately. With `kill: true` it replaces the running instance and returns the new `pid`, so a daemon can start using its updated executable. With `kill: false`, an existing process stays running and `unchanged` is true. The host executable needs `com.apple.private.xpc.service-attach` in its own signing profile as well as the usual service privileges; `com.apple.private.xpc.service-configure` alone was refused with launchd status 144 on iOS 27. Linking IcliKit does not add entitlements to the host.
+
 ## The IcliSystem product
 
 `IcliSystem` is the read-only system-state half of the library, split out for hosts that want a system report without the rest: a crash reporter attaching device state to a report, for example. `IcliKit` depends on it and re-exports it, so a consumer that links `IcliKit` keeps the same API and needs no second import.

@@ -74,6 +74,8 @@
 	<true/>
 	<key>com.apple.private.xpc.service-configure</key>
 	<true/>
+	<key>com.apple.private.xpc.service-attach</key>
+	<true/>
 	<key>com.apple.backboard.client</key>
 	<true/>
 	<key>com.apple.springboard.orientationlock</key>

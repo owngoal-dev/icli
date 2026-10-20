@@ -28,18 +28,22 @@ Version: 1.0
 Architecture: $ARCH
 Maintainer: OwnGoal
 Section: Development
-Depends: firmware (>= 15.0)
+Depends: firmware (>= 15.0), com.icli.icli (>= 0.8.5)
 Description: Test-only fixture for icli acceptance
 CONTROL
 # RootHide runs maintainer scripts inside the jbroot, so its paths drop the prefix.
 cat > "$stage/DEBIAN/postinst" <<POSTINST
 #!$PREFIX/bin/sh
 set -e
-$PREFIX/usr/bin/uicache -p $PREFIX/Applications/IcliTestHost.app
+root=\$($PREFIX/usr/bin/icli env --human | sed -n 's/^jbroot: //p')
+test -n "\$root"
+$PREFIX/usr/bin/icli app register "\$root/Applications/IcliTestHost.app"
 POSTINST
 cat > "$stage/DEBIAN/prerm" <<PRERM
 #!$PREFIX/bin/sh
-$PREFIX/usr/bin/uicache -u $PREFIX/Applications/IcliTestHost.app
+root=\$($PREFIX/usr/bin/icli env --human | sed -n 's/^jbroot: //p')
+test -n "\$root" || exit 1
+$PREFIX/usr/bin/icli app unregister "\$root/Applications/IcliTestHost.app" --force
 PRERM
 chmod 755 "$stage/DEBIAN/postinst" "$stage/DEBIAN/prerm"
 dpkg-deb --root-owner-group -b "$stage" ".build/icli-testhost_1.0_$ARCH.deb"
