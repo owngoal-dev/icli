@@ -53,6 +53,11 @@ bool icli_hid_key(uint16_t usage_page, uint16_t usage, bool down);
 bool icli_hid_text(const char *text);
 bool icli_hid_button(const char *name);
 bool icli_wake(void);
+#if TARGET_OS_TV
+/// Asks PineBoard to dismiss the screen saver; harmless when none is up.
+/// False when this system has no PineBoardServices to ask.
+bool icli_deactivate_screen_saver(void);
+#endif
 
 /// What the icli_pointer_ calls return.
 enum {

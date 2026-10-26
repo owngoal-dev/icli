@@ -1054,3 +1054,19 @@ bool icli_wake(void) {
     }
     return true;
 }
+
+#if TARGET_OS_TV
+// PineBoard's own request, which presses nothing: a Select press meant for
+// the screen saver lands on whatever is focused beneath it once the screen
+// saver has gone, and the frontmost report trails its going by a moment.
+bool icli_deactivate_screen_saver(void) {
+    dlopen("/System/Library/PrivateFrameworks/PineBoardServices.framework/PineBoardServices", RTLD_NOW);
+    Class serviceClass = NSClassFromString(@"PBSSystemService");
+    SEL shared = NSSelectorFromString(@"sharedInstance");
+    SEL deactivate = NSSelectorFromString(@"deactivateScreenSaver");
+    id service = [serviceClass respondsToSelector:shared] ? ((id (*)(id, SEL))objc_msgSend)(serviceClass, shared) : nil;
+    if (![service respondsToSelector:deactivate]) return false;
+    ((void (*)(id, SEL))objc_msgSend)(service, deactivate);
+    return true;
+}
+#endif

@@ -135,17 +135,24 @@ public func pressButton(_ name: String) throws -> [String: Any] {
 #if os(tvOS)
 /// tvOS has no lock screen: what stands between a remote and the screen it
 /// would work is the screen saver, which waking the display leaves in place.
-/// One Select press dismisses it, as on the Siri Remote, without choosing what
-/// is focused beneath; Menu would go back in an app.
+/// PineBoard dismisses it on request, which presses nothing; a screen saver
+/// still coming up ignores the request, and only then does this press Select
+/// once, as on the Siri Remote. The request takes effect within half a
+/// second, so Select is pressed only on a screen saver still showing, never on
+/// what lies beneath one that is already going.
 private func dismissScreenSaver() throws {
-    func showing() -> Bool { frontmostApp()["bundle_id"] as? String == "com.apple.IdleScreen" }
-    guard showing() else { return }
-    _ = try hidPress(page: 0x0C, usage: 0x41)
-    let deadline = Date().addingTimeInterval(3)
-    while showing() {
-        guard Date() < deadline else { throw IcliError.failed("wake failed: the screen saver stayed on screen") }
-        Thread.sleep(forTimeInterval: 0.1)
+    func gone(within seconds: Double) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while frontmostApp()["bundle_id"] as? String == "com.apple.IdleScreen" {
+            guard Date() < deadline else { return false }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return true
     }
+    if gone(within: 0) { return }
+    if icli_deactivate_screen_saver(), gone(within: 1.5) { return }
+    _ = try hidPress(page: 0x0C, usage: 0x41)
+    guard gone(within: 5) else { throw IcliError.failed("wake failed: the screen saver stayed on screen") }
 }
 #endif
 
