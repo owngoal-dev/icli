@@ -79,10 +79,17 @@ let probeAPIs: [Any] = [
     probeAvailable as () -> Bool,
     evaluateProbe as (String, ProbeAPIHandler?) -> ProbeResult,
     defaultProbeAPI as (String, [String: Any]) throws -> Any,
+    runProbeREPL as (ProbeAPIHandler?) -> Int32,
+    ProbeAPIError.init(code:message:) as (String, String) -> ProbeAPIError,
 ]
-precondition(probeAPIs.count == 3)
+precondition(probeAPIs.count == 5)
 let probe = evaluateProbe("api('env.info').spawns_processes")
 precondition(probe.ok && probe.result == "false" && probe.error == nil)
+// A host's handler answers api(), and its own error code reaches the script.
+let hosted = evaluateProbe("try { api('host.fail', {}) } catch (error) { String(error) }") { method, _ in
+    throw ProbeAPIError(code: "host_code", message: "\(method) refused")
+}
+precondition(hosted.ok && hosted.result == "Error: host_code: host.fail refused")
 let report: [String: Any] = [
     "library": "IcliKit",
     "comparison": comparison,
@@ -95,5 +102,6 @@ let report: [String: Any] = [
     "time_zone": zone,
     "probe_available": probeAvailable(),
     "probe_result": probe.result ?? "",
+    "probe_host_error": hosted.result ?? "",
 ]
 try print(String(decoding: JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))

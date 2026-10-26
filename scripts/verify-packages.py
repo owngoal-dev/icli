@@ -10,30 +10,44 @@ import subprocess
 import tarfile
 
 root = Path(__file__).resolve().parents[1]
-binary = root / '.build/icli'
 version = plistlib.loads((root / 'Resources/Info.plist').read_bytes())['CFBundleShortVersionString']
-digest = hashlib.sha256(binary.read_bytes()).hexdigest()
-entitlements = plistlib.loads(subprocess.check_output(['ldid', '-e', str(binary)]))
-assert entitlements == plistlib.loads((root / 'Resources/icli.entitlements').read_bytes())
-assert subprocess.check_output(['lipo', '-archs', str(binary)], text=True).strip() == 'arm64'
-build = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(binary)], text=True)
-# The CLI, the package and the DEB's firmware dependency share one floor.
-# The SDK is the one it was built with: a lower stamp sends newer systems
-# down their old-SDK compatibility paths.
-sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-version'], text=True).strip()
-fields = [line.split() for line in build.splitlines()]
-assert ['platform', 'IOS'] in fields and ['minos', '15.0'] in fields and ['sdk', sdk] in fields, build
-loads = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
-for load in loads:
-    name = load.strip().split(' (')[0]
-    assert name.startswith(('/System/Library/', '/usr/lib/')), name
-    assert 'libarchive' not in name, 'libarchive must be statically linked'
-report = {'version': version, 'binary_sha256': digest, 'architecture': 'arm64',
-          'minimum_ios': '15.0', 'system_loads': loads, 'packages': []}
 verifier = runpy.run_path(str(root / 'scripts/verify-binary.py'))
-report.update(verifier['verify_no_process_imports'](binary))
-report.update(verifier['verify_floor_imports'](binary))
-for kind, arch, prefix in [('rootless', 'iphoneos-arm64', 'var/jb'), ('roothide', 'iphoneos-arm64e', '')]:
+
+
+def verify_binary(binary, platform, sdk_name, extra_frameworks=()):
+    """The checks every shipped executable passes, whichever platform it is for."""
+    entitlements = plistlib.loads(subprocess.check_output(['ldid', '-e', str(binary)]))
+    assert entitlements == plistlib.loads((root / 'Resources/icli.entitlements').read_bytes())
+    assert subprocess.check_output(['lipo', '-archs', str(binary)], text=True).strip() == 'arm64'
+    build = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(binary)], text=True)
+    # The CLI, the package and the DEB's firmware dependency share one floor.
+    # The SDK is the one it was built with: a lower stamp sends newer systems
+    # down their old-SDK compatibility paths.
+    sdk = subprocess.check_output(['xcrun', '--sdk', sdk_name, '--show-sdk-version'], text=True).strip()
+    fields = [line.split() for line in build.splitlines()]
+    assert ['platform', platform] in fields and ['minos', '15.0'] in fields and ['sdk', sdk] in fields, build
+    loads = subprocess.check_output(['otool', '-L', str(binary)], text=True).splitlines()[1:]
+    for load in loads:
+        name = load.strip().split(' (')[0]
+        assert name.startswith(('/System/Library/', '/usr/lib/')), name
+        assert 'libarchive' not in name, 'libarchive must be statically linked'
+    verifier['verify_javascriptcore_not_linked'](binary)
+    report = {'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(), 'architecture': 'arm64',
+              'system_loads': loads, 'javascriptcore_linked': False}
+    report.update(verifier['verify_no_process_imports'](binary))
+    report.update(verifier['verify_floor_imports'](binary, sdk_name, extra_frameworks))
+    return report
+
+
+ios = verify_binary(root / '.build/icli', 'IOS', 'iphoneos')
+report = {'version': version, **ios, 'minimum_ios': '15.0', 'packages': []}
+# tvOS is its own executable: the same sources built against the AppleTVOS
+# SDK, with IOKit's headers from the stub the tvOS build links against.
+tvos = verify_binary(root / '.build/icli-tvos', 'TVOS', 'appletvos', [root / '.build/tvos-stubs'])
+report['tvos'] = {'binary': 'icli-tvos', **tvos, 'minimum_tvos': '15.0'}
+for kind, arch, prefix, digest in [('rootless', 'iphoneos-arm64', 'var/jb', ios['binary_sha256']),
+                                   ('roothide', 'iphoneos-arm64e', '', ios['binary_sha256']),
+                                   ('tvos', 'appletvos-arm64', '', tvos['binary_sha256'])]:
     package = root / f'.build/com.icli.icli_{version}_{arch}.deb'
     folder = root / '.build/package-check' / kind / prefix
     cli = folder / 'usr/bin/icli'
@@ -51,7 +65,8 @@ for kind, arch, prefix in [('rootless', 'iphoneos-arm64', 'var/jb'), ('roothide'
         assert len(executables) == 1 and executables[0].name.endswith('/icli'), executables
     report['packages'].append({'layout': kind, 'file': package.name,
                                'sha256': hashlib.sha256(package.read_bytes()).hexdigest(),
-                               'depends': dependencies,
+                               'binary_sha256': digest, 'depends': dependencies,
                                'single_binary': True, 'root_owned': True})
 (root / '.build/package-verification.json').write_text(json.dumps(report, indent=2) + '\n')
-print('PASS package architecture, metadata, entitlements, system dependencies, ownership, CLI-only contents and no process-launch imports')
+print('PASS iOS and tvOS package architecture, metadata, entitlements, system dependencies, ownership, '
+      'CLI-only contents, JavaScriptCore loaded at runtime and no process-launch imports')

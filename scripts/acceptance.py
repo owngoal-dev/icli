@@ -1652,8 +1652,10 @@ def account_password(d):
         # The new password must log in, and sudo must take it, before anything else runs.
         check = login(temporary, f'sudo -S -p "" sh -c "id -u; grep ^mobile: {passwd} | cut -d: -f2"', input=temporary + '\n')
         assert check.returncode == 0 and check.stdout.splitlines()[0] == '0', 'new password rejected by sshd or sudo: ' + check.stderr
+        # sshd and sudo just checked the digest with the system's own crypt;
+        # scripts/test-sha512-crypt.sh checks it against known answers.
         stored = check.stdout.splitlines()[1]
-        assert stored != before and stored == subprocess.run(['openssl', 'passwd', '-6', '-salt', changed['salt'], '-stdin'], input=temporary + '\n', capture_output=True, text=True, check=True).stdout.strip(), 'stored hash does not match sha512-crypt'
+        assert stored != before and re.fullmatch(r'\$6\$[./0-9A-Za-z]{16}\$[./0-9A-Za-z]{86}', stored) and stored.split('$')[2] == changed['salt'], 'stored hash is not the sha512-crypt set-password reported'
         assert temporary not in json.dumps(d.trace), 'password leaked into the trace'
     finally:
         # The second attempt covers a change that never took, for a mobile login.

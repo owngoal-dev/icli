@@ -23,7 +23,23 @@ public struct ProbeResult {
 /// returns a JSON-serializable value, or throws to make api() throw in the
 /// script. `defaultProbeAPI` is the in-process mapping used when a caller
 /// passes none.
+///
+/// api() throws `code: message` in the script. An `IcliError` gives its own
+/// code and message, a `ProbeAPIError` the host's, and any other error
+/// `failed` with its localized description.
 public typealias ProbeAPIHandler = (String, [String: Any]) throws -> Any
+
+/// A handler's failure with the host's own error code, for a host whose
+/// scripts tell its failures apart by code.
+public struct ProbeAPIError: Error {
+    public let code: String
+    public let message: String
+
+    public init(code: String, message: String) {
+        self.code = code
+        self.message = message
+    }
+}
 
 /// Whether this platform can run a probe. False only where JavaScriptCore is
 /// absent (icli targets iOS and tvOS, which both ship it); `evaluateProbe`
@@ -90,25 +106,31 @@ public func defaultProbeAPI(_ method: String, _ params: [String: Any]) throws ->
     }
 }
 
-/// Install the default api() handler and run the interactive REPL inline,
-/// returning its exit status. The REPL reads this process's stdin and writes
-/// its stdout as output happens; `evaluateProbe` is the non-interactive form
-/// and the one a library host uses. Drives `icli probe repl`.
+/// Run the interactive REPL inline, returning its exit status. The REPL reads
+/// this process's stdin and writes its stdout as output happens;
+/// `evaluateProbe` is the non-interactive form. Drives `icli probe repl`, and
+/// a host's interactive shell (vphoned's `/v1/shell` session).
+///
+/// `api` answers api() for every statement until the REPL returns, as it does
+/// for one `evaluateProbe` call; nil means `defaultProbeAPI`. The REPL shares
+/// the one context, so do not call `evaluateProbe` while it runs.
 ///
 /// The REPL catches SIGINT only while it reads a line, where ^C abandons a
 /// half-finished statement, and puts the caller's own disposition back before
 /// each evaluation: nothing inline can stop a runaway statement, so ^C then
 /// does whatever SIGINT does to this process, which by default ends it.
-public func runProbeREPL() -> Int32 {
+public func runProbeREPL(api: ProbeAPIHandler? = nil) -> Int32 {
     icli_probe_set_api_handler(probeAPITrampoline)
+    currentProbeAPI = api
+    defer { currentProbeAPI = nil }
     return icli_probe_repl()
 }
 
 // MARK: - The api() Trampoline
 
-/// The handler a caller passed `evaluateProbe`, for the duration of that one
-/// call; nil means `defaultProbeAPI`. A global because the one shared context
-/// is single-threaded by design.
+/// The handler a caller passed `evaluateProbe` or `runProbeREPL`, while that
+/// call runs; nil means `defaultProbeAPI`. A global because the one shared
+/// context is single-threaded by design.
 private var currentProbeAPI: ProbeAPIHandler?
 
 /// Decode api()'s JSON request, run the current handler, and encode its reply
@@ -125,6 +147,8 @@ private func probeAPITrampoline(_ request: UnsafePointer<CChar>?) -> UnsafeMutab
     do {
         return probeReply(["result": jsonSafe(try (currentProbeAPI ?? defaultProbeAPI)(method, params))])
     } catch let error as IcliError {
+        return probeReply(["error": ["code": error.code, "message": error.message]])
+    } catch let error as ProbeAPIError {
         return probeReply(["error": ["code": error.code, "message": error.message]])
     } catch {
         return probeReply(["error": ["code": "failed", "message": error.localizedDescription]])

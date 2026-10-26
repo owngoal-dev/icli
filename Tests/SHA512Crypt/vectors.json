@@ -1,0 +1,50 @@
+[
+  {
+    "source": "Drepper, Unix crypt using SHA-256 and SHA-512, https://www.akkadia.org/drepper/SHA-crypt.txt (tests2)",
+    "key": "Hello world!",
+    "salt": "saltstring",
+    "hash": "$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1"
+  },
+  {
+    "source": "Drepper, Unix crypt using SHA-256 and SHA-512, https://www.akkadia.org/drepper/SHA-crypt.txt (tests2); published with rounds=5000$, which icli never writes, so the digest is the same and the prefix is not",
+    "key": "This is just a test",
+    "salt": "toolongsaltstring",
+    "hash": "$6$toolongsaltstrin$lQ8jolhgVRVhY4b5pZKaysCLi0QBxGoNeKQzQ3glMhwllF7oGDZxUhx1yxdYcz/e1JSbq3y6JMxxl8audkUEm0"
+  },
+  {
+    "source": "OpenSSL 3.6.5 `openssl passwd -6 -salt <salt> -stdin`, run once when the fixture was written",
+    "key": "a",
+    "salt": "s",
+    "hash": "$6$s$OLVXgZEq4nUOMQHgvkWpsQlLxqSDvtVeUHgTshlKB5dG54bRawyIsWYkx6goXnC06BU0/38CkjhM1OkKDZRFK0"
+  },
+  {
+    "source": "OpenSSL 3.6.5 `openssl passwd -6 -salt <salt> -stdin`, run once when the fixture was written",
+    "key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "salt": "exactly64bytekey",
+    "hash": "$6$exactly64bytekey$V5yZP2h9CIB.NCWR.poGNkue8Pdo8YltHQSrqUHCxeDwn6NNjGTixW6NYg7SjV6eyvjEUK5Lq9k4nhckYBNPJ/"
+  },
+  {
+    "source": "OpenSSL 3.6.5 `openssl passwd -6 -salt <salt> -stdin`, run once when the fixture was written",
+    "key": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    "salt": "sixtyfivebytes",
+    "hash": "$6$sixtyfivebytes$kuI9ZQQ/l5j/7yzV88L3jcUHuChHAEpsvVrAj3Y5CaYJn70uzqjeuQy05zxttr9bZ7VZNt9lkAWJXf/juUaEa1"
+  },
+  {
+    "source": "OpenSSL 3.6.5 `openssl passwd -6 -salt <salt> -stdin`, run once when the fixture was written",
+    "key": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "salt": "./0189AZaz",
+    "hash": "$6$./0189AZaz$faGGVUv0KrttbtwZ7o3KcXDX1boMMq2rV0fJcQCLxpY.Zj6GLZoEl3dgM3JvtMZewbyReN/DSPludMH4WXykd1"
+  },
+  {
+    "source": "OpenSSL 3.6.5 `openssl passwd -6 -salt <salt> -stdin`, run once when the fixture was written",
+    "key": "pässwörd ✓",
+    "salt": "utf8key",
+    "hash": "$6$utf8key$I8Usj4D3/ZxACbUuvzNhyScUc6vqsHJGlAkR7aLRMt.vR10l9K2EfEYxi7vfP.uFqT8nBqK6FQEwiY2jq3./n1"
+  },
+  {
+    "source": "OpenSSL 3.6.5 `openssl passwd -6 -salt <salt> -stdin`, run once when the fixture was written",
+    "key": "alpine",
+    "salt": "Procursus.Salt",
+    "hash": "$6$Procursus.Salt$EB6SIFGTNQKPSGRdd8daUZjZFHHDtVWbZKNH39xqaRSBksjB3Nq9V8IYXOsCJxbiJ0JCSmG/JoZypGBx80p7p/"
+  }
+]

@@ -2,7 +2,7 @@
 
 Control your iPhone from the command line. Tap and swipe, enter text, inspect accessibility elements, capture screenshots, and read on-screen text, with JSON output for scripts and automation.
 
-icli runs on the device itself. Use it in a device terminal or over SSH from your Mac. It requires an arm64 device running iOS 15 or later on custom firmware with a compatible bootstrap.
+icli runs on the device itself. Use it in a device terminal or over SSH from your Mac. It requires an arm64 device running iOS 15 or later on custom firmware with a compatible bootstrap. A separate build runs on tvOS 15 or later; see [tvOS](#tvos).
 
 icli is a single, self-contained executable. It performs its work in-process using iOS frameworks and a statically linked archive library, without spawning subprocesses or invoking bootstrap tools. No additional runtime packages are required. `icli env` reports the detected environment, `spawns_processes: false`, and an empty `external_tools_used` object.
 
@@ -16,8 +16,9 @@ Download a DEB from [GitHub Releases](https://github.com/owngoal-dev/icli/releas
 | --- | --- | --- |
 | Rootless (`/var/jb`) | `iphoneos-arm64` | Tested on the project's rootless vphone |
 | RootHide | `iphoneos-arm64e` | Experimental; service inspection verified on iOS 18.5, full acceptance pending |
+| tvOS, rootful (`/usr/bin`, Procursus `appletvos-arm64`) | `appletvos-arm64` | Package checks only; the same executable passed the tvOS acceptance on a tvOS 26.6 vphone |
 
-Both packages contain the same arm64 executable. The architecture label identifies the bootstrap layout. iOS 15 is the minimum deployment target; the [acceptance report](docs/rootless-acceptance.md) records the environment actually tested.
+Both iOS packages contain the same arm64 executable. The architecture label identifies the bootstrap layout. The tvOS package holds the tvOS executable, which each release also publishes on its own as `icli-tvos` for a tvOS system without a bootstrap or `dpkg`. iOS 15 is the minimum deployment target; the [acceptance report](docs/rootless-acceptance.md) records the environment actually tested.
 
 For the initial DEB installation below, use the bootstrap's `dpkg` and an account with permission to install packages. To connect over USB, you also need an SSH server on the device and `iproxy` on your Mac. These are installation and connection tools; icli does not invoke them.
 
@@ -60,6 +61,18 @@ The DEB installs a command-line executable and license notices. The executable i
 - **System state**: Dump every service with launchd's own description, and read the kernel's jetsam bands, jetsam property lists, and memory pressure levels.
 
 OCR uses Apple's Vision framework. If system text recognition is unavailable, the command returns an `unavailable` error; that includes a process with no Metal device, such as one started over SSH on iOS 15, where Vision would otherwise crash. A successful scan with no recognized text returns an empty result.
+
+## tvOS
+
+`make tvos` builds the same sources against the AppleTVOS SDK into `.build/icli-tvos`, a separate executable with a tvOS 15 floor, signed with the same entitlements. It keeps every iOS guarantee: no process launches, no bootstrap tools, JavaScriptCore loaded at runtime. Commands behave as on iOS except where tvOS has no counterpart:
+
+- **No touch screen or pointer.** `screen tap`, `double-tap`, `long-press`, `swipe`, `drag`, `touch`, `touch-sequence`, `click` and `scroll`, and `ui tap`, return `unavailable`. Move focus and select with the Siri Remote's consumer-page usages: `input hid 12 66`, `67`, `68` and `69` for up, down, left and right, `input hid 12 65` for Select and `input hid 12 70` for Menu. `button home` is the remote's TV button. `input type` types into the focused field, including the system's full-screen keyboard.
+- **No clipboard, interface rotation or per-app cellular policy.** The `clipboard` commands, `rotation set`, `rotation lock set` and `app network` return `unavailable`. Battery reads report level -1, and brightness reads -1 when the system has no value.
+- **PineBoard, not SpringBoard.** Frontmost-app detection, app launch and `sb respring` work with PineBoard. tvOS marks its home screen, Setup Assistant and screen saver as hidden apps, so `app frontmost` reports the only hidden focal app when no other app is in front, and `com.apple.IdleScreen` while the screen saver runs. `button wake` also dismisses the screen saver with one Select press. A restart waits for FrontBoard and then stops PineBoard through launchd, which tvOS needs, about five seconds longer than on iOS.
+- **App registration.** `app register`, `app refresh` and `sb uicache` register bootstrap apps as user apps: PineBoard disables a system app that tvOS did not provision. URLs open through FrontBoard, because LaunchServices' own open route is unavailable on tvOS.
+- **Setup Assistant.** PineBoard launches no app while Setup Assistant runs, so finish it before launching apps or opening URLs.
+
+On a tvOS system without a bootstrap, such as a vphone guest, push `icli-tvos` to the device and run it as it is; there is no shell or `dpkg` to install the DEB.
 
 ## Command Line
 
@@ -253,6 +266,7 @@ cd icli
 make all CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
 make deb-rootless
 make deb-roothide
+make tvos
 ./scripts/check-packages.sh
 ```
 
@@ -263,13 +277,15 @@ Swift Package Manager resolves Argument Parser and the static [ArchiveKit packag
 | Signed executable | `.build/icli` |
 | Rootless package | `.build/com.icli.icli_<version>_iphoneos-arm64.deb` |
 | Experimental RootHide package | `.build/com.icli.icli_<version>_iphoneos-arm64e.deb` |
+| Signed tvOS executable | `.build/icli-tvos` |
+| tvOS package | `.build/com.icli.icli_<version>_appletvos-arm64.deb` |
 | Package verification report | `.build/package-verification.json` |
 
-The version comes from `Resources/Info.plist`. `make deb` builds the rootless package. Every build checks for forbidden process-launch imports. Package checks repeat that check and verify architecture, deployment target, entitlements, system-only linked libraries, a firmware-only DEB dependency, ownership, and identical executable contents across the two layouts. Import checks detect direct linked calls; runtime acceptance also checks the environment report.
+The version comes from `Resources/Info.plist`. `make deb` builds the rootless package. Every build checks for forbidden process-launch imports. Package checks repeat that check and verify architecture, deployment target, entitlements, system-only linked libraries, a firmware-only DEB dependency, ownership, and identical executable contents across the two iOS layouts and in the tvOS package. `check-packages.sh` needs both `make all` and `make tvos` first. Import checks detect direct linked calls; runtime acceptance also checks the environment report.
 
-The **DEB Release** GitHub Actions workflow builds both layouts and publishes DEBs, `SHA256SUMS`, and `package-verification.json`. It runs for version tags or can be dispatched with an existing tag. CI artifacts have their own hashes and package checks; device acceptance applies to the specific binary recorded in its report. Repository changes use ordinary incremental commits; published version tags remain fixed.
+The **DEB Release** GitHub Actions workflow builds both iOS layouts and the tvOS package and publishes the DEBs, `icli-tvos`, `SHA256SUMS`, and `package-verification.json`. It runs for version tags or can be dispatched with an existing tag. CI artifacts have their own hashes and package checks; device acceptance applies to the specific binary recorded in its report. Repository changes use ordinary incremental commits; published version tags remain fixed.
 
-`make` runs the SwiftPM iOS build, copies the executable to `.build/icli`, and signs it with `ldid` using the repository's entitlements. It does not require an Apple development certificate. To compile without signing, use `swift build -c release --triple arm64-apple-ios15.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" --scratch-path .build/swiftpm --product icli --force-resolved-versions`.
+`make` runs the SwiftPM iOS build, copies the executable to `.build/icli`, and signs it with `ldid` using the repository's entitlements. `make tvos` does the same for tvOS; the AppleTVOS SDK has no IOKit.framework, so `scripts/tvos-iokit-stub.sh` first borrows the iPhoneOS SDK's IOKit headers and stub, retargeted to tvOS, into `.build/tvos-stubs`. It does not require an Apple development certificate. To compile without signing, use `swift build -c release --triple arm64-apple-ios15.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" --scratch-path .build/swiftpm --product icli --force-resolved-versions`.
 
 ## Testing and Compatibility
 
@@ -313,8 +329,20 @@ The runner defaults to `mobile@127.0.0.1:2333`. Override `ICLI_SSH_HOST`, `ICLI_
 
 Tests interact with apps, change device settings, and install or remove fixtures. Use an unlocked device prepared for testing. `--install` installs icli, not TestHost or its fixtures. Full acceptance runs userspace and full reboot tests last; reboots clear `/tmp` on the test device, so upload fixtures again before another run. `--skip-reboot` produces a partial run that cannot qualify for release assembly. Reports are saved under `.build/`, which is excluded from Git.
 
+### tvOS acceptance
+
+`scripts/tvos-acceptance.py` runs on the Mac that hosts a tvOS vphone guest and drives it through the guest's control socket: it pushes `.build/icli-tvos` and the fixtures from `scripts/build-tvos-fixtures.sh` (a tvOS TestHost app, the same app as an IPA under another identifier, and a two-version kickstart daemon), runs icli as root, and reads TestHost's accessibility labels as its oracle. Finish Setup Assistant on the guest first.
+
+```sh
+make tvos
+./scripts/build-tvos-fixtures.sh
+python3 scripts/tvos-acceptance.py --vm <name> --respring
+```
+
+It covers read-only commands, the `unavailable` answers, the launchd life cycle with kickstart replacement, registration and launch, container installation, files, preferences and Keychain, device controls, the screen saver, `icli probe` and a PineBoard restart, and writes `.build/tvos-acceptance.json`. `--case <name>` runs one case.
+
 ## License
 
 icli is available under the [MIT License](LICENSE).
 
-Third-party dependency licenses are listed in [Third-Party Notices](THIRD_PARTY_NOTICES.md). The notices and bundled dependency license texts are included in both DEB packages.
+Third-party dependency licenses are listed in [Third-Party Notices](THIRD_PARTY_NOTICES.md). The notices and bundled dependency license texts are included in every DEB package.

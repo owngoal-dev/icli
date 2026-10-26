@@ -77,6 +77,7 @@ Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, bu
 - **Coordinates** are UI points in the orientation shown on screen. The origin is the top-left corner as the user sees it. `screen info` gives the current `width`, `height` and `orientation`; an iPad in landscape reports a landscape width. Frames from `ui tree` and boxes from `screen ocr` use the same space, so you can pass the centre of a frame straight to `screen tap`.
 - **Paths are physical device paths.** On RootHide, the SSH shell, `scp` and bootstrap tools treat the bootstrap root as `/` and reach the real filesystem under `/rootfs`. A file that icli writes to `/tmp/a.jpg` is `/rootfs/tmp/a.jpg` in that shell. A file you `scp` to `/tmp/x.deb` is `<jbroot>/tmp/x.deb` for icli; `icli env info` reports `jbroot`. On rootless, both views agree and the bootstrap lives under `/var/jb`.
 - **Not a shell**: icli never spawns processes. There is no command to run arbitrary programs. Use the SSH shell for that.
+- **On an Apple TV** (the `icli-tvos` build): there is no touch screen, pointer or clipboard. `screen tap`/`swipe`/`touch`/`click`, `ui tap`, `clipboard`, `rotation set` and `app network` return `unavailable`. Move focus with `icli input hid 12 66`/`67`/`68`/`69` (up, down, left, right), select with `icli input hid 12 65`, and go back with `icli input hid 12 70`. `button home` is the TV button and `button wake` dismisses the screen saver. Finish Setup Assistant before launching apps.
 
 ## Workflows
 

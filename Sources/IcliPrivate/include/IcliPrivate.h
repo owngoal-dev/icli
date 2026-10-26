@@ -151,7 +151,6 @@ bool icli_register_app_dictionary(const char *plist_xml);
 
 bool icli_springboard_relaunch(void);
 
-char *icli_sha512_crypt(const char *key, const char *salt);
 char *icli_account_set_password_json(const char *etc_directory, const char *user, const char *password);
 
 bool icli_platform_binary(void);

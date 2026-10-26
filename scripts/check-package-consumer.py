@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a separate iOS consumer against a tagged snapshot of this package."""
+"""Build separate iOS and tvOS consumers against a tagged snapshot of this package."""
 import argparse
 import hashlib
 import json
@@ -42,11 +42,18 @@ manifest = consumer / 'Package.swift'
 manifest.write_text(manifest.read_text().replace('.package(name: "icli", path: "../..")',
                     f'.package(url: "{snapshot.as_uri()}", exact: "{version}")'))
 assert snapshot.as_uri() in manifest.read_text(), 'the consumer manifest no longer names the path dependency'
-sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
+sdks = {name: subprocess.check_output(['xcrun', '--sdk', name, '--show-sdk-path'], text=True).strip()
+        for name in ['iphoneos', 'appletvos']}
+# The AppleTVOS SDK has no IOKit.framework, which IcliKit links; a tvOS host
+# builds against the same stub the CLI's tvOS build makes. IcliSystem and
+# IcliLaunch do not use IOKit and need nothing extra.
+stubs = work / 'tvos-stubs'
+subprocess.run([str(root / 'scripts/tvos-iokit-stub.sh'), str(stubs)], check=True)
+stub_flags = ['-Xcc', f'-F{stubs}', '-Xswiftc', f'-F{stubs}', '-Xlinker', f'-F{stubs}']
 
-def build(product, triple):
+def build(product, triple, sdk='iphoneos', flags=()):
     command = ['swift', 'build', '--package-path', str(consumer), '--scratch-path', str(work / 'build'),
-               '-c', 'release', '--triple', triple, '--sdk', sdk, '--product', product]
+               '-c', 'release', '--triple', triple, '--sdk', sdks[sdk], '--product', product, *flags]
     subprocess.run(command, check=True)
     return Path(subprocess.check_output(command + ['--show-bin-path'], text=True).strip()) / product
 
@@ -57,9 +64,16 @@ system_output = build('IcliSystemConsumer', 'arm64-apple-ios15.0')
 # The launch product at the same floor, and without the heavy half: an
 # executable that only brings an app forward must not link UIKit or ArchiveKit.
 launch_output = build('IcliLaunchConsumer', 'arm64-apple-ios15.0')
-launch_links = subprocess.check_output(['otool', '-L', str(launch_output)], text=True)
-for framework in ['UIKit', 'IOKit', 'AVFoundation', 'libarchive']:
-    assert framework not in launch_links, 'IcliLaunch consumer links ' + framework
+# The same three products for tvOS at its own 15 floor.
+tvos_outputs = {
+    'IcliPackageConsumer': build('IcliPackageConsumer', 'arm64-apple-tvos15.0', 'appletvos', stub_flags),
+    'IcliSystemConsumer': build('IcliSystemConsumer', 'arm64-apple-tvos15.0', 'appletvos'),
+    'IcliLaunchConsumer': build('IcliLaunchConsumer', 'arm64-apple-tvos15.0', 'appletvos'),
+}
+for launch in [launch_output, tvos_outputs['IcliLaunchConsumer']]:
+    launch_links = subprocess.check_output(['otool', '-L', str(launch)], text=True)
+    for framework in ['UIKit', 'IOKit', 'AVFoundation', 'libarchive']:
+        assert framework not in launch_links, 'IcliLaunch consumer links ' + framework
 sources = [root / 'Package.swift'] + sorted((root / 'Sources').rglob('*')) + sorted((root / 'Resources').rglob('*'))
 source_hashes = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
                  for path in sources if path.is_file()}
@@ -77,12 +91,24 @@ shutil.copy2(launch_output, launch_binary)
 verifier = runpy.run_path(str(root / 'scripts/verify-binary.py'))
 floor_imports = {path.name: verifier['verify_floor_imports'](path) for path in [binary, system_binary, launch_binary]}
 verifier['verify_javascriptcore_not_linked'](binary)
+tvos_binaries = {}
+for product, output in tvos_outputs.items():
+    tvos_binaries[product] = work / 'tvos' / product
+    tvos_binaries[product].parent.mkdir(exist_ok=True)
+    shutil.copy2(output, tvos_binaries[product])
+    build_version = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(output)], text=True)
+    fields = [line.split() for line in build_version.splitlines()]
+    assert ['platform', 'TVOS'] in fields and ['minos', '15.0'] in fields, build_version
+tvos_floor_imports = {name: verifier['verify_floor_imports'](path, 'appletvos', [stubs]) for name, path in tvos_binaries.items()}
+verifier['verify_javascriptcore_not_linked'](tvos_binaries['IcliPackageConsumer'])
 report = {'version': version, 'product': 'IcliKit', 'dependency_kind': 'source-control exact version',
           'unsigned_consumer_binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
           'system_product': 'IcliSystem', 'system_minimum_ios': '15.0',
           'unsigned_system_consumer_binary_sha256': hashlib.sha256(system_binary.read_bytes()).hexdigest(),
           'launch_product': 'IcliLaunch', 'launch_minimum_ios': '15.0',
           'unsigned_launch_consumer_binary_sha256': hashlib.sha256(launch_binary.read_bytes()).hexdigest(),
+          'tvos_minimum': '15.0',
+          'unsigned_tvos_consumer_binary_sha256': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in tvos_binaries.items()},
           'source_sha256': source_hashes,
           'manifest_sha256': hashlib.sha256((root / 'Package.swift').read_bytes()).hexdigest()}
 if args.device:
@@ -111,7 +137,9 @@ if args.device:
     report['application_identifier'] = identifier
     report['device_result'] = json.loads(result.stdout)
 report['floor_imports'] = floor_imports
+report['tvos_floor_imports'] = tvos_floor_imports
 (root / '.build/package-consumer-verification.json').write_text(json.dumps(report, indent=2) + '\n')
 print('PASS external versioned Swift Package consumer:', binary)
 print('PASS iOS 15 IcliSystem consumer:', system_binary)
 print('PASS iOS 15 IcliLaunch consumer without UIKit or ArchiveKit:', launch_binary)
+print('PASS tvOS 15 IcliKit (with the IOKit stub), IcliSystem and IcliLaunch consumers:', work / 'tvos')
