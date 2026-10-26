@@ -214,7 +214,7 @@ swift build --triple arm64-apple-tvos15.0 --sdk "$(xcrun --sdk appletvos --show-
   -Xcc -F.build/tvos-stubs -Xswiftc -F.build/tvos-stubs -Xlinker -F.build/tvos-stubs
 ```
 
-On tvOS the same functions answer for tvOS: touch, pointer, clipboard, interface rotation and per-app network policy throw `IcliError.unavailable`; the frontmost app, launch and `respring()` work with PineBoard; registration lists bootstrap apps as user apps; and `pressButton("wake")` also dismisses the screen saver. The [README's tvOS section](../README.md#tvos) has the full list.
+On tvOS the same functions answer for tvOS: touch, pointer, clipboard, interface rotation and per-app network policy throw `IcliError.unavailable`; the frontmost app, launch and `respring()` work with PineBoard; registration lists bootstrap apps as user apps; and `pressButton("wake")` also dismisses the screen saver. The [tvOS guide](platforms/tvos.md) has the full list.
 
 ## Signing and entitlements
 

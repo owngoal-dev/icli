@@ -1,0 +1,11 @@
+# tvOS
+
+`make tvos` builds the same sources against the AppleTVOS SDK into `.build/icli-tvos`, a separate executable with a tvOS 15 floor, signed with the same entitlements. It keeps every iOS guarantee: no process launches, no bootstrap tools, JavaScriptCore loaded at runtime. Commands behave as on iOS except where tvOS has no counterpart:
+
+- **No touch screen or pointer.** `screen tap`, `double-tap`, `long-press`, `swipe`, `drag`, `touch`, `touch-sequence`, `click` and `scroll`, and `ui tap`, return `unavailable`. Move focus and select with the Siri Remote's consumer-page usages: `input hid 12 66`, `67`, `68` and `69` for up, down, left and right, `input hid 12 65` for Select and `input hid 12 70` for Menu. `button home` is the remote's TV button. `input type` types into the focused field, including the system's full-screen keyboard.
+- **No clipboard, interface rotation or per-app cellular policy.** The `clipboard` commands, `rotation set`, `rotation lock set` and `app network` return `unavailable`. Battery reads report level -1, and brightness reads -1 when the system has no value.
+- **PineBoard, not SpringBoard.** Frontmost-app detection, app launch and `sb respring` work with PineBoard. tvOS marks its home screen, Setup Assistant and screen saver as hidden apps, so `app frontmost` reports the only hidden focal app when no other app is in front, and `com.apple.IdleScreen` while the screen saver runs. `button wake` also dismisses the screen saver: it asks PineBoard first, and presses Select only on a screen saver still coming up, which ignores the request, so the press never selects what lies beneath. A restart waits for FrontBoard and then stops PineBoard through launchd, which tvOS needs, about five seconds longer than on iOS.
+- **App registration.** `app register`, `app refresh` and `sb uicache` register bootstrap apps as user apps: PineBoard disables a system app that tvOS did not provision. URLs open through FrontBoard, because LaunchServices' own open route is unavailable on tvOS.
+- **Setup Assistant.** PineBoard launches no app while Setup Assistant runs, so finish it before launching apps or opening URLs.
+
+On a tvOS system without a bootstrap, such as a vphone guest, push `icli-tvos` to the device and run it as it is; there is no shell or `dpkg` to install the DEB.

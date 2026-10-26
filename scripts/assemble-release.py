@@ -65,6 +65,8 @@ for source, destination in [
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
 shutil.copytree(root / 'Resources/Licenses', release / 'Resources/Licenses', dirs_exist_ok=True)
+for folder in ['install', 'platforms', 'usage', 'development']:
+    shutil.copytree(root / 'docs' / folder, release / 'docs' / folder, dirs_exist_ok=True)
 for package in packages['packages']:
     folder = {'rootless': release, 'roothide': release / 'experimental-roothide', 'tvos': release / 'tvos'}[package['layout']]
     folder.mkdir(exist_ok=True)
