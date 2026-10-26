@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>
+<key>application-identifier</key><string>dev.owngoal.icli.TVTestHost</string>
+<key>com.apple.security.application-groups</key><array><string>group.dev.owngoal.icli.tvtest</string></array>
+</dict></plist>

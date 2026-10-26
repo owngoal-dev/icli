@@ -74,8 +74,9 @@ launch_binary = work / 'IcliLaunchConsumer'
 shutil.copy2(launch_output, launch_binary)
 # The library shapes an app links, checked on their own: dead-stripping can
 # leave an import here that the CLI never reaches.
-verify_floor_imports = runpy.run_path(str(root / 'scripts/verify-binary.py'))['verify_floor_imports']
-floor_imports = {path.name: verify_floor_imports(path) for path in [binary, system_binary, launch_binary]}
+verifier = runpy.run_path(str(root / 'scripts/verify-binary.py'))
+floor_imports = {path.name: verifier['verify_floor_imports'](path) for path in [binary, system_binary, launch_binary]}
+verifier['verify_javascriptcore_not_linked'](binary)
 report = {'version': version, 'product': 'IcliKit', 'dependency_kind': 'source-control exact version',
           'unsigned_consumer_binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
           'system_product': 'IcliSystem', 'system_minimum_ios': '15.0',

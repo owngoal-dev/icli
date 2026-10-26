@@ -56,6 +56,7 @@ The DEB installs a command-line executable and license notices. The executable i
 - **Device controls**: Adjust brightness, volume, and rotation; use hardware button actions and the clipboard, including images; switch Low Power Mode; post Darwin notifications and read their state; read and enable Developer Mode; simulate a location; request userspace or full reboots; render boot logos.
 - **System**: Manage launchd services, local DEB packages and repository source files, compare Debian and BaseBin versions, set account passwords through stdin, control system app visibility, restart SpringBoard, capture packets, store test credentials in the `icli.test` Keychain access group, and read protected Keychain database metadata with filesystem permission.
 - **Preferences**: Read, write, and delete typed preference values like `defaults`, for mobile, root, or a plist path.
+- **Scripting**: Run a JavaScriptCore script in-process with `icli probe`: reach any framework class through an Objective-C reflection bridge, read and write files, and call icli's own capabilities through `api()`. Scripts run inline, so a host that needs isolation spawns `icli probe` as its own process.
 - **System state**: Dump every service with launchd's own description, and read the kernel's jetsam bands, jetsam property lists, and memory pressure levels.
 
 OCR uses Apple's Vision framework. If system text recognition is unavailable, the command returns an `unavailable` error; that includes a process with no Metal device, such as one started over SSH on iOS 15, where Vision would otherwise crash. A successful scan with no recognized text returns an empty result.
@@ -212,15 +213,33 @@ icli prefs delete example.domain Enabled
 
 A simulated location applies to every app and stays on after icli exits, until `location clear`. `notify post` posts a Darwin notification to every observer, optionally storing a `--state` value first; names that notifyd reserves, such as those under `com.apple.system.`, need root. `device devmode enable` asks the system to turn Developer Mode on after the next restart and does nothing when it is already on. `device timezone set` turns Set Automatically off and switches the system time zone; running apps follow at once, and `device timezone automatic on` hands it back to the system. `prefs` commands use mobile's preferences by default, including under `sudo`; `--user root`, `current` or `any` choose another set, and a `.plist` path works as a domain. Writes go through cfprefsd, so running apps see them.
 
+### Script the Device
+
+`icli probe` runs a JavaScriptCore script in the icli process. A script reaches any Objective-C class through a reflection bridge, reads and writes files, prints, and calls icli's own capabilities through `api()`.
+
+```sh
+icli probe -e "ObjC.use('NSProcessInfo').processInfo().processName()"
+icli probe -e "api('svc.list').count"
+echo "var m = ObjC.use('NSFileManager').defaultManager(); m.fileExistsAtPath_('/')" | icli probe -
+icli probe script.js
+icli probe repl
+```
+
+A class method, then an instance method on what it returns: `ObjC.use('NSProcessInfo')` (or `ObjC.classes.NSProcessInfo`) gives a class, and a selector becomes a method call with underscores for its colons (`stringWithUTF8String_`) or the selector written out (`obj['setValue:forKey:'](v, k)`); a leading underscore stays part of a private method's name (`_isDeallocating`). A struct, a non-null pointer or a block is refused with an error rather than passed, since a bad one would take icli down. A string, number, boolean or date comes back as a JavaScript value, and `NSNull` as `null`; anything else, collections included, comes back as a handle whose `$value` converts it, `$class` names its class and `$isClass` says whether it is one. `fs.ls/read/write/stat` use icli's own file access, `console.log`/`print` and `sleep(ms)` do output and waiting, and `api(method, params)` calls an icli capability in process (`env.info`, `device.info`, `screen.info`, `svc.list`, `svc.status`, `app.list`, `proc.list`); `params` is an object, encoded as `JSON.stringify` encodes it.
+
+`-e`, a file, or `-` (stdin) prints one JSON line `{ok, result | error, output}`: stdout carries only that line and everything the script printed is collected into `output`. A thrown script is an answer with `ok: false` and a nonzero exit, not a crash. `repl` (or no argument) opens an interactive shell whose output appears as it happens; `.help` lists what is available and `.exit` leaves. ^C abandons a half-finished statement; while a statement runs, ^C ends icli, since nothing inline could stop it otherwise.
+
+The script runs **inline**, in the icli process, with icli's memory, file access and entitlements. There is no `--detach`: a script that crashes or hangs takes icli down with it. A caller that needs to survive a bad script spawns `icli probe` as its own process and reads its JSON line. `proc.run` and `exit()` are deliberately not provided: `exit()` would end the caller, and running other programs belongs to the host that spawns `icli probe`, which adds it through its own `api()` handler. On a platform without JavaScriptCore the command answers `ok: false` with the error `This platform has no JavaScriptCore`; icli's binary gains no process-launch import, so `env info` stays `spawns_processes: false`.
+
 ### Output and Device State
 
-Commands return JSON on standard output by default. Add `--human` for interactive reading. Runtime failures return an `error` code and a `message` and exit nonzero. Help, version output, and argument errors are handled separately by the argument parser.
+Commands return JSON on standard output by default. Add `--human` for interactive reading. Runtime failures return an `error` code and a `message` and exit nonzero. `icli probe` is the exception: it prints its own line `{ok, result | error, output}`, where `error` is the script's error message, and `probe repl` is interactive text. Help, version output, and argument errors are handled separately by the argument parser.
 
 `device info` reports `jailbreak.layout` and `jailbreak.jbroot` as JSON `null` when no bootstrap is detected. A root at `/` is reported as `rootful` only when the root filesystem is mounted read-write. RootHide and rootless retain their discovered bootstrap paths. A process that is not part of the bootstrap, such as a host of the Swift package on the system volume, finds `/var/jb`, or else the one RootHide root (`.jbroot-<16 hex digits>`) in `/var/containers/Bundle/Application`; `jailbreak.source` is then `filesystem fallback` or `filesystem .jbroot`.
 
 The former `shell` command was removed in 0.3.0. Use the filesystem and system command groups for operations implemented by icli.
 
-Most commands reject execution while the device is locked or the screen is off. Device and screen information, screenshots, `button wake`, and live logs remain available. `button wake` wakes the screen and, without a passcode, dismisses the lock screen; it does not enter a passcode, and it does nothing when the device is already awake and unlocked.
+Most commands reject execution while the device is locked or the screen is off. Device and screen information, screenshots, `button wake`, and live logs remain available. `button wake` wakes the screen and, without a passcode, dismisses the lock screen; it does not enter a passcode, and it does nothing when the device is already awake and unlocked. On tvOS, which has no lock screen, it also dismisses the screen saver with one Select press, and `app frontmost` reports the screen saver, `com.apple.IdleScreen`, while it runs.
 
 Audio buttons try hardware events first and fall back to the system audio controller when needed. Their JSON reports the method and resulting state. `button mute` toggles the active audio category's mute state; physical ringer-switch behavior has not been verified.
 

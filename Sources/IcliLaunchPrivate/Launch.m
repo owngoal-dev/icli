@@ -12,6 +12,13 @@
 - (BOOL)openApplicationWithBundleID:(NSString *)bundleID;
 @end
 
+// The system shell: SpringBoard, or PineBoard on tvOS.
+#if TARGET_OS_TV
+static NSString *const kSystemShell = @"com.apple.PineBoard";
+#else
+static NSString *const kSystemShell = @"com.apple.springboard";
+#endif
+
 static mach_port_t (*pSBSSpringBoardServerPort)(void);
 static void (*pSBGetScreenLockStatus)(mach_port_t, BOOL *, BOOL *);
 // The Copy rule: the identifier comes back retained.
@@ -70,12 +77,43 @@ IcliLockStatus icli_lock_status(void) {
     return st;
 }
 
+#if TARGET_OS_TV
+// FrontBoard's own open request, which PineBoard serves: tvOS runs no
+// SpringBoard to answer SpringBoardServices. A refusal says why, such as
+// Setup Assistant still running or an app PineBoard has not enabled; it lands
+// in `reason`.
+static BOOL frontBoardOpen(NSString *bundleID, NSString **reason) {
+    dlopen("/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices", RTLD_NOW);
+    Class serviceClass = NSClassFromString(@"FBSSystemService");
+    SEL sharedService = NSSelectorFromString(@"sharedService");
+    SEL open = NSSelectorFromString(@"openApplication:options:withResult:");
+    id service = [serviceClass respondsToSelector:sharedService]
+        ? ((id (*)(id, SEL))objc_msgSend)(serviceClass, sharedService)
+        : nil;
+    if (![service respondsToSelector:open]) return NO;
+    __block NSError *failure = nil;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    ((void (*)(id, SEL, id, id, id))objc_msgSend)(service, open, bundleID, @{}, ^(NSError *error) {
+        failure = error;
+        dispatch_semaphore_signal(done);
+    });
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0) {
+        *reason = @"FrontBoard did not answer the open request";
+        return NO;
+    }
+    if (failure) *reason = failure.localizedFailureReason ?: failure.localizedDescription;
+    return failure == nil;
+}
+#endif
+
 // SpringBoardServices launches for a caller with
 // com.apple.springboard.launchapplications. Any other caller falls back to
 // LaunchServices, which needs no entitlement and answers NO while the device
-// is locked; that answer is the result, not something to wait out.
-IcliLaunchResult icli_launch_app(const char *bundle_id) {
+// is locked; that answer is the result, not something to wait out. On tvOS
+// FrontBoard comes last, and its refusal carries PineBoard's reason.
+IcliLaunchResult icli_launch_app(const char *bundle_id, char **reason) {
     icli_launch_init();
+    if (reason) *reason = NULL;
     @autoreleasepool {
         NSString *bid = [NSString stringWithUTF8String:bundle_id];
         if (pSBSLaunchApplicationWithIdentifierAndLaunchOptions &&
@@ -87,6 +125,11 @@ IcliLaunchResult icli_launch_app(const char *bundle_id) {
             [ws openApplicationWithBundleID:bid]) {
             return IcliLaunchAccepted;
         }
+#if TARGET_OS_TV
+        NSString *refusal = nil;
+        if (frontBoardOpen(bid, &refusal)) return IcliLaunchAccepted;
+        if (reason && refusal.length) *reason = strdup(refusal.UTF8String);
+#endif
     }
     IcliLockStatus lock = icli_lock_status();
     return lock.locked || lock.screen_off ? IcliLaunchLocked : IcliLaunchRefused;
@@ -242,8 +285,18 @@ static NSString *runningBoardFocalApplication(NSMutableDictionary *why) {
         }
     }
     free(processes);
+#if TARGET_OS_TV
+    // The screen saver covers whatever stays focal beneath it, the Home
+    // screen included, so while it runs it is the one on screen.
+    if ([hiddenFocalIDs containsObject:@"com.apple.IdleScreen"]) return @"com.apple.IdleScreen";
+#endif
     if (focalIDs.count == 1) return focalIDs.anyObject;
     if (focalIDs.count > 1 && foregroundFocalIDs.count == 1) return foregroundFocalIDs.anyObject;
+#if TARGET_OS_TV
+    // tvOS tags its Home screen (HeadBoard), Setup, the screen saver and its
+    // view services hidden alike, so a hidden app alone is the one on screen.
+    if (!focalIDs.count && hiddenFocalIDs.count == 1) return hiddenFocalIDs.anyObject;
+#endif
     [focalRoleIDs minusSet:hiddenFocalIDs];
     if (!focalIDs.count && focalRoleIDs.count == 1) return focalRoleIDs.anyObject;
     why[@"reason"] = focalIDs.count ? @"several_focal_apps"
@@ -270,7 +323,7 @@ char *icli_frontmost_app_json(void) {
     if (pSBSCopyFrontmostApplicationDisplayIdentifier)
         bid = pSBSCopyFrontmostApplicationDisplayIdentifier();
     return launchJSON(@{
-        @"bundle_id": bid.length ? bid : @"com.apple.springboard",
+        @"bundle_id": bid.length ? bid : kSystemShell,
         @"verified": @NO,
         @"source": bid.length ? @"springboard_query" : @"unavailable",
         @"runningboard": why,

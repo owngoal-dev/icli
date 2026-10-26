@@ -12,7 +12,7 @@ The tables below mark each command with two properties:
 - **Root**: `required` means icli refuses to run without root (use `sudo icli …`). `usually` means the command runs, but the files or launchd domain it changes normally need root. `no` means it works as the mobile user.
 - **Screen**: `unlocked` means the command exits with code 2 (`device_locked`) while the device is locked or its screen is off. `any` means it also runs while the device is locked.
 
-Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, button, clipboard), [device](reference/device.md) (device, location, notify), [apps](reference/apps.md) (app, url, sb), [files and logs](reference/files-logs.md) (fs, log), [packages](reference/packages.md) (pkg), [system](reference/system.md) (svc, prefs, account, env, proc, sec, net, tests).
+Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, button, clipboard), [device](reference/device.md) (device, location, notify), [apps](reference/apps.md) (app, url, sb), [files and logs](reference/files-logs.md) (fs, log), [packages](reference/packages.md) (pkg), [system](reference/system.md) (svc, prefs, account, env, proc, sec, net, tests, probe).
 
 ## Quick index
 
@@ -65,11 +65,12 @@ Per-group detail: [interaction](reference/interaction.md) (screen, ui, input, bu
 | Get bootstrap paths (jbroot, layout) | `icli env info` |
 | Capture packets | `sudo icli net capture --seconds 5 --filter 'tcp port 443'` |
 | Run the self-tests | `icli tests --expect-layout roothide` |
+| Run a JavaScript probe in the icli process | `icli probe -e '<source>'` |
 | Restart userspace | `sudo icli device reboot --userspace --force` |
 
 ## Conventions
 
-- **Output**: one JSON object on stdout, with keys sorted. On failure the object is `{"error": <code>, "message": <text>}`, where the code is `failed`, `device_locked`, `force_required`, `unavailable`, `missing_dependency` or `command_failed`. Argument errors come from the argument parser as plain text on stderr.
+- **Output**: one JSON object on stdout, with keys sorted. On failure the object is `{"error": <code>, "message": <text>}`, where the code is `failed`, `device_locked`, `force_required`, `unavailable`, `missing_dependency` or `command_failed`. `icli probe` prints its own line instead, `{"ok": true, "result": <text>}` or `{"ok": false, "error": <message text>}`, both with `output`, and `icli probe repl` is interactive text. Argument errors come from the argument parser as plain text on stderr.
 - **Exit codes**: `0` is success. `2` is `device_locked`. `1` is any other runtime failure. A result or failure that carries a nonzero `status` exits with that status (1–255). Treat any nonzero exit as a failure and read the JSON.
 - **Locked device**: see the Screen column. Most interactive and many read commands need the device unlocked with the screen on. When you get exit 2, run `icli button wake`. If `screen info` still shows `locked: true`, a person has to unlock the device.
 - **Destructive commands need `--force`**: `app kill`, `app unregister`, `app unregister-dir`, `app uninstall --package`, `fs rm`, `sec keychain delete` and `device reboot` refuse to run without it and return `force_required`.

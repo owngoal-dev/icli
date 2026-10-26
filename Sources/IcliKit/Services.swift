@@ -268,13 +268,14 @@ private func parseSignal(_ value: String) throws -> Int32 {
     return number
 }
 
-/// Restarts SpringBoard with FrontBoard's relaunch action (what sbreload
-/// sends); if the pid has not changed after a few seconds, asks launchd to
-/// stop the service so KeepAlive brings it back. Returns the new pid.
+/// Restarts the system shell (SpringBoard, or PineBoard on tvOS) with
+/// FrontBoard's relaunch action (what sbreload sends); if the pid has not
+/// changed after a few seconds, asks launchd to stop the service so KeepAlive
+/// brings it back. Returns the new pid.
 public func respring() throws -> [String: Any] {
     func springboardPID() throws -> Int? {
-        let processes = try listProcesses(filter: "SpringBoard")["processes"] as? [[String: Any]] ?? []
-        return processes.first { $0["name"] as? String == "SpringBoard" }?["pid"] as? Int
+        let processes = try listProcesses(filter: SystemShell.processName)["processes"] as? [[String: Any]] ?? []
+        return processes.first { $0["name"] as? String == SystemShell.processName }?["pid"] as? Int
     }
     func wait(seconds: Double, before: Int?) throws -> Int? {
         let deadline = ProcessInfo.processInfo.systemUptime + seconds
@@ -291,12 +292,12 @@ public func respring() throws -> [String: Any] {
     var pid = icli_springboard_relaunch() ? try wait(seconds: 5, before: before) : nil
     if pid == nil {
         method = "launchd_stop"
-        let status = icli_launchd_stop("com.apple.SpringBoard")
+        let status = icli_launchd_stop(SystemShell.launchdLabel)
         guard status == 0 else {
             throw IcliError.failed("relaunch action ignored and launchd stop failed: \(status) \(String(cString: icli_launchd_strerror(status)))")
         }
         pid = try wait(seconds: 15, before: before)
     }
-    guard let pid else { throw IcliError.failed("SpringBoard did not restart") }
+    guard let pid else { throw IcliError.failed("\(SystemShell.processName) did not restart") }
     return ["restarted": true, "method": method, "previous_pid": before ?? 0, "pid": pid]
 }

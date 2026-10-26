@@ -72,6 +72,17 @@ do {
 }
 
 precondition(rejectsNonPropertyList)
+// icli probe, exposed through IcliKit: referenced with full types so the
+// signatures stay stable, and run on the device to prove the in-process
+// JavaScriptCore shell and its api() into IcliKit work for a host.
+let probeAPIs: [Any] = [
+    probeAvailable as () -> Bool,
+    evaluateProbe as (String, ProbeAPIHandler?) -> ProbeResult,
+    defaultProbeAPI as (String, [String: Any]) throws -> Any,
+]
+precondition(probeAPIs.count == 3)
+let probe = evaluateProbe("api('env.info').spawns_processes")
+precondition(probe.ok && probe.result == "false" && probe.error == nil)
 let report: [String: Any] = [
     "library": "IcliKit",
     "comparison": comparison,
@@ -82,5 +93,7 @@ let report: [String: Any] = [
     "developer_mode": developerMode,
     "low_power_mode": lowPower,
     "time_zone": zone,
+    "probe_available": probeAvailable(),
+    "probe_result": probe.result ?? "",
 ]
 try print(String(decoding: JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]), as: UTF8.self))

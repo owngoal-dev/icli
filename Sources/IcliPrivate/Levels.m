@@ -5,23 +5,36 @@
 #import <dlfcn.h>
 #import <objc/message.h>
 
+// tvOS has no battery: report what UIDevice reports for an unknown one.
 double icli_battery_fraction(void) {
+#if TARGET_OS_TV
+    return -1;
+#else
     UIDevice *device = [UIDevice currentDevice];
     device.batteryMonitoringEnabled = YES;
     return device.batteryLevel;
+#endif
 }
 
 int icli_battery_state(void) {
+#if TARGET_OS_TV
+    return 0;
+#else
     UIDevice *device = [UIDevice currentDevice];
     device.batteryMonitoringEnabled = YES;
     return (int)device.batteryState;
+#endif
 }
 
 double icli_brightness_get(void) {
     void *handle = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_NOW);
     float (*get)(void) = handle ? dlsym(handle, "BKSDisplayBrightnessGetCurrent") : NULL;
     if (get) return get();
+#if TARGET_OS_TV
+    return -1;
+#else
     return [UIScreen mainScreen].brightness;
+#endif
 }
 
 static id brightnessClient(void) {

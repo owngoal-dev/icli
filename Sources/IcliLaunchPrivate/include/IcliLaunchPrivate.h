@@ -17,7 +17,7 @@ typedef struct {
 } IcliLockStatus;
 
 typedef enum {
-    /// SpringBoard or LaunchServices accepted the request.
+    /// SpringBoard, LaunchServices or (on tvOS) FrontBoard accepted the request.
     IcliLaunchAccepted = 0,
     /// Refused while the device was locked or its screen was off.
     IcliLaunchLocked = 1,
@@ -26,7 +26,9 @@ typedef enum {
 } IcliLaunchResult;
 
 IcliLockStatus icli_lock_status(void);
-IcliLaunchResult icli_launch_app(const char *bundle_id);
+/// On a refusal, `reason` (when not NULL) receives the system shell's
+/// explanation when it gave one (PineBoard on tvOS), to be released with free().
+IcliLaunchResult icli_launch_app(const char *bundle_id, char **reason);
 char *icli_frontmost_app_json(void);
 
 #ifdef __cplusplus

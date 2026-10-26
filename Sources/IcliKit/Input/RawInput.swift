@@ -49,6 +49,7 @@ public struct TouchEvent {
 /// Sends one digitizer event. Points are upright UI points unless `normalized`,
 /// in which case x and y are 0…1 in the fixed (portrait) digitizer space.
 public func touch(_ phase: TouchPhase, x: Double, y: Double, normalized: Bool = false) throws -> [String: Any] {
+    try requirePointInput()
     let (nx, ny) = try digitizerPoint(x, y, normalized: normalized)
     guard icli_hid_touch(phase.bridgeValue, nx, ny) else { throw hidUnavailable }
     return ["phase": phase.rawValue, "x": x, "y": y, "normalized": normalized, "digitizer_x": nx, "digitizer_y": ny]
@@ -57,6 +58,7 @@ public func touch(_ phase: TouchPhase, x: Double, y: Double, normalized: Bool = 
 /// Sends a whole sequence from one process, pausing `delayMS` after each event.
 /// A finger still down at the end stays down.
 public func touchSequence(_ events: [TouchEvent], normalized: Bool = false) throws -> [String: Any] {
+    try requirePointInput()
     guard (1 ... 10000).contains(events.count) else { throw IcliError.failed("a sequence needs 1–10000 events") }
     guard events.allSatisfy({ $0.delayMS.isFinite && (0 ... 60000).contains($0.delayMS) }),
           events.reduce(0, { $0 + $1.delayMS }) <= 300_000

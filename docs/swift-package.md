@@ -72,6 +72,33 @@ A call a device can't support throws `IcliError.unavailable` and leaves the devi
 
 `kickstartService(_:kill:)` starts a loaded launchd job immediately. With `kill: true` it replaces the running instance and returns the new `pid`, so a daemon can start using its updated executable. With `kill: false`, an existing process stays running and `unchanged` is true. The host executable needs `com.apple.private.xpc.service-attach` in its own signing profile as well as the usual service privileges; `com.apple.private.xpc.service-configure` alone was refused with launchd status 144 on iOS 27. Linking IcliKit does not add entitlements to the host.
 
+## The probe: in-process scripting
+
+`icli probe` is a JavaScriptCore scripting shell, and `IcliKit` exposes it so a host can run a script with its own identity in process:
+
+```swift
+import IcliKit
+
+guard probeAvailable() else { /* this platform has no JavaScriptCore */ return }
+
+let result = evaluateProbe("api('svc.list').count")
+// result.result (described value) or result.error, result.output (what the script printed);
+// result.ok is whether there is no error
+
+// A host adds its own capabilities through the api() handler, and may fall
+// back to icli's own with defaultProbeAPI:
+let withProc = evaluateProbe(source) { method, params in
+    if method == "proc.run" { return try runProgram(params) }   // the host's own capability
+    return try defaultProbeAPI(method, params)
+}
+```
+
+`evaluateProbe(_:api:)` runs `source` **inline, in the calling process and on the calling thread**. There is no detach: a script that crashes or never returns takes the caller down with it, and the script has the caller's own memory, file access and entitlements. A host that needs to survive a bad script spawns `icli probe` as a separate process and reads its one JSON line; that is why icli itself offers no `--detach`, and it is how vphoned runs scripts. The probe keeps one JavaScriptCore context per process, built on first use, so a later call sees the variables an earlier one defined, and it is not reentrant — serialize calls, as the single shared context already requires.
+
+A script reaches Objective-C classes through `ObjC.use`/`ObjC.classes`/`ObjC.wrap`, reads and writes files with `fs.ls/read/write/stat`, prints with `console.*`/`print`, waits with `sleep(ms)`, and calls back with `api(method, params)`, whose `params`, an object, reaches the handler as `JSON.stringify` encodes it. `api()` uses the handler passed to `evaluateProbe`, or `defaultProbeAPI` when none is given; `defaultProbeAPI` maps a small read-oriented set of icli's own capabilities (`env.info`, `device.info`, `screen.info`, `svc.list`, `svc.status`, `app.list`, `proc.list`) and throws `IcliError` for anything else. `proc.run` and `exit()` are deliberately absent, since `exit()` would end the host and running programs belongs to the spawning host's own `api()` handler.
+
+JavaScriptCore is loaded with `dlopen` and reached through `NSClassFromString`, not linked, so `IcliKit` still builds and loads where JavaScriptCore is absent; `probeAvailable()` is false there and `evaluateProbe` returns `ok == false` with the error `This platform has no JavaScriptCore`. The probe adds no process-launch import: `env info` stays `spawns_processes: false` and `scripts/verify-binary.py` still passes. `ProbeResult`, `ProbeAPIHandler`, `probeAvailable()`, `evaluateProbe(_:api:)` and `defaultProbeAPI(_:_:)` are the whole surface; `runProbeREPL()` drives the CLI's interactive shell; it catches SIGINT only while it reads a line and puts the host's own disposition back while a statement runs, so ^C during a runaway statement does whatever SIGINT does to the host.
+
 ## The IcliSystem product
 
 `IcliSystem` is the read-only system-state half of the library, split out for hosts that want a system report without the rest: a crash reporter attaching device state to a report, for example. `IcliKit` depends on it and re-exports it, so a consumer that links `IcliKit` keeps the same API and needs no second import.

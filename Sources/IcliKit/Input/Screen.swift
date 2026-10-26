@@ -40,13 +40,25 @@ public func takeScreenshot(
     return result
 }
 
+/// tvOS has neither a touch screen nor a pointer: a touch or click at a point
+/// reaches nothing there, so it is refused rather than reported as sent.
+func requirePointInput() throws {
+    #if os(tvOS)
+    throw IcliError.unavailable(
+        "tvOS has no touch screen or pointer; move focus with `input hid 12 66`…`69` (up, down, left, right) and select with `input hid 12 65`.",
+    )
+    #endif
+}
+
 public func tap(x: Double, y: Double) throws -> [String: Any] {
+    try requirePointInput()
     try validatePoint(x, y)
     guard icli_hid_tap(x, y) else { throw IcliError.failed("hid tap unavailable") }
     return ["x": x, "y": y]
 }
 
 public func doubleTap(x: Double, y: Double, interval: Double = 0.1) throws -> [String: Any] {
+    try requirePointInput()
     try validatePoint(x, y)
     try validateDuration(interval, name: "interval", maximum: 1)
     guard icli_hid_double_tap(x, y, interval) else { throw IcliError.failed("hid double-tap unavailable") }
@@ -54,6 +66,7 @@ public func doubleTap(x: Double, y: Double, interval: Double = 0.1) throws -> [S
 }
 
 public func longPress(x: Double, y: Double, seconds: Double) throws -> [String: Any] {
+    try requirePointInput()
     try validatePoint(x, y)
     try validateDuration(seconds, name: "seconds")
     guard icli_hid_long_press(x, y, seconds) else { throw IcliError.failed("hid long-press unavailable") }
@@ -68,6 +81,7 @@ public func swipe(
     seconds: Double,
     steps: Int = 20,
 ) throws -> [String: Any] {
+    try requirePointInput()
     try validatePoint(x1, y1)
     try validatePoint(x2, y2)
     try validateDuration(seconds, name: "seconds")
@@ -82,6 +96,7 @@ public func drag(
     hold: Double = 0.5,
     steps: Int = 20,
 ) throws -> [String: Any] {
+    try requirePointInput()
     guard (2 ... 1000).contains(points.count), (points.count - 1 ... 2000).contains(steps) else {
         throw IcliError.failed("drag needs 2–1000 points and steps >= segments, up to 2000")
     }
@@ -107,12 +122,32 @@ public func pressButton(_ name: String) throws -> [String: Any] {
     }
     if name == "wake" {
         guard icli_wake() else { throw IcliError.failed("wake failed") }
+        #if os(tvOS)
+        try dismissScreenSaver()
+        #endif
         let lock = icli_lock_status()
         return ["button": name, "locked": lock.locked, "screen_off": lock.screen_off]
     }
     guard icli_hid_button(name) else { throw IcliError.failed("unknown or failed button: \(name)") }
     return ["button": name]
 }
+
+#if os(tvOS)
+/// tvOS has no lock screen: what stands between a remote and the screen it
+/// would work is the screen saver, which waking the display leaves in place.
+/// One Select press dismisses it, as on the Siri Remote, without choosing what
+/// is focused beneath; Menu would go back in an app.
+private func dismissScreenSaver() throws {
+    func showing() -> Bool { frontmostApp()["bundle_id"] as? String == "com.apple.IdleScreen" }
+    guard showing() else { return }
+    _ = try hidPress(page: 0x0C, usage: 0x41)
+    let deadline = Date().addingTimeInterval(3)
+    while showing() {
+        guard Date() < deadline else { throw IcliError.failed("wake failed: the screen saver stayed on screen") }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+}
+#endif
 
 public func typeText(_ text: String, delayMS: Double = 30) throws -> [String: Any] {
     guard !text.isEmpty, text.utf8.count <= 64 * 1024, delayMS.isFinite, (0 ... 1000).contains(delayMS) else {
@@ -339,6 +374,7 @@ private func selectedElements(_ selector: ElementSelector) throws -> [[String: A
 }
 
 public func tapElement(_ selector: ElementSelector) throws -> [String: Any] {
+    try requirePointInput()
     let hits = try selectedElements(selector)
     guard hits.indices.contains(selector.index) else { throw IcliError.failed("element not found") }
     let hit = hits[selector.index]

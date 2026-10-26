@@ -134,7 +134,15 @@ char *icli_location_read_json(double timeout, bool match, double latitude, doubl
                 || (fabs(location.coordinate.latitude - latitude) < 1e-7
                     && fabs(location.coordinate.longitude - longitude) < 1e-7));
     };
+#if TARGET_OS_TV
+    // tvOS headers offer only the one-shot request; the shared CoreLocation
+    // class may still answer the continuous one, which a match needs.
+    SEL updating = NSSelectorFromString(@"startUpdatingLocation");
+    if ([manager respondsToSelector:updating]) ((void (*)(id, SEL))objc_msgSend)(manager, updating);
+    else [manager requestLocation];
+#else
     [manager startUpdatingLocation];
+#endif
     while (!satisfied(reader.latest) && reader.error.code != kCLErrorDenied && deadline.timeIntervalSinceNow > 0) {
         [[NSRunLoop currentRunLoop]
             runMode:NSDefaultRunLoopMode

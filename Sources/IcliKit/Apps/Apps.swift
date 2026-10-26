@@ -73,8 +73,8 @@ func frontmostPID() throws -> Int32 {
         throw IcliError.failed("frontmost application could not be verified")
     }
     let processes = try listProcesses(filter: nil)["processes"] as? [[String: Any]] ?? []
-    if bundleID == "com.apple.springboard",
-       let process = processes.first(where: { $0["name"] as? String == "SpringBoard" }),
+    if bundleID == SystemShell.bundleID,
+       let process = processes.first(where: { $0["name"] as? String == SystemShell.processName }),
        let pid = process["pid"] as? Int
     {
         return Int32(pid)

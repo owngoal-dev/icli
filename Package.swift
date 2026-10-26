@@ -6,7 +6,7 @@ let repositoryDirectory = URL(fileURLWithPath: #filePath).deletingLastPathCompon
 
 let package = Package(
     name: "icli",
-    platforms: [.iOS(.v15)],
+    platforms: [.iOS(.v15), .tvOS(.v15)],
     products: [
         .library(name: "IcliKit", targets: ["IcliKit"]),
         .library(name: "IcliSystem", targets: ["IcliSystem"]),
@@ -68,9 +68,26 @@ let package = Package(
                 .linkedFramework("CoreLocation"),
             ],
         ),
+        // The JavaScriptCore scripting shell behind `icli probe`: the JSContext,
+        // its prelude, and the NSInvocation ObjC reflection bridge. It imports
+        // the JavaScriptCore headers, which leaves an autolink request in each
+        // object file, but names no JavaScriptCore symbol: the framework is
+        // loaded with dlopen and every use goes through IcliProbeContextClass /
+        // IcliProbeValueClass, resolved by NSClassFromString, so ld drops the
+        // request. The binary still builds and loads where JavaScriptCore is
+        // absent, and evaluation there fails with an error saying so. One
+        // direct `[JSValue ...]` would link the framework after all, which
+        // scripts/verify-binary.py rejects. This also keeps the target free of
+        // the unsafe linker flags a weak framework link would need, which an
+        // external versioned consumer of IcliKit cannot build.
+        .target(
+            name: "IcliProbe",
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedFramework("Foundation")],
+        ),
         .target(
             name: "IcliKit",
-            dependencies: ["IcliPrivate", "IcliSystem", "IcliLaunch"],
+            dependencies: ["IcliPrivate", "IcliSystem", "IcliLaunch", "IcliProbe"],
             linkerSettings: [.linkedLibrary("sqlite3")],
         ),
         .executableTarget(

@@ -1,6 +1,7 @@
 #import "IcliPrivate.h"
 #import "Settle.h"
 #import "IcliJSON.h"
+#import "OpenURLInternal.h"
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -516,7 +517,9 @@ IcliRotation icli_rotation_get(void) {
     IcliScreenMetrics metrics = icli_screen_metrics();
     IcliRotation rotation = {0, 0, false};
     rotation.degrees = metrics.orientation;
+#if !TARGET_OS_TV
     rotation.device_orientation = (int)[[UIDevice currentDevice] orientation];
+#endif
     rotation.locked = notifyFlag("com.apple.springboard.orientationlock");
     void *ax = dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW);
     Boolean (*axGet)(void) = ax ? dlsym(ax, "AXSOrientationLockEnabled") : NULL;
@@ -1006,6 +1009,9 @@ bool icli_open_url(const char *url) {
     if (!u) {
         return false;
     }
+#if TARGET_OS_TV
+    return icli_frontboard_open_url(u, nil);
+#else
     if (pSBSOpenSensitiveURLAndUnlock) {
         return pSBSOpenSensitiveURLAndUnlock((__bridge CFURLRef)u, 1);
     }
@@ -1014,6 +1020,7 @@ bool icli_open_url(const char *url) {
         return [ws openSensitiveURL:u withOptions:nil];
     }
     return false;
+#endif
 }
 
 // Polls for up to `seconds` for the screen to be on and, without a passcode,
