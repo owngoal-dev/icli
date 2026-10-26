@@ -2,7 +2,7 @@
 
 Control your iPhone from the command line. Tap and swipe, enter text, inspect accessibility elements, capture screenshots, and read on-screen text, with JSON output for scripts and automation.
 
-icli runs on the device itself. Use it in a device terminal or over SSH from your Mac. It requires an arm64 device running iOS 15 or later on custom firmware with a compatible bootstrap.
+icli runs on the device itself. Use it in a device terminal or over SSH from your Mac. It requires an arm64 device running iOS 15 or later on custom firmware with a compatible bootstrap. A separate build runs on tvOS 15 or later; see [tvOS](#tvos).
 
 icli is a single, self-contained executable. It performs its work in-process using iOS frameworks and a statically linked archive library, without spawning subprocesses or invoking bootstrap tools. No additional runtime packages are required. `icli env` reports the detected environment, `spawns_processes: false`, and an empty `external_tools_used` object.
 
@@ -16,8 +16,9 @@ Download a DEB from [GitHub Releases](https://github.com/owngoal-dev/icli/releas
 | --- | --- | --- |
 | Rootless (`/var/jb`) | `iphoneos-arm64` | Tested on the project's rootless vphone |
 | RootHide | `iphoneos-arm64e` | Experimental; service inspection verified on iOS 18.5, full acceptance pending |
+| tvOS, rootful (`/usr/bin`, Procursus `appletvos-arm64`) | `appletvos-arm64` | Package checks only; the same executable passed the tvOS acceptance on a tvOS 26.6 vphone |
 
-Both packages contain the same arm64 executable. The architecture label identifies the bootstrap layout. iOS 15 is the minimum deployment target; the [acceptance report](docs/rootless-acceptance.md) records the environment actually tested.
+Both iOS packages contain the same arm64 executable. The architecture label identifies the bootstrap layout. The tvOS package holds the tvOS executable, which each release also publishes on its own as `icli-tvos` for a tvOS system without a bootstrap or `dpkg`. iOS 15 is the minimum deployment target; the [acceptance report](docs/rootless-acceptance.md) records the environment actually tested.
 
 For the initial DEB installation below, use the bootstrap's `dpkg` and an account with permission to install packages. To connect over USB, you also need an SSH server on the device and `iproxy` on your Mac. These are installation and connection tools; icli does not invoke them.
 
@@ -56,9 +57,22 @@ The DEB installs a command-line executable and license notices. The executable i
 - **Device controls**: Adjust brightness, volume, and rotation; use hardware button actions and the clipboard, including images; switch Low Power Mode; post Darwin notifications and read their state; read and enable Developer Mode; simulate a location; request userspace or full reboots; render boot logos.
 - **System**: Manage launchd services, local DEB packages and repository source files, compare Debian and BaseBin versions, set account passwords through stdin, control system app visibility, restart SpringBoard, capture packets, store test credentials in the `icli.test` Keychain access group, and read protected Keychain database metadata with filesystem permission.
 - **Preferences**: Read, write, and delete typed preference values like `defaults`, for mobile, root, or a plist path.
+- **Scripting**: Run a JavaScriptCore script in-process with `icli probe`: reach any framework class through an Objective-C reflection bridge, read and write files, and call icli's own capabilities through `api()`. Scripts run inline, so a host that needs isolation spawns `icli probe` as its own process.
 - **System state**: Dump every service with launchd's own description, and read the kernel's jetsam bands, jetsam property lists, and memory pressure levels.
 
 OCR uses Apple's Vision framework. If system text recognition is unavailable, the command returns an `unavailable` error; that includes a process with no Metal device, such as one started over SSH on iOS 15, where Vision would otherwise crash. A successful scan with no recognized text returns an empty result.
+
+## tvOS
+
+`make tvos` builds the same sources against the AppleTVOS SDK into `.build/icli-tvos`, a separate executable with a tvOS 15 floor, signed with the same entitlements. It keeps every iOS guarantee: no process launches, no bootstrap tools, JavaScriptCore loaded at runtime. Commands behave as on iOS except where tvOS has no counterpart:
+
+- **No touch screen or pointer.** `screen tap`, `double-tap`, `long-press`, `swipe`, `drag`, `touch`, `touch-sequence`, `click` and `scroll`, and `ui tap`, return `unavailable`. Move focus and select with the Siri Remote's consumer-page usages: `input hid 12 66`, `67`, `68` and `69` for up, down, left and right, `input hid 12 65` for Select and `input hid 12 70` for Menu. `button home` is the remote's TV button. `input type` types into the focused field, including the system's full-screen keyboard.
+- **No clipboard, interface rotation or per-app cellular policy.** The `clipboard` commands, `rotation set`, `rotation lock set` and `app network` return `unavailable`. Battery reads report level -1, and brightness reads -1 when the system has no value.
+- **PineBoard, not SpringBoard.** Frontmost-app detection, app launch and `sb respring` work with PineBoard. tvOS marks its home screen, Setup Assistant and screen saver as hidden apps, so `app frontmost` reports the only hidden focal app when no other app is in front, and `com.apple.IdleScreen` while the screen saver runs. `button wake` also dismisses the screen saver with one Select press. A restart waits for FrontBoard and then stops PineBoard through launchd, which tvOS needs, about five seconds longer than on iOS.
+- **App registration.** `app register`, `app refresh` and `sb uicache` register bootstrap apps as user apps: PineBoard disables a system app that tvOS did not provision. URLs open through FrontBoard, because LaunchServices' own open route is unavailable on tvOS.
+- **Setup Assistant.** PineBoard launches no app while Setup Assistant runs, so finish it before launching apps or opening URLs.
+
+On a tvOS system without a bootstrap, such as a vphone guest, push `icli-tvos` to the device and run it as it is; there is no shell or `dpkg` to install the DEB.
 
 ## Command Line
 
@@ -212,15 +226,33 @@ icli prefs delete example.domain Enabled
 
 A simulated location applies to every app and stays on after icli exits, until `location clear`. `notify post` posts a Darwin notification to every observer, optionally storing a `--state` value first; names that notifyd reserves, such as those under `com.apple.system.`, need root. `device devmode enable` asks the system to turn Developer Mode on after the next restart and does nothing when it is already on. `device timezone set` turns Set Automatically off and switches the system time zone; running apps follow at once, and `device timezone automatic on` hands it back to the system. `prefs` commands use mobile's preferences by default, including under `sudo`; `--user root`, `current` or `any` choose another set, and a `.plist` path works as a domain. Writes go through cfprefsd, so running apps see them.
 
+### Script the Device
+
+`icli probe` runs a JavaScriptCore script in the icli process. A script reaches any Objective-C class through a reflection bridge, reads and writes files, prints, and calls icli's own capabilities through `api()`.
+
+```sh
+icli probe -e "ObjC.use('NSProcessInfo').processInfo().processName()"
+icli probe -e "api('svc.list').count"
+echo "var m = ObjC.use('NSFileManager').defaultManager(); m.fileExistsAtPath_('/')" | icli probe -
+icli probe script.js
+icli probe repl
+```
+
+A class method, then an instance method on what it returns: `ObjC.use('NSProcessInfo')` (or `ObjC.classes.NSProcessInfo`) gives a class, and a selector becomes a method call with underscores for its colons (`stringWithUTF8String_`) or the selector written out (`obj['setValue:forKey:'](v, k)`); a leading underscore stays part of a private method's name (`_isDeallocating`). A struct, a non-null pointer or a block is refused with an error rather than passed, since a bad one would take icli down. A string, number, boolean or date comes back as a JavaScript value, and `NSNull` as `null`; anything else, collections included, comes back as a handle whose `$value` converts it, `$class` names its class and `$isClass` says whether it is one. `fs.ls/read/write/stat` use icli's own file access, `console.log`/`print` and `sleep(ms)` do output and waiting, and `api(method, params)` calls an icli capability in process (`env.info`, `device.info`, `screen.info`, `svc.list`, `svc.status`, `app.list`, `proc.list`); `params` is an object, encoded as `JSON.stringify` encodes it.
+
+`-e`, a file, or `-` (stdin) prints one JSON line `{ok, result | error, output}`: stdout carries only that line and everything the script printed is collected into `output`. A thrown script is an answer with `ok: false` and a nonzero exit, not a crash. `repl` (or no argument) opens an interactive shell whose output appears as it happens; `.help` lists what is available and `.exit` leaves. ^C abandons a half-finished statement; while a statement runs, ^C ends icli, since nothing inline could stop it otherwise.
+
+The script runs **inline**, in the icli process, with icli's memory, file access and entitlements. There is no `--detach`: a script that crashes or hangs takes icli down with it. A caller that needs to survive a bad script spawns `icli probe` as its own process and reads its JSON line. `proc.run` and `exit()` are deliberately not provided: `exit()` would end the caller, and running other programs belongs to the host that spawns `icli probe`, which adds it through its own `api()` handler. On a platform without JavaScriptCore the command answers `ok: false` with the error `This platform has no JavaScriptCore`; icli's binary gains no process-launch import, so `env info` stays `spawns_processes: false`.
+
 ### Output and Device State
 
-Commands return JSON on standard output by default. Add `--human` for interactive reading. Runtime failures return an `error` code and a `message` and exit nonzero. Help, version output, and argument errors are handled separately by the argument parser.
+Commands return JSON on standard output by default. Add `--human` for interactive reading. Runtime failures return an `error` code and a `message` and exit nonzero. `icli probe` is the exception: it prints its own line `{ok, result | error, output}`, where `error` is the script's error message, and `probe repl` is interactive text. Help, version output, and argument errors are handled separately by the argument parser.
 
 `device info` reports `jailbreak.layout` and `jailbreak.jbroot` as JSON `null` when no bootstrap is detected. A root at `/` is reported as `rootful` only when the root filesystem is mounted read-write. RootHide and rootless retain their discovered bootstrap paths. A process that is not part of the bootstrap, such as a host of the Swift package on the system volume, finds `/var/jb`, or else the one RootHide root (`.jbroot-<16 hex digits>`) in `/var/containers/Bundle/Application`; `jailbreak.source` is then `filesystem fallback` or `filesystem .jbroot`.
 
 The former `shell` command was removed in 0.3.0. Use the filesystem and system command groups for operations implemented by icli.
 
-Most commands reject execution while the device is locked or the screen is off. Device and screen information, screenshots, `button wake`, and live logs remain available. `button wake` wakes the screen and, without a passcode, dismisses the lock screen; it does not enter a passcode, and it does nothing when the device is already awake and unlocked.
+Most commands reject execution while the device is locked or the screen is off. Device and screen information, screenshots, `button wake`, and live logs remain available. `button wake` wakes the screen and, without a passcode, dismisses the lock screen; it does not enter a passcode, and it does nothing when the device is already awake and unlocked. On tvOS, which has no lock screen, it also dismisses the screen saver with one Select press, and `app frontmost` reports the screen saver, `com.apple.IdleScreen`, while it runs.
 
 Audio buttons try hardware events first and fall back to the system audio controller when needed. Their JSON reports the method and resulting state. `button mute` toggles the active audio category's mute state; physical ringer-switch behavior has not been verified.
 
@@ -234,6 +266,7 @@ cd icli
 make all CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
 make deb-rootless
 make deb-roothide
+make tvos
 ./scripts/check-packages.sh
 ```
 
@@ -244,13 +277,15 @@ Swift Package Manager resolves Argument Parser and the static [ArchiveKit packag
 | Signed executable | `.build/icli` |
 | Rootless package | `.build/com.icli.icli_<version>_iphoneos-arm64.deb` |
 | Experimental RootHide package | `.build/com.icli.icli_<version>_iphoneos-arm64e.deb` |
+| Signed tvOS executable | `.build/icli-tvos` |
+| tvOS package | `.build/com.icli.icli_<version>_appletvos-arm64.deb` |
 | Package verification report | `.build/package-verification.json` |
 
-The version comes from `Resources/Info.plist`. `make deb` builds the rootless package. Every build checks for forbidden process-launch imports. Package checks repeat that check and verify architecture, deployment target, entitlements, system-only linked libraries, a firmware-only DEB dependency, ownership, and identical executable contents across the two layouts. Import checks detect direct linked calls; runtime acceptance also checks the environment report.
+The version comes from `Resources/Info.plist`. `make deb` builds the rootless package. Every build checks for forbidden process-launch imports. Package checks repeat that check and verify architecture, deployment target, entitlements, system-only linked libraries, a firmware-only DEB dependency, ownership, and identical executable contents across the two iOS layouts and in the tvOS package. `check-packages.sh` needs both `make all` and `make tvos` first. Import checks detect direct linked calls; runtime acceptance also checks the environment report.
 
-The **DEB Release** GitHub Actions workflow builds both layouts and publishes DEBs, `SHA256SUMS`, and `package-verification.json`. It runs for version tags or can be dispatched with an existing tag. CI artifacts have their own hashes and package checks; device acceptance applies to the specific binary recorded in its report. Repository changes use ordinary incremental commits; published version tags remain fixed.
+The **DEB Release** GitHub Actions workflow builds both iOS layouts and the tvOS package and publishes the DEBs, `icli-tvos`, `SHA256SUMS`, and `package-verification.json`. It runs for version tags or can be dispatched with an existing tag. CI artifacts have their own hashes and package checks; device acceptance applies to the specific binary recorded in its report. Repository changes use ordinary incremental commits; published version tags remain fixed.
 
-`make` runs the SwiftPM iOS build, copies the executable to `.build/icli`, and signs it with `ldid` using the repository's entitlements. It does not require an Apple development certificate. To compile without signing, use `swift build -c release --triple arm64-apple-ios15.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" --scratch-path .build/swiftpm --product icli --force-resolved-versions`.
+`make` runs the SwiftPM iOS build, copies the executable to `.build/icli`, and signs it with `ldid` using the repository's entitlements. `make tvos` does the same for tvOS; the AppleTVOS SDK has no IOKit.framework, so `scripts/tvos-iokit-stub.sh` first borrows the iPhoneOS SDK's IOKit headers and stub, retargeted to tvOS, into `.build/tvos-stubs`. It does not require an Apple development certificate. To compile without signing, use `swift build -c release --triple arm64-apple-ios15.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)" --scratch-path .build/swiftpm --product icli --force-resolved-versions`.
 
 ## Testing and Compatibility
 
@@ -294,8 +329,20 @@ The runner defaults to `mobile@127.0.0.1:2333`. Override `ICLI_SSH_HOST`, `ICLI_
 
 Tests interact with apps, change device settings, and install or remove fixtures. Use an unlocked device prepared for testing. `--install` installs icli, not TestHost or its fixtures. Full acceptance runs userspace and full reboot tests last; reboots clear `/tmp` on the test device, so upload fixtures again before another run. `--skip-reboot` produces a partial run that cannot qualify for release assembly. Reports are saved under `.build/`, which is excluded from Git.
 
+### tvOS acceptance
+
+`scripts/tvos-acceptance.py` runs on the Mac that hosts a tvOS vphone guest and drives it through the guest's control socket: it pushes `.build/icli-tvos` and the fixtures from `scripts/build-tvos-fixtures.sh` (a tvOS TestHost app, the same app as an IPA under another identifier, and a two-version kickstart daemon), runs icli as root, and reads TestHost's accessibility labels as its oracle. Finish Setup Assistant on the guest first.
+
+```sh
+make tvos
+./scripts/build-tvos-fixtures.sh
+python3 scripts/tvos-acceptance.py --vm <name> --respring
+```
+
+It covers read-only commands, the `unavailable` answers, the launchd life cycle with kickstart replacement, registration and launch, container installation, files, preferences and Keychain, device controls, the screen saver, `icli probe` and a PineBoard restart, and writes `.build/tvos-acceptance.json`. `--case <name>` runs one case.
+
 ## License
 
 icli is available under the [MIT License](LICENSE).
 
-Third-party dependency licenses are listed in [Third-Party Notices](THIRD_PARTY_NOTICES.md). The notices and bundled dependency license texts are included in both DEB packages.
+Third-party dependency licenses are listed in [Third-Party Notices](THIRD_PARTY_NOTICES.md). The notices and bundled dependency license texts are included in every DEB package.

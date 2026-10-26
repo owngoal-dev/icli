@@ -2,16 +2,19 @@
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KIND="${1:-rootless}"
-BIN="$ROOT/.build/icli"
 VERSION=$(python3 -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["CFBundleShortVersionString"])' "$ROOT/Resources/Info.plist")
 STAGE="$ROOT/.build/deb-$KIND"
+BIN="$ROOT/.build/icli"
+PLATFORM=iOS
 case "$KIND" in
   rootless) ARCH=iphoneos-arm64; PREFIX=/var/jb ;;
   roothide) ARCH=iphoneos-arm64e; PREFIX= ;;
   rootful) ARCH=iphoneos-arm; PREFIX= ;;
+  # Procursus's appletvos-arm64 bootstrap is rootful: everything under /.
+  tvos) ARCH=appletvos-arm64; PREFIX=; BIN="$ROOT/.build/icli-tvos"; PLATFORM=tvOS ;;
   *) echo "unknown package layout: $KIND" >&2; exit 64 ;;
 esac
-[ -f "$BIN" ] || { echo 'build icli first' >&2; exit 66; }
+[ -f "$BIN" ] || { echo "build $(basename "$BIN") first" >&2; exit 66; }
 # Sign once in the build. Packaging must preserve the exact same executable.
 ENTITLEMENTS=$(ldid -e "$BIN")
 [ -n "$ENTITLEMENTS" ] || { echo 'icli has no signed entitlements' >&2; exit 65; }
@@ -31,7 +34,7 @@ Architecture: $ARCH
 Maintainer: icli
 Depends: firmware (>= 15.0)
 Section: Development
-Description: On-device iOS control CLI
+Description: On-device $PLATFORM control CLI
 CONTROL
 OUTPUT="$ROOT/.build/com.icli.icli_${VERSION}_${ARCH}.deb"
 dpkg-deb --root-owner-group -b "$STAGE" "$OUTPUT"

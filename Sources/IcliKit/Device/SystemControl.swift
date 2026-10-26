@@ -15,7 +15,12 @@ public func requestReboot(userspace: Bool, force: Bool) throws -> [String: Any] 
 
 public func appNetworkPolicy(_ bundleID: String, repair: Bool) throws -> [String: Any] {
     try validateBundleID(bundleID)
+    #if os(tvOS)
+    // The policy lives in CommCenter, which tvOS does not run.
+    throw IcliError.unavailable("tvOS has no per-app cellular network policy.")
+    #else
     return try decodeBridgeJSON(takeCString(icli_app_network_policy_json(bundleID, repair)), "response")
+    #endif
 }
 
 /// SpringBoard's "show non-default system apps" preference (read or set).

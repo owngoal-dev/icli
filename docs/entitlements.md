@@ -117,6 +117,6 @@ The shipped CLI's access-group entitlement lists only `icli.test`. The library a
 
 ## Verification and scope
 
-`make all` signs the CLI with the authoritative file. `scripts/check-packages.sh` extracts the signed entitlements using `ldid -e`, compares the entire plist with that file, and verifies both DEB layouts contain the same executable. [The acceptance report](rootless-acceptance.md) identifies the fully tested binary and device. RootHide service inspection has been checked on iOS 18.5; its full privileged acceptance suite remains pending.
+`make all` signs the CLI with the authoritative file. `scripts/check-packages.sh` extracts the signed entitlements using `ldid -e`, compares the entire plist with that file, and verifies both iOS DEB layouts contain the same executable and the tvOS DEB the tvOS executable, which is signed with the same file. [The acceptance report](rootless-acceptance.md) identifies the fully tested binary and device. RootHide service inspection has been checked on iOS 18.5; its full privileged acceptance suite remains pending.
 
 `scripts/check-entitlements.py` checks that this inventory includes every key and exact configured value, so additions or changes require a documentation update. A matching inventory is not proof that a platform will grant an entitlement or that an entry is individually required.

@@ -14,7 +14,7 @@ public func lockState() -> [String: Any] {
 
 public func frontmostApp() -> [String: Any] {
     (try? decodeBridgeJSON(takeCString(icli_frontmost_app_json()), "frontmost application"))
-        ?? ["bundle_id": "com.apple.springboard", "verified": false, "source": "unavailable"]
+        ?? ["bundle_id": SystemShell.bundleID, "verified": false, "source": "unavailable"]
 }
 
 /// Brings an installed app to the front, launching it if it is not running,
@@ -22,20 +22,25 @@ public func frontmostApp() -> [String: Any] {
 ///
 /// Throws `IcliError.locked` when the system refused because the device is
 /// locked or its screen is off; it does not wait for an unlock. Any other
-/// refusal, an app LaunchServices does not know, or an app that never came to
-/// the front is `IcliError.failed`.
+/// refusal (with the system shell's reason when it gave one), an app
+/// LaunchServices does not know, or an app that never came to the front is
+/// `IcliError.failed`.
 public func launchApp(_ bundleID: String) throws -> [String: Any] {
     let apps = try listApps()["apps"] as? [[String: Any]] ?? []
     guard !bundleID.isEmpty, apps.contains(where: { $0["bundle_id"] as? String == bundleID }) else {
         throw IcliError.failed("app not found: \(bundleID)")
     }
-    switch icli_launch_app(bundleID) {
+    var refusal: UnsafeMutablePointer<CChar>?
+    let result = icli_launch_app(bundleID, &refusal)
+    let reason = refusal.map { String(cString: $0) }
+    free(refusal)
+    switch result {
     case IcliLaunchAccepted:
         break
     case IcliLaunchLocked:
         throw IcliError.locked
     default:
-        throw IcliError.failed("launch refused: \(bundleID)")
+        throw IcliError.failed("launch refused: \(bundleID)" + (reason.map { ": \($0)" } ?? ""))
     }
     let deadline = ProcessInfo.processInfo.systemUptime + 5
     repeat {

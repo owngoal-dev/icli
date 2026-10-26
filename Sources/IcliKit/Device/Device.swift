@@ -105,6 +105,7 @@ public func interfaceRotationDegrees() -> Int? {
 
 public func setRotation(_ spec: String) throws -> [String: Any] {
     let degrees = try parseRotationSpec(spec)
+    try requireRotation()
     guard icli_rotation_set(Int32(degrees)) else {
         throw IcliError.failed("could not set rotation to \(degrees)")
     }
@@ -117,7 +118,15 @@ public func setRotation(_ spec: String) throws -> [String: Any] {
     return info
 }
 
+/// tvOS drives a TV in one fixed orientation, with no rotation or lock to set.
+private func requireRotation() throws {
+    #if os(tvOS)
+    throw IcliError.unavailable("tvOS does not rotate its interface.")
+    #endif
+}
+
 public func setRotationLock(_ locked: Bool) throws -> [String: Any] {
+    try requireRotation()
     guard icli_rotation_lock_set(locked) else {
         throw IcliError.failed("could not set rotation lock")
     }

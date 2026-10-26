@@ -2,6 +2,7 @@ import Foundation
 import IcliSystem
 import UIKit
 
+#if !os(tvOS)
 private func generalPasteboard() throws -> UIPasteboard {
     guard let pasteboard = UIPasteboard(name: .general, create: false) else {
         throw IcliError.unavailable("The system clipboard is unavailable to this process.")
@@ -101,3 +102,15 @@ private func imageMetadata(_ image: UIImage) -> [String: Any] {
     let pixels = pixelSize(image)
     return ["width": Int(pixels.width), "height": Int(pixels.height), "scale": Double(image.scale)]
 }
+
+#else
+// tvOS has no UIPasteboard: every clipboard command is unavailable there.
+private func noClipboard() -> IcliError { .unavailable("tvOS has no system clipboard.") }
+
+public func clipboardText() throws -> [String: Any] { throw noClipboard() }
+public func clipboardInfo() throws -> [String: Any] { throw noClipboard() }
+public func clipboardImagePNG() throws -> Data? { throw noClipboard() }
+public func clipboardInfo(imageOutput: String?) throws -> [String: Any] { throw noClipboard() }
+public func setClipboard(_ text: String) throws -> [String: Any] { throw noClipboard() }
+public func setClipboardImage(_ data: Data) throws -> [String: Any] { throw noClipboard() }
+#endif

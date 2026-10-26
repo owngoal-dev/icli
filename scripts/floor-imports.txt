@@ -68,6 +68,9 @@ proc_pidpath
 _os_alloc_once_table
 _xpc_pipe_interface_routine
 xpc_strerror
+# Private libdispatch, exported since iOS 8 and tvOS 9. Swift's
+# Compatibility56 library calls it; the tvOS link imports it strong.
+voucher_adopt
 # Private UIKit, exported since iOS 4.
 _UICreateScreenUIImage
 

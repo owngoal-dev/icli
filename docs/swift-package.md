@@ -72,6 +72,33 @@ A call a device can't support throws `IcliError.unavailable` and leaves the devi
 
 `kickstartService(_:kill:)` starts a loaded launchd job immediately. With `kill: true` it replaces the running instance and returns the new `pid`, so a daemon can start using its updated executable. With `kill: false`, an existing process stays running and `unchanged` is true. The host executable needs `com.apple.private.xpc.service-attach` in its own signing profile as well as the usual service privileges; `com.apple.private.xpc.service-configure` alone was refused with launchd status 144 on iOS 27. Linking IcliKit does not add entitlements to the host.
 
+## The probe: in-process scripting
+
+`icli probe` is a JavaScriptCore scripting shell, and `IcliKit` exposes it so a host can run a script with its own identity in process:
+
+```swift
+import IcliKit
+
+guard probeAvailable() else { /* this platform has no JavaScriptCore */ return }
+
+let result = evaluateProbe("api('svc.list').count")
+// result.result (described value) or result.error, result.output (what the script printed);
+// result.ok is whether there is no error
+
+// A host adds its own capabilities through the api() handler, and may fall
+// back to icli's own with defaultProbeAPI:
+let withProc = evaluateProbe(source) { method, params in
+    if method == "proc.run" { return try runProgram(params) }   // the host's own capability
+    return try defaultProbeAPI(method, params)
+}
+```
+
+`evaluateProbe(_:api:)` runs `source` **inline, in the calling process and on the calling thread**. There is no detach: a script that crashes or never returns takes the caller down with it, and the script has the caller's own memory, file access and entitlements. A host that needs to survive a bad script spawns `icli probe` as a separate process and reads its one JSON line; that is why icli itself offers no `--detach`, and it is how vphoned runs scripts. The probe keeps one JavaScriptCore context per process, built on first use, so a later call sees the variables an earlier one defined, and it is not reentrant — serialize calls, as the single shared context already requires.
+
+A script reaches Objective-C classes through `ObjC.use`/`ObjC.classes`/`ObjC.wrap`, reads and writes files with `fs.ls/read/write/stat`, prints with `console.*`/`print`, waits with `sleep(ms)`, and calls back with `api(method, params)`, whose `params`, an object, reaches the handler as `JSON.stringify` encodes it. `api()` uses the handler passed to `evaluateProbe`, or `defaultProbeAPI` when none is given; `defaultProbeAPI` maps a small read-oriented set of icli's own capabilities (`env.info`, `device.info`, `screen.info`, `svc.list`, `svc.status`, `app.list`, `proc.list`) and throws `IcliError` for anything else. `proc.run` and `exit()` are deliberately absent, since `exit()` would end the host and running programs belongs to the spawning host's own `api()` handler.
+
+JavaScriptCore is loaded with `dlopen` and reached through `NSClassFromString`, not linked, so `IcliKit` still builds and loads where JavaScriptCore is absent; `probeAvailable()` is false there and `evaluateProbe` returns `ok == false` with the error `This platform has no JavaScriptCore`. The probe adds no process-launch import: `env info` stays `spawns_processes: false` and `scripts/verify-binary.py` still passes. `ProbeResult`, `ProbeAPIHandler`, `ProbeAPIError`, `probeAvailable()`, `evaluateProbe(_:api:)`, `defaultProbeAPI(_:_:)` and `runProbeREPL(api:)` are the whole surface. A handler's error makes `api()` throw `code: message` in the script: an `IcliError` gives its own code, `ProbeAPIError(code:message:)` the host's, and any other error `failed` with its localized description. `runProbeREPL(api:)` drives the CLI's interactive shell, or a host's on its own stdin and stdout, with `api` answering every statement until it returns; it catches SIGINT only while it reads a line and puts the host's own disposition back while a statement runs, so ^C during a runaway statement does whatever SIGINT does to the host.
+
 ## The IcliSystem product
 
 `IcliSystem` is the read-only system-state half of the library, split out for hosts that want a system report without the rest: a crash reporter attaching device state to a report, for example. `IcliKit` depends on it and re-exports it, so a consumer that links `IcliKit` keeps the same API and needs no second import.
@@ -177,6 +204,18 @@ The lock comes from SpringBoard's `com.apple.springboard.lockstate` notification
 | `frontmostApp`, and so `launchApp`'s wait | `com.apple.private.security.no-sandbox` | Verified on the iOS 26.4 RootHide vphone. A bootstrap executable signed without it gets no RunningBoard process handles, `frontmostApp()` reports `source: "unavailable"`, and `launchApp` launches the app and then fails after five seconds. `platform-application`, `proc_info-allow`, `task_for_pid-allow` and the launch-application keys alone do not help. An unverified answer carries a `runningboard` object saying which step failed (`reason`: `runningboard_unavailable`, `process_list_failed`, `no_process_handles`, `no_process_states`, `no_focal_app`, `several_focal_apps` or `several_focal_roles`), with counts and RunningBoard's first handle error; on macOS that error names `com.apple.runningboard.process-state` |
 | SpringBoardServices launch | `com.apple.springboard.launchapplications` | Optional: without it the LaunchServices fallback does the same work |
 
+## tvOS
+
+The package declares a tvOS 15 floor next to the iOS one, and all three products build for `arm64-apple-tvos15.0` against the AppleTVOS SDK. `IcliSystem` and `IcliLaunch` need nothing extra. `IcliKit` links IOKit, which tvOS ships but the AppleTVOS SDK leaves out, so a tvOS host builds against the stub that `scripts/tvos-iokit-stub.sh <directory>` makes from the iPhoneOS SDK and passes the directory to the compiler and the linker, as `make tvos` does:
+
+```sh
+./scripts/tvos-iokit-stub.sh .build/tvos-stubs
+swift build --triple arm64-apple-tvos15.0 --sdk "$(xcrun --sdk appletvos --show-sdk-path)" \
+  -Xcc -F.build/tvos-stubs -Xswiftc -F.build/tvos-stubs -Xlinker -F.build/tvos-stubs
+```
+
+On tvOS the same functions answer for tvOS: touch, pointer, clipboard, interface rotation and per-app network policy throw `IcliError.unavailable`; the frontmost app, launch and `respring()` work with PineBoard; registration lists bootstrap apps as user apps; and `pressButton("wake")` also dismisses the screen saver. The [README's tvOS section](../README.md#tvos) has the full list.
+
 ## Signing and entitlements
 
 SwiftPM does not sign your executable with icli's entitlements, elevate privileges, or grant platform status. Entitlements belong to the **calling app or executable**, not the library. Integrate the applicable entries from [the complete entitlement inventory](entitlements.md) into your own target's signing configuration and use your own application identifiers. Root requirements are separate from entitlements.
@@ -191,4 +230,4 @@ python3 scripts/check-package-consumer.py
 python3 scripts/check-package-consumer.py --device
 ```
 
-This builds separate iOS executables against a local Git snapshot tagged with the package version, using an exact-version source-control dependency: `IcliKit`, `IcliSystem` and `IcliLaunch` at the iOS 15 triple, from a consumer package that declares the iOS 15 floor. It verifies product selection, public imports, transitive linkage, the floor a consumer may declare, and compatibility with SwiftPM's dependency build restrictions. `--device` signs the test executable with its own application identity and the CLI capability profile, then checks environment reporting, Debian version comparison, installed package state, Developer Mode and Low Power Mode status on the device. It also checks that `writePreference` refuses a value that isn't a property list before anything is written. The build references every 0.6.0 device-feature API with its full type, so the check fails if one stops being public or changes signature. The consumer source is in [Tests/PackageConsumer](../Tests/PackageConsumer); evidence is saved to `.build/package-consumer-verification.json`.
+This builds separate iOS executables against a local Git snapshot tagged with the package version, using an exact-version source-control dependency: `IcliKit`, `IcliSystem` and `IcliLaunch` at the iOS 15 triple, from a consumer package that declares the iOS 15 and tvOS 15 floors. It builds the same three for the tvOS 15 triple, `IcliKit` with the IOKit stub, and checks their floor imports and that the `IcliLaunch` consumer links neither UIKit nor IOKit on either platform. It verifies product selection, public imports, transitive linkage, the floor a consumer may declare, and compatibility with SwiftPM's dependency build restrictions. `--device` signs the test executable with its own application identity and the CLI capability profile, then checks environment reporting, Debian version comparison, installed package state, Developer Mode and Low Power Mode status on the device. It also checks that `writePreference` refuses a value that isn't a property list before anything is written. The build references every 0.6.0 device-feature API with its full type, so the check fails if one stops being public or changes signature. The consumer source is in [Tests/PackageConsumer](../Tests/PackageConsumer); evidence is saved to `.build/package-consumer-verification.json`.

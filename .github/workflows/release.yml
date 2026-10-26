@@ -51,6 +51,7 @@ jobs:
           PY
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk appletvos --show-sdk-version
           swift --version
 
       - name: Install packaging tools
@@ -58,6 +59,9 @@ jobs:
 
       - name: Build and sign the CLI
         run: make all CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
+
+      - name: Build and sign the tvOS CLI
+        run: make tvos CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
 
       - name: Archive names in the C locale
         run: ./scripts/test-archive-locale.sh
@@ -74,7 +78,13 @@ jobs:
       - name: Unified log filters, the log stream and bounded crash reads
         run: ./scripts/test-syslog.sh
 
-      - name: Build and verify both DEBs
+      - name: Probe bridge, prelude, output capture and api handler
+        run: ./scripts/test-probe.sh
+
+      - name: SHA-512 crypt known answers for account set-password
+        run: ./scripts/test-sha512-crypt.sh
+
+      - name: Build and verify the iOS and tvOS DEBs
         run: ./scripts/check-packages.sh
 
       - name: Prepare release assets and notes
@@ -88,6 +98,8 @@ jobs:
           report = json.loads((build / 'package-verification.json').read_text())
           for package in report['packages']:
               shutil.copy2(build / package['file'], output / package['file'])
+          # A tvOS guest without a bootstrap has no dpkg; it runs the executable as is.
+          shutil.copy2(build / 'icli-tvos', output / 'icli-tvos')
           shutil.copy2(build / 'package-verification.json', output / 'package-verification.json')
           files = sorted(output.iterdir())
           (output / 'SHA256SUMS').write_text(''.join(
@@ -95,7 +107,7 @@ jobs:
           commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           tag = os.environ['RELEASE_TAG']
           changes = Path(f"docs/releases/{tag.removeprefix('v')}.md").read_text().strip()
-          notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable.
+          notes = f'''Rootless and experimental RootHide DEBs contain the same signed arm64 executable. The tvOS DEB (`appletvos-arm64`, rootful) and the bare `icli-tvos` contain the signed tvOS executable.
 
           {changes}
 
@@ -105,7 +117,7 @@ jobs:
           - CI-built binaries are verified by package checks; CI does not rerun device tests.
           - Native DEB operations do not execute maintainer scripts or triggers.
           - Source commit: `{commit}`.
-          - Binary SHA-256: `{report['binary_sha256']}`.
+          - Binary SHA-256: `{report['binary_sha256']}`; tvOS binary SHA-256: `{report['tvos']['binary_sha256']}`.
 
           [Swift Package integration](https://github.com/owngoal-dev/icli/blob/{tag}/docs/swift-package.md) · [All entitlements](https://github.com/owngoal-dev/icli/blob/{tag}/docs/entitlements.md)
           '''

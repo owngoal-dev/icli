@@ -63,11 +63,18 @@ func registrationPlan(
     let location = normalizedAppPath(path)
     let outside = jbroot.map { !location.hasPrefix($0 + "/") } ?? location.hasPrefix("/var/containers/")
     let user = outside && !removable
+    #if os(tvOS)
+    // PineBoard disables a system app the programming guide did not provision
+    // (EnforceProvisioningOnSystemApps), so tvOS lists every app as a user app.
+    let listedType: AppRegistrationType = .user
+    #else
+    let listedType: AppRegistrationType = user ? .user : .system
+    #endif
     return RegistrationPlan(
         app: plannedBundle(path, bundleID: bundleID, info: info, plugIn: false, roothide: jbroot != nil),
         plugIns: plugIns,
         info: info,
-        type: type ?? (user ? .user : .system),
+        type: type ?? listedType,
         deletable: deletable ?? (user || removable),
         hasSettingsBundle: FileManager.default.fileExists(atPath: path + "/Settings.bundle/Root.plist"),
         jbroot: jbroot,

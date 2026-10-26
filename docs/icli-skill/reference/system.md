@@ -1,4 +1,4 @@
-# System: svc, prefs, account, env, proc, sec, net, tests
+# System: svc, prefs, account, env, proc, sec, net, probe, tests
 
 ## svc (launchd)
 
@@ -48,6 +48,15 @@ Types on read are `string`, `int`, `float`, `bool`, `date` (ISO-8601), `data` (B
 | `proc list` | Processes with PID, name, path | `--filter <text>` | no | unlocked |
 
 Example: `printf '%s\n' "$NEWPASS" | sudo icli account set-password mobile`.
+
+## probe
+
+| Command | Purpose | Key flags | Root | Screen |
+| --- | --- | --- | --- | --- |
+| `probe [-e <src> \| <file> \| -]` | Evaluate a JavaScriptCore script in-process and print one JSON line `{ok, result \| error, output}` | `-e/--eval <src>`; `-` reads stdin | no | any |
+| `probe repl` | Interactive shell; `.help` lists what is available, `.exit` leaves; ^C abandons a half-finished statement, and ends icli while one runs | | no | any |
+
+A script reaches Objective-C classes through `ObjC.use('NSProcessInfo')` / `ObjC.classes.NSProcessInfo` and calls methods by name (`stringWithUTF8String_`, `_privateMethod`, or `obj['setValue:forKey:'](v, k)`); structs, non-null pointers and blocks are refused; a string, number, boolean or date comes back as a JavaScript value and `NSNull` as `null`, anything else as a handle with `$value`, `$class`, `$isClass`. `fs.ls/read/write/stat`, `console.log`/`print`, `sleep(ms)`, and `api(method, params)` (icli capabilities in process: `env.info`, `device.info`, `screen.info`, `svc.list`, `svc.status`, `app.list`, `proc.list`) are the prelude. Scripts run **inline** in the icli process — a crash or hang takes icli down, so isolate one by spawning `icli probe` as its own process. There is no `--detach`, no `proc.run` and no `exit()`. A thrown script is `ok: false` with a nonzero exit, not a crash. On a platform without JavaScriptCore the command answers `ok: false` with the error `This platform has no JavaScriptCore`; the binary gains no process-launch import.
 
 ## sec
 

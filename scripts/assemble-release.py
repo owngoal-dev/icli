@@ -47,6 +47,7 @@ release = build / 'release' / tests['version']
 release.mkdir(parents=True, exist_ok=True)
 for source, destination in [
     (build / 'icli', release / 'icli'),
+    (build / 'icli-tvos', release / 'tvos/icli-tvos'),
     (build / 'acceptance-release.json', release / 'acceptance.json'),
     (build / 'package-verification.json', release / 'package-verification.json'),
     (build / 'package-consumer-verification.json', release / 'package-consumer-verification.json'),
@@ -65,7 +66,7 @@ for source, destination in [
     shutil.copy2(source, destination)
 shutil.copytree(root / 'Resources/Licenses', release / 'Resources/Licenses', dirs_exist_ok=True)
 for package in packages['packages']:
-    folder = release if package['layout'] == 'rootless' else release / 'experimental-roothide'
+    folder = {'rootless': release, 'roothide': release / 'experimental-roothide', 'tvos': release / 'tvos'}[package['layout']]
     folder.mkdir(exist_ok=True)
     shutil.copy2(build / package['file'], folder / package['file'])
 

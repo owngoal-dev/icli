@@ -223,6 +223,65 @@ def files(d):
     d.cli('fs', 'write', path+'/bad.txt', 'text', '--encoding', 'unknown', expected=1)
 
 
+@case('probe_script', 'runtime', ['probe'])
+def probe_script(d):
+    # The result comes back on stdout as one JSON line {ok, result|error, output};
+    # the script's own console output stays inside `output`.
+    arithmetic = d.cli('probe', '-e', '1 + 2')
+    assert arithmetic['ok'] and arithmetic['result'] == '3' and arithmetic['output'] == '', arithmetic
+    # The ObjC reflection bridge reaches a framework class and its methods.
+    name = d.cli('probe', '-e', "ObjC.use('NSProcessInfo').processInfo().processName()")
+    assert name['ok'] and name['result'], name
+    methods = d.cli('probe', '-e', "ObjC.use('NSString').$isClass + ',' + ObjC.classes.NSFileManager.$isClass")
+    assert methods['ok'] and methods['result'] == 'true,true', methods
+    # console output is collected, not printed to stdout beside the JSON line.
+    printed = d.cli('probe', '-e', "console.log('hi from probe'); 42")
+    assert printed['ok'] and printed['result'] == '42' and printed['output'] == 'hi from probe\n', printed
+    # api() reaches icli's own capabilities in process.
+    env = d.cli('probe', '-e', "api('env.info').spawns_processes")
+    assert env['ok'] and env['result'] == 'false', env
+    services = d.cli('probe', '-e', "api('svc.list').count > 0")
+    assert services['ok'] and services['result'] == 'true', services
+    # The source may also come from stdin.
+    stdin = d.cli('probe', '-', input="'from ' + 'stdin'")
+    assert stdin['ok'] and stdin['result'] == 'from stdin', stdin
+    # fs is reachable with icli's own file access.
+    probe_file = '/tmp/icli-probe-acceptance.txt'
+    try:
+        wrote = d.cli('probe', '-e', f"fs.write({probe_file!r}, 'probed'); fs.read({probe_file!r})")
+        assert wrote['ok'] and wrote['result'] == 'probed', wrote
+    finally:
+        d.run(['rm', '-f', d.sh(probe_file)])
+    # A thrown script is an answer with ok:false, and the command exits nonzero.
+    threw = d.cli('probe', '-e', "throw new Error('boom')", expected=1)
+    assert not threw['ok'] and 'boom' in threw['error'], threw
+    # A selector the object does not answer is reported, not crashed through.
+    refused = d.cli('probe', '-e', "ObjC.use('NSProcessInfo').processInfo().noSuchSelector()", expected=1)
+    assert not refused['ok'] and 'does not respond to' in refused['error'], refused
+    # Params JSON cannot hold, a path with no file-system form and half an
+    # emoji are answers too, never a crash that loses the line.
+    encoded = d.cli('probe', '-e', "api('env.info', {n: NaN, d: new Date(0)}).spawns_processes")
+    assert encoded['ok'] and encoded['result'] == 'false', encoded
+    empty = d.cli('probe', '-e', "fs.stat('')", expected=1)
+    assert not empty['ok'] and 'Invalid argument' in empty['error'], empty
+    half = d.cli('probe', '-e', "console.log('kept'); console.log('\\ud83d'); 1")
+    assert half['ok'] and half['result'] == '1' and half['output'] == 'kept\n\ufffd\n', half
+    # alloc().init() on a real allocation, collected many times over, must not
+    # over-release; a JS function passed for a block is refused, not called.
+    owned = d.cli('probe', '-e', "for (var i = 0; i < 20000; i++) ObjC.use('NSObject').alloc().init();"
+                  "var junk = []; for (var j = 0; j < 300000; j++) junk.push({j: j}); 'owned'")
+    assert owned['ok'] and owned['result'] == 'owned', owned
+    block = d.cli('probe', '-e', "ObjC.use('NSMutableArray').arrayWithObject_('x').enumerateObjectsUsingBlock_(function () {})", expected=1)
+    assert not block['ok'] and 'block argument' in block['error'], block
+    # A leading underscore stays part of a private method's name.
+    private = d.cli('probe', '-e', "ObjC.use('NSObject').new()._isDeallocating()")
+    assert private['ok'] and private['result'] == 'false', private
+    # A script that cannot be read is answered on the same JSON line.
+    missing = d.cli('probe', '/no/such/icli-probe-script.js', expected=1)
+    assert not missing['ok'] and 'cannot read script' in missing['error'] and missing['output'] == '', missing
+    d.observations.append('icli probe evaluates JavaScript inline in the icli process: the ObjC bridge, fs and api() into icli all work, console output is captured into the result, and a thrown script is a nonzero answer rather than a crash.')
+
+
 @case('ax_tree_and_tap', 'ax', ['ui tree', 'ui tap'])
 def ax_tree(d):
     d.fixture()
@@ -676,7 +735,7 @@ def install_ipa_container(d):
                 # FrontBoard either refuses the launch outright (iOS 15) or starts
                 # a process that never comes forward; other errors still fail.
                 message = json.loads(launch.stdout)['message']
-                assert 'did not become frontmost' in message or message == 'launch refused: ' + bundle, launch.stdout
+                assert 'did not become frontmost' in message or message.startswith('launch refused: ' + bundle), launch.stdout
                 d.observations.append(f'{bundle} installed and registered but did not launch ({message}): this device does '
                                       'not run its ad-hoc signature from an app container (where this was diagnosed, the '
                                       'kernel log named the CMS blob). The same binary launches from the bootstrap install.')
@@ -1593,8 +1652,10 @@ def account_password(d):
         # The new password must log in, and sudo must take it, before anything else runs.
         check = login(temporary, f'sudo -S -p "" sh -c "id -u; grep ^mobile: {passwd} | cut -d: -f2"', input=temporary + '\n')
         assert check.returncode == 0 and check.stdout.splitlines()[0] == '0', 'new password rejected by sshd or sudo: ' + check.stderr
+        # sshd and sudo just checked the digest with the system's own crypt;
+        # scripts/test-sha512-crypt.sh checks it against known answers.
         stored = check.stdout.splitlines()[1]
-        assert stored != before and stored == subprocess.run(['openssl', 'passwd', '-6', '-salt', changed['salt'], '-stdin'], input=temporary + '\n', capture_output=True, text=True, check=True).stdout.strip(), 'stored hash does not match sha512-crypt'
+        assert stored != before and re.fullmatch(r'\$6\$[./0-9A-Za-z]{16}\$[./0-9A-Za-z]{86}', stored) and stored.split('$')[2] == changed['salt'], 'stored hash is not the sha512-crypt set-password reported'
         assert temporary not in json.dumps(d.trace), 'password leaked into the trace'
     finally:
         # The second attempt covers a change that never took, for a mobile login.

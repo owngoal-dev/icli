@@ -59,6 +59,7 @@ public let maximumScrollDelta = 10000.0
 /// 0…1 of the interface as it is shown, from its top-left corner, in any
 /// orientation. `buttons` nil keeps the buttons held as they are.
 public func pointerMove(x: Double, y: Double, normalized: Bool = false, buttons: PointerButtons? = nil) throws -> [String: Any] {
+    try requirePointInput()
     let (nx, ny) = try pointerPoint(x, y, normalized: normalized)
     if let buttons { try validateButtons(buttons) }
     try checkPointer(icli_pointer_move(nx, ny, Int32(buttons?.rawValue ?? -1)))
@@ -69,6 +70,7 @@ public func pointerMove(x: Double, y: Double, normalized: Bool = false, buttons:
 
 /// Holds `buttons` where the pointer is, releasing every other one.
 public func pointerButtons(_ buttons: PointerButtons) throws -> [String: Any] {
+    try requirePointInput()
     try validateButtons(buttons)
     try checkPointer(icli_pointer_buttons(Int32(buttons.rawValue)))
     return ["buttons": buttons.rawValue]
@@ -82,6 +84,7 @@ public func pointerButtons(_ buttons: PointerButtons) throws -> [String: Any] {
 /// `changed` deltas first. The first few points of a scroll start the gesture
 /// and do not move the view (about 15 points on iPadOS 26).
 public func pointerScroll(_ phase: ScrollPhase, dx: Double = 0, dy: Double = 0) throws -> [String: Any] {
+    try requirePointInput()
     for (name, delta) in [("dx", dx), ("dy", dy)] {
         guard delta.isFinite, abs(delta) <= maximumScrollDelta else {
             throw IcliError.failed("\(name) must be a number within ±\(Int(maximumScrollDelta))")
@@ -102,6 +105,7 @@ public func pointerClick(
     hold: Double = 0.05,
     hover: Double = 0,
 ) throws -> [String: Any] {
+    try requirePointInput()
     try validateButtons(button)
     guard button.rawValue.nonzeroBitCount == 1 else { throw IcliError.failed("click one button at a time") }
     guard (1 ... 3).contains(count) else { throw IcliError.failed("count must be 1–3") }
@@ -131,6 +135,7 @@ public func pointerScrollGesture(
     seconds: Double = 0.3,
     steps: Int = 15,
 ) throws -> [String: Any] {
+    try requirePointInput()
     guard (1 ... 2000).contains(steps) else { throw IcliError.failed("steps must be 1–2000") }
     try validateDuration(seconds, name: "seconds", allowZero: true)
     for (name, total) in [("dx", dx), ("dy", dy)] {
