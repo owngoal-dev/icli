@@ -26,6 +26,19 @@ public enum PasscodeUnlockStatus: Int {
     case systemError = 6
 }
 
+extension PasscodeUnlockStatus {
+    /// The `result` string in an answer.
+    public var name: String {
+        switch self {
+        case .unlocked: "unlocked"
+        case .rejected: "rejected"
+        case .rejectedCached: "rejected_cached"
+        case .refused: "refused"
+        case .systemError: "system_error"
+        }
+    }
+}
+
 /// MobileKeyBag's lock state and attempt counters, with the ledger's count.
 /// `lock_state` is MKBGetDeviceLockState's raw value: 0 unlocked, 1 locked,
 /// 2 locking, 3 no passcode.
@@ -77,7 +90,7 @@ public func unlockDevice(
         var report: [String: Any] = ["attempted": false, "ledger_path": ledger.path]
         func answer(_ status: PasscodeUnlockStatus, _ hint: String) -> [String: Any] {
             report["status"] = status.rawValue
-            report["result"] = "\(status)"
+            report["result"] = status.name
             report["hint"] = hint
             report["ledger_failures"] = state.failures
             report["lock_screen"] = lockScreenReport()
@@ -128,6 +141,7 @@ public func unlockDevice(
 
         if code == 0 {
             state.rejected.removeAll()
+            report["attempts_remaining"] = attemptsRemaining(keybag: after, ledgerFailures: 0, limit: limit)
             return answer(.unlocked, "The keybag is unlocked.")
         }
         let counted: Bool

@@ -15,7 +15,7 @@
 | `device passcode unlock` | `--passcode-stdin`, `--passcode-file <path>`, or a TTY prompt. `--max-failures N` (1–4, default 3). `--check` runs every guard and stops before the attempt. |
 | `device passcode forget --force` | Empties the ledger, even an unreadable one. Needed after the device passcode changes. |
 
-Exit status: 0 unlocked (or already unlocked, or `--check` passed), 3 rejected now, 4 rejected before and not retried, 5 refused by a guard, 6 keybag error that did not count.
+`result` is `unlocked`, `check_passed`, `rejected`, `rejected_cached`, `refused` or `system_error`. Exit status: 0 unlocked (or already unlocked, or `--check` passed), 3 rejected now, 4 rejected before and not retried, 5 refused by a guard, 6 keybag error that did not count.
 
 ## Flow
 
@@ -54,9 +54,9 @@ From `MobileKeyBag.framework`, all resolved with `dlsym`:
 
 | Symbol | Use |
 | --- | --- |
-| `MKBGetDeviceLockState(NULL)` | 0 unlocked, 1 locked, 2 locking, 3 no passcode. |
+| `MKBGetDeviceLockState(NULL)` | 0 unlocked, 2 locked with the screen off (seen on iOS 17.3.1 two seconds after `button power`), 3 no passcode; 1 is the other locked value. Anything but 0 and 3 is treated as locked. |
 | `MKBGetDeviceLockStateInfo(NULL)` | Dictionary keyed by `kMKBInfoFailedAttempts` (`fa`), `kMKBInfoBackOff` (`boff`), `kMKBInfoPermanentlyBlocked` (`pb`), `kMKBInfoShouldWipe` (`sw`), `kMKBInfoRecoveryCountdown` (`countdown`), `kMKBInfoLockState` (`ls`). Key names read on macOS 27; an unsigned macOS tool reads `{boff=0, fa=0, ls=0, state=…}`. |
-| `MKBUnlockDevice(CFDataRef passcode, NULL)` | The attempt. 0 is success. |
+| `MKBUnlockDevice(CFDataRef passcode, NULL)` | The attempt. 0 is success; a wrong passcode returned -3 on iOS 17.3.1. |
 
 `MKBVerifyPasswordWithContext` exists but is not used: it would also spend an attempt, and verifying without unlocking adds nothing here.
 
@@ -72,14 +72,26 @@ From `MobileKeyBag.framework`, all resolved with `dlsym`:
 
 demod is the narrowest caller that unlocks, and it holds only `keystore.device` and `keystore.lockassertion`, so `keystore.device` is the candidate. `keystore.device.verify` (SpringBoard only) likely gates the verify-only call and is not added.
 
-## Not yet verified
+## Device results
 
-This is a draft. Before merge, on a vphone **with a passcode set** (the test VMs have none):
+Run on 2026-10-28 on a physical iPhone 15 Pro (`iPhone16,1`), iOS 17.3.1 `21D61`, RootHide, as mobile, with the signed release build of this branch:
 
-- [ ] `passcode status` reads `failed_attempts` and `backoff_seconds` on iOS 26.4 and 27.0.1 as mobile and as root.
-- [ ] A correct passcode unlocks with `com.apple.keystore.device`, and fails without it with an uncounted error (exit 6), confirming the classification.
-- [ ] One wrong passcode raises `failed_attempts` by exactly one, is recorded, and a retry exits 4 without changing the counter.
-- [ ] `MKBGetDeviceLockState` values match the table above (especially 3 for no passcode).
-- [ ] What the lock screen does after a keybag unlock, and whether `button home` or a swipe then dismisses it without asking for the passcode. A follow-up could add `--dismiss`.
-- [ ] Whether `MKBGetDeviceLockStateInfo` follows the Create rule (currently never released).
-- [ ] tvOS: whether MobileKeyBag offers the same calls; the command builds there but is untested.
+| Step | Result |
+| --- | --- |
+| `status` and `api('passcode.status')`, unlocked | `lock_state` 0, `failed_attempts` 0, `backoff_seconds` 0 |
+| `--passcode-file` at 0644 | refused before reading |
+| `unlock` while unlocked | `already_unlocked`, no attempt |
+| `button power`, then `status` | `lock_state` 2 within 2 s, `lock_screen.locked` true |
+| wrong passcode | attempted, `keybag_result` -3, `failed_attempts` 0 → 1, recorded, exit status 3 |
+| same wrong passcode again | `rejected_cached`, not attempted, `failed_attempts` stays 1 |
+| right passcode with `--check` | `check_passed`, not attempted |
+| right passcode | `keybag_result` 0, `lock_state` 0, `failed_attempts` back to 0, ledger empty |
+| `button wake`, `button home` | the keybag stays unlocked, but SpringBoard's lock screen stays up |
+
+So `com.apple.keystore.device` is enough for mobile to unlock, and the counter-based classification works.
+
+## Open
+
+- Dismissing SpringBoard's lock screen after a keybag unlock: `button home` does not, on a Face ID iPhone. A later `--dismiss` could swipe up or ask SpringBoard directly.
+- The uncounted-error path (exit status 6) was not provoked; it needs a build without the entitlement.
+- iOS 26 and 27, root, and tvOS are untested. Whether `MKBGetDeviceLockStateInfo` follows the Create rule is unknown, so its result is never released.

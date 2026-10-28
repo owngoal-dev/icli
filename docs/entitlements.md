@@ -115,7 +115,7 @@ OCR uses Vision and the captured image; there is no separate OCR entitlement in 
 
 | Key | CLI value | Intended role |
 | --- | --- | --- |
-| `com.apple.keystore.device` | `true` | `device passcode unlock`: the keystore grants `MKBUnlockDevice` to holders of this key. On iOS 27.0.1 SpringBoard, demod (which imports `MKBUnlockDeviceWithACM`) and sharingd carry it. Reading the lock state and failed-attempt counter (`device passcode status`) is not expected to need it; on macOS an unsigned tool reads them. An unlock through icli has **not** yet been run on a device. |
+| `com.apple.keystore.device` | `true` | `device passcode unlock`: the keystore grants `MKBUnlockDevice` to holders of this key. On iOS 27.0.1 SpringBoard, demod (which imports `MKBUnlockDeviceWithACM`) and sharingd carry it. Reading the lock state and failed-attempt counter (`device passcode status`) is not expected to need it; on macOS an unsigned tool reads them. Verified on a physical iPhone 15 Pro, iOS 17.3.1 with RootHide: with this key, mobile unlocks the keybag with the right passcode, and a wrong one counts as one failed attempt. |
 
 The shipped CLI's access-group entitlement lists only `icli.test`. The library accepts a `group` argument and relies on the host's granted entitlements and system Keychain checks. A consumer's own identity/signing configuration does not automatically grant `icli.test`. Keep real credentials out of the acceptance fixture namespace and logs. This profile and test suite do not certify access to other apps' credentials.
 
