@@ -40,8 +40,8 @@ extension PasscodeUnlockStatus {
 }
 
 /// MobileKeyBag's lock state and attempt counters, with the ledger's count.
-/// `lock_state` is MKBGetDeviceLockState's raw value: 0 unlocked, 1 locked,
-/// 2 locking, 3 no passcode.
+/// `lock_state` is MKBGetDeviceLockState's raw value: 0 unlocked, 3 no
+/// passcode, anything else locked (2 once the screen is off, on iOS 17.3.1).
 public func passcodeStatus(ledger: PasscodeLedger = PasscodeLedger()) throws -> [String: Any] {
     var report = try keybagInfo()
     let failures = try ledger.withLock { $0.failures }
@@ -99,6 +99,8 @@ public func unlockDevice(
 
         let lockState = before["lock_state"] as? Int
         report["lock_state"] = before["lock_state"]
+        let remaining = attemptsRemaining(keybag: before, ledgerFailures: state.failures, limit: limit)
+        report["attempts_remaining"] = remaining
         if lockState == 0 || lockState == 3 {
             report["already_unlocked"] = true
             return answer(.unlocked, lockState == 3
@@ -111,8 +113,6 @@ public func unlockDevice(
             return answer(.rejectedCached, "This passcode was already rejected and is not tried again. Supply the correct passcode; after changing the device passcode, run `icli device passcode forget --force`.")
         }
 
-        let remaining = attemptsRemaining(keybag: before, ledgerFailures: state.failures, limit: limit)
-        report["attempts_remaining"] = remaining
         if let backoff = before["backoff_seconds"] as? Int, backoff > 0 {
             report["backoff_seconds"] = backoff
             return answer(.refused, "The keybag is delaying passcode attempts for \(backoff) s; icli does not attempt during a back-off.")
