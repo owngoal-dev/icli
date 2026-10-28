@@ -98,6 +98,7 @@ public func defaultProbeAPI(_ method: String, _ params: [String: Any]) throws ->
     case "env.info": return try environmentReport()
     case "device.info": return try collectDeviceSnapshot()
     case "screen.info": return screenInfo()
+    case "passcode.status": return try passcodeStatus()
     case "svc.list": return try listServices()
     case "svc.status": return try serviceStatus(string("label"))
     case "app.list": return try listApps()

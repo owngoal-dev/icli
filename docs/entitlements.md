@@ -1,6 +1,6 @@
 # Entitlements and execution requirements
 
-[Resources/icli.entitlements](../Resources/icli.entitlements) is the authoritative signing profile for the shipped CLI. This inventory covers all 71 keys and their exact configured values. The complete profile has been tested on vphones; individual keys have **not** all been tested by removing them one at a time. Descriptions below explain each capability's intended role, not a claim that every key is necessary on every iOS release. Private capabilities depend on the OS and bootstrap.
+[Resources/icli.entitlements](../Resources/icli.entitlements) is the authoritative signing profile for the shipped CLI. This inventory covers all 72 keys and their exact configured values. The complete profile has been tested on vphones; individual keys have **not** all been tested by removing them one at a time. Descriptions below explain each capability's intended role, not a claim that every key is necessary on every iOS release. Private capabilities depend on the OS and bootstrap.
 
 When linking **IcliKit**, **IcliSystem** or **IcliLaunch**, entitlements must be granted to the final calling executable or app. [The Swift Package guide](swift-package.md#entitlements-the-host-needs) maps the read-only `IcliSystem` calls onto the keys below and says which of those are verified, and [its IcliLaunch section](swift-package.md#the-iclilaunch-product) does the same for launching. SwiftPM does not apply this file to consumers or sign them. Use your own `application-identifier` and `com.apple.application-identifier`; the `com.icli.icli` values identify the CLI. Integrate only the feature groups your host needs using its existing signing process. Ordinary provisioning cannot grant this private platform profile.
 
@@ -110,6 +110,12 @@ OCR uses Vision and the captured image; there is no separate OCR entitlement in 
 | `keychain-access-groups` | `icli.test` | Access group used for self-created test credentials. |
 | `com.apple.keystore.access-keychain-keys` | `true` | Retained Keychain client capability; independent necessity is unverified. |
 | `com.apple.private.security.system-keychain` | `true` | Retained system Keychain capability; acceptance only operates on fixture items in `icli.test`. |
+
+## Keybag
+
+| Key | CLI value | Intended role |
+| --- | --- | --- |
+| `com.apple.keystore.device` | `true` | `device passcode unlock`: the keystore grants `MKBUnlockDevice` to holders of this key. On iOS 27.0.1 SpringBoard, demod (which imports `MKBUnlockDeviceWithACM`) and sharingd carry it. Reading the lock state and failed-attempt counter (`device passcode status`) is not expected to need it; on macOS an unsigned tool reads them. Verified on a physical iPhone 15 Pro, iOS 17.3.1 with RootHide: with this key, mobile unlocks the keybag with the right passcode, and a wrong one counts as one failed attempt. |
 
 The shipped CLI's access-group entitlement lists only `icli.test`. The library accepts a `group` argument and relies on the host's granted entitlements and system Keychain checks. A consumer's own identity/signing configuration does not automatically grant `icli.test`. Keep real credentials out of the acceptance fixture namespace and logs. This profile and test suite do not certify access to other apps' credentials.
 
