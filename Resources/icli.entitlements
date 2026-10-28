@@ -112,6 +112,8 @@
 	</array>
 	<key>com.apple.keystore.access-keychain-keys</key>
 	<true/>
+	<key>com.apple.keystore.device</key>
+	<true/>
 	<key>com.apple.private.security.system-keychain</key>
 	<true/>
 	<key>com.apple.private.webkit.pasteboard</key>

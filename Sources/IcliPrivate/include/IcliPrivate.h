@@ -180,6 +180,13 @@ char *icli_amfi_developer_mode_json(bool arm);
 int icli_low_power_mode_get(void);
 /// 0 on acceptance; -1 if unavailable, -2 on timeout, -3 on rejection.
 int icli_low_power_mode_set(bool enabled);
+/// MobileKeyBag's lock state and attempt counters as JSON: lock_state, and
+/// when the keybag reports them failed_attempts, backoff_seconds,
+/// permanently_blocked, should_wipe and recovery_countdown.
+char *icli_keybag_info_json(void);
+/// MKBUnlockDevice with the passcode bytes; 0 unlocks. available is false when
+/// MobileKeyBag does not offer the call, and nothing was attempted.
+int icli_keybag_unlock(const uint8_t *passcode, size_t length, bool *available);
 /// timed's automatic time zone: 1 on, 0 off, -1 when CoreTime does not offer
 /// it, -2 when timed does not answer within 3 seconds.
 int icli_automatic_time_zone_get(void);

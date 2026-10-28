@@ -7,7 +7,7 @@ struct Device: ParsableCommand {
         abstract: "Device info and settings",
         subcommands: [
             Info.self, Jetsam.self, Brightness.self, Volume.self, Rotation.self, Network.self,
-            Ioreg.self, Devmode.self, LowPower.self, Timezone.self, Reboot.self, Bootlogo.self
+            Ioreg.self, Devmode.self, Passcode.self, LowPower.self, Timezone.self, Reboot.self, Bootlogo.self
         ],
     )
 }
