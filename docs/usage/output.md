@@ -8,7 +8,7 @@ The former `shell` command was removed in 0.3.0. Use the filesystem and system c
 
 Most commands reject execution while the device is locked or the screen is off. Device and screen information, screenshots, `button wake`, and live logs remain available. `button wake` wakes the screen and, without a passcode, dismisses the lock screen; it does not enter a passcode, and it does nothing when the device is already awake and unlocked. On tvOS, which has no lock screen, it also dismisses the screen saver, and `app frontmost` reports the screen saver, `com.apple.IdleScreen`, while it runs.
 
-Audio buttons try hardware events first and fall back to the system audio controller when needed. Their JSON reports the method and resulting state. `button mute` toggles the active audio category's mute state; physical ringer-switch behavior has not been verified.
+Audio buttons try hardware events first and fall back to the system audio controller when needed. Their JSON reports the method and resulting state. `button mute` toggles the active audio category's mute state, and only while audio is playing; with none it fails with `no active audio: mute only applies while audio is playing`; physical ringer-switch behavior has not been verified.
 
 ## Paths on RootHide
 

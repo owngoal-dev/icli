@@ -63,7 +63,8 @@ char *icli_audio_button_json(const char *button) {
     if (after[@"error"]) return icli_json(after);
     BOOL boundary = !mute && (up ? [before[key] doubleValue] >= 1 : [before[key] doubleValue] <= 0);
     if (!boundary && [before[key] isEqual:after[key]])
-        return icli_json(@{@"error": @"system did not apply the requested audio change"});
+        return icli_json(@{@"error": mute ? @"no active audio: mute only applies while audio is playing"
+                                          : @"system did not apply the requested audio change"});
     NSMutableDictionary *result = [after mutableCopy];
     result[@"button"] = name; result[@"method"] = method; result[@"before"] = before;
     return icli_json(result);
