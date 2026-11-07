@@ -11,8 +11,8 @@ icli reads `.deb` archives and updates the bootstrap's dpkg database itself. It 
 | `pkg install <file.deb>` | Install a local archive; checks architecture and dependencies. The same version reinstalls | `--ignore-depends` | required | any |
 | `pkg remove <name>` | Remove an installed package; keeps configuration files | `--purge` | required | any |
 | `pkg compare <left> <right>` | Compare two Debian version strings | | no | any |
-| `pkg repos` | Configured repository sources | | no | any |
+| `pkg repos` | Configured repository sources; `repos` is `null` when `etc/apt/sources.list.d` does not exist and `[]` when it is empty | | no | any |
 | `pkg add-repo <url>` | Add a repository source file entry (`added: false` if it is already present) | | usually | any |
-| `pkg tweaks` | Tweak dylibs in the bootstrap's MobileSubstrate/TweakInject directories | | no | any |
+| `pkg tweaks` | Tweak dylibs in the bootstrap's MobileSubstrate/TweakInject directories; `tweaks` is `null` when none of those directories exists and `[]` when one exists but holds no dylibs | | no | any |
 
 `sudo icli app install <file.deb>` is the same as `pkg install`. `sudo icli app uninstall <name> --package --force` is the same as `pkg remove`.

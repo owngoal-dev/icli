@@ -6,7 +6,8 @@ import Security
 
 public func listRepos() throws -> [String: Any] {
     let dir = JailbreakRoot.current.jbrootPath("/etc/apt/sources.list.d")
-    let files = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+    guard FileManager.default.fileExists(atPath: dir) else { return ["repos": NSNull()] }
+    let files = try FileManager.default.contentsOfDirectory(atPath: dir)
     var entries: [String] = []
     for file in files {
         let path = (dir as NSString).appendingPathComponent(file)

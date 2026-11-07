@@ -1218,7 +1218,8 @@ def packages(d):
     d.cli('pkg', 'install', '/tmp/icli-no-such-package.deb', sudo=True, expected=1)
     assert 'error' in d.cli('pkg', 'install', 'icli.no.such.package', sudo=True, expected=None)
     d.cli('pkg', 'status', 'Bad Name', expected=1)
-    assert isinstance(d.cli('pkg', 'tweaks')['tweaks'], list)
+    tweaks = d.cli('pkg', 'tweaks')['tweaks']
+    assert tweaks is None or isinstance(tweaks, list), tweaks
 
 
 @case('package_metadata_native', 'packages', ['pkg info', 'pkg extract', 'pkg compare'])
@@ -1820,7 +1821,8 @@ def repositories(d):
     try:
         assert d.cli('pkg', 'add-repo', url, sudo=True)['added'] is True
         assert d.cli('pkg', 'add-repo', url, sudo=True)['added'] is False
-        assert url in json.dumps(d.cli('pkg', 'repos'))
+        repos = d.cli('pkg', 'repos')['repos']
+        assert isinstance(repos, list) and url in json.dumps(repos), repos
         d.cli('pkg', 'add-repo', 'invalid\nrepository', sudo=True, expected=1)
     finally:
         if saved:

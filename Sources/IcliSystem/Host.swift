@@ -32,11 +32,13 @@ public func listTweaks() throws -> [String: Any] {
         "/usr/lib/TweakInject",
     ]
     var dylibs: [String] = []
-    for dir in dirs {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+    var found = false
+    for dir in dirs where FileManager.default.fileExists(atPath: dir) {
+        found = true
+        let names = try FileManager.default.contentsOfDirectory(atPath: dir)
         dylibs.append(
             contentsOf: names.filter { $0.hasSuffix(".dylib") }.map { (dir as NSString).appendingPathComponent($0) },
         )
     }
-    return ["tweaks": dylibs]
+    return ["tweaks": found ? dylibs : NSNull()]
 }

@@ -109,7 +109,7 @@ import IcliSystem
 let snapshot = try deviceSnapshot()          // model, kernel, boot, storage, bootstrap
 let processes = try listProcesses(filter: nil)
 let apps = try listApps()                    // LaunchServices registrations
-let tweaks = try listTweaks()
+let tweaks = try listTweaks()                // ["tweaks"]: NSNull if no tweak directory exists, [] if none found
 let services = try listServices()
 let described = try servicesDump()            // every service plus launchd's own print output
 let disabled = try disabledServiceOverrides()
