@@ -75,6 +75,9 @@ jobs:
       - name: Foreground-uid lookup guard for tvOS
         run: ./scripts/test-foreground-uid.sh
 
+      - name: Active interface geometry and scope isolation
+        run: ./scripts/test-interface-geometry.sh
+
       - name: RootHide root names and the root on disk
         run: ./scripts/test-roothide-root.sh
 

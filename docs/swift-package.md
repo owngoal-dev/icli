@@ -48,6 +48,30 @@ The API is synchronous. Package installs and removals in one process wait for ea
 
 `Envelope` is CLI output/exit machinery, not an app integration API: `Envelope.run` can terminate the process. Call the throwing library functions directly. The CLI's interactive lock check wraps its commands; library callers must enforce their own interaction policy, check `lockState()` or `screenInfo()` for `locked` and `screen_off`, and respect system privacy and permission decisions. `launchApp` is the exception: it reports a locked device itself, as `IcliError.locked`.
 
+## Active interface geometry
+
+A host with trusted active-display geometry can supply it for a synchronous operation when the main screen or capture dimensions do not describe that interface:
+
+```swift
+let geometry = try InterfaceGeometry(
+    width: 951, height: 669,
+    referenceWidth: 669, referenceHeight: 951,
+    scale: 3, orientation: 90
+)
+let elements = try withInterfaceGeometry(geometry) {
+    try uiElements()
+}
+let result = try withInterfaceGeometry(geometry) {
+    try tap(x: 220.833, y: 419.333)
+}
+```
+
+All dimensions are points. `width` and `height` describe the upright interface; `referenceWidth` and `referenceHeight` describe the fixed space used by the digitizer and AX hit testing. `orientation` uses IcliKit's clockwise degrees: 0, 90, 180 or 270. A 90-degree interface converts `(x, y)` to fixed `(y, referenceHeight - x)`. The initializer rejects nonfinite or nonpositive dimensions and scale, other rotations, and upright dimensions inconsistent with the rotated reference dimensions.
+
+The scope uses one immutable snapshot for screen metrics, point validation, AX visibility and coordinate conversion, and touch or pointer normalization. `screenInfo()` still reads the live lock and screen-off state. Nested scopes restore their predecessor, including after an error, and concurrent threads retain independent overrides. Run the wrapper on the thread that calls IcliKit: it does not propagate through a caller's dispatch, asynchronous task or thread switch. Geometry reads and conversions run on the calling thread; the pointer's internal queue receives already normalized coordinates. A host must still serialize interactions itself.
+
+Geometry alone does not identify the display captured by UIKit or establish how its pixels map to the supplied interface. `takeScreenshot`, `recognizeScreen` and `describeScreen` throw `IcliError.unavailable` inside any override scope, including when the dimensions happen to match. Call them outside the scope to retain their existing capture source, pixel dimensions, coordinate contract and resolution policy. This API does not bind those images or OCR coordinates to the supplied display. Explicitly normalized input keeps its existing meaning. Outside the scope, the existing main-screen and capture-derived behavior applies. The host is responsible for selecting a trusted display and refreshing its geometry before each operation.
+
 ## Device features
 
 Every `icli` command is a thin layer over a public IcliKit function, so a long-running host such as a daemon can call the same code in-process. These arrived in 0.6.0:

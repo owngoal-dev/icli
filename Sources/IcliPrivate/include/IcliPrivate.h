@@ -9,17 +9,11 @@
 // module still declares the whole private bridge.
 #include "IcliSystemPrivate.h"
 #include "IcliLaunchPrivate.h"
+#include "IcliInterfaceGeometry.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct {
-    double width;
-    double height;
-    double scale;
-    int orientation;
-} IcliScreenMetrics;
 
 void icli_private_init(void);
 
