@@ -274,7 +274,7 @@ typedef struct {
     int degrees;
     // SpringBoard answered for its interface orientation, so it is running.
     bool springboard;
-} IcliInterfaceGeometry;
+} IcliCaptureGeometry;
 
 static int degreesForImageOrientation(UIImageOrientation orientation) {
     switch (orientation) {
@@ -312,7 +312,7 @@ static int springBoardInterfaceDegrees(void) {
 }
 
 // A capture costs about 35 ms; gestures ask for every event, so reuse it briefly.
-static IcliInterfaceGeometry cachedGeometry = {false, 0, 0, 1, 0};
+static IcliCaptureGeometry cachedGeometry = {false, 0, 0, 1, 0};
 static bool geometryStale = true;
 static NSTimeInterval geometryCapturedAt = 0;
 static NSLock *geometryLock(void) {
@@ -351,11 +351,11 @@ static bool screenCaptureReady(void) {
     }
 }
 
-static IcliInterfaceGeometry interfaceGeometry(void) {
+static IcliCaptureGeometry captureGeometry(void) {
     [geometryLock() lock];
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     if (geometryStale || !cachedGeometry.valid || now - geometryCapturedAt > 1) {
-        IcliInterfaceGeometry geometry = {false, 0, 0, 1, 0};
+        IcliCaptureGeometry geometry = {false, 0, 0, 1, 0};
         @autoreleasepool {
             UIImage *image = screenCaptureReady() ? _UICreateScreenUIImage() : nil;
             CGImageRef cg = image.CGImage;
@@ -374,13 +374,12 @@ static IcliInterfaceGeometry interfaceGeometry(void) {
         geometryCapturedAt = now;
         geometryStale = false;
     }
-    IcliInterfaceGeometry result = cachedGeometry;
+    IcliCaptureGeometry result = cachedGeometry;
     [geometryLock() unlock];
     return result;
 }
 
-IcliScreenMetrics icli_screen_metrics(void) {
-    IcliInterfaceGeometry geometry = interfaceGeometry();
+static IcliScreenMetrics captureMetrics(IcliCaptureGeometry geometry) {
     if (!geometry.valid) {
         return panelMetrics();
     }
@@ -394,50 +393,29 @@ IcliScreenMetrics icli_screen_metrics(void) {
     return m;
 }
 
+IcliScreenMetrics icli_screen_metrics(void) {
+    IcliInterfaceGeometry geometry;
+    if (icli_interface_geometry_current(&geometry)) return icli_interface_geometry_metrics(geometry);
+    return captureMetrics(captureGeometry());
+}
+
+static IcliInterfaceGeometry pointGeometry(IcliCaptureGeometry capture) {
+    bool sideways = capture.degrees == 90 || capture.degrees == 270;
+    return (IcliInterfaceGeometry){sideways ? capture.fixed_height : capture.fixed_width,
+                                  sideways ? capture.fixed_width : capture.fixed_height,
+                                  capture.fixed_width, capture.fixed_height, capture.scale, capture.degrees};
+}
+
 void icli_screen_point_to_fixed(double x, double y, double *fx, double *fy) {
-    IcliInterfaceGeometry geometry = interfaceGeometry();
-    double width = geometry.fixed_width, height = geometry.fixed_height;
-    switch (geometry.degrees) {
-    case 90:
-        *fx = y;
-        *fy = height - x;
-        break;
-    case 180:
-        *fx = width - x;
-        *fy = height - y;
-        break;
-    case 270:
-        *fx = width - y;
-        *fy = x;
-        break;
-    default:
-        *fx = x;
-        *fy = y;
-        break;
-    }
+    IcliInterfaceGeometry geometry;
+    if (!icli_interface_geometry_current(&geometry)) geometry = pointGeometry(captureGeometry());
+    icli_interface_geometry_point_to_fixed(geometry, x, y, fx, fy);
 }
 
 void icli_screen_fixed_to_point(double fx, double fy, double *x, double *y) {
-    IcliInterfaceGeometry geometry = interfaceGeometry();
-    double width = geometry.fixed_width, height = geometry.fixed_height;
-    switch (geometry.degrees) {
-    case 90:
-        *x = height - fy;
-        *y = fx;
-        break;
-    case 180:
-        *x = width - fx;
-        *y = height - fy;
-        break;
-    case 270:
-        *x = fy;
-        *y = width - fx;
-        break;
-    default:
-        *x = fx;
-        *y = fy;
-        break;
-    }
+    IcliInterfaceGeometry geometry;
+    if (!icli_interface_geometry_current(&geometry)) geometry = pointGeometry(captureGeometry());
+    icli_interface_geometry_fixed_to_point(geometry, fx, fy, x, y);
 }
 
 // UIInterfaceOrientation for a CADisplay rotation: landscape-left (90) is
@@ -697,7 +675,7 @@ static UIImage *orientedScreenImage(void) {
     // SpringBoard's scene. UIKit's capture of that comes out magnified by the
     // screen scale: on a 2x screen the image held the top-left quarter of the
     // boot logo. The render server draws what the display shows.
-    IcliInterfaceGeometry geometry = interfaceGeometry();
+    IcliCaptureGeometry geometry = captureGeometry();
     UIImage *raw = geometry.springboard && screenCaptureReady() ? _UICreateScreenUIImage() : nil;
     if (!raw) {
         // The render server draws in the panel's orientation, not the UI's.
@@ -740,7 +718,7 @@ static UIImage *orientedScreenImage(void) {
 }
 
 bool icli_screenshot_jpeg(const char *path, float quality, int max_bytes, bool native_resolution) {
-    if (!path) {
+    if (!path || icli_interface_geometry_current(NULL)) {
         return false;
     }
     UIImage *image = orientedScreenImage();
@@ -748,7 +726,7 @@ bool icli_screenshot_jpeg(const char *path, float quality, int max_bytes, bool n
         return false;
     }
     if (!native_resolution) {
-        IcliScreenMetrics metrics = icli_screen_metrics();
+        IcliScreenMetrics metrics = captureMetrics(captureGeometry());
         UIGraphicsBeginImageContextWithOptions(CGSizeMake(metrics.width, metrics.height), YES, 1);
         [image drawInRect:CGRectMake(0, 0, metrics.width, metrics.height)];
         image = UIGraphicsGetImageFromCurrentImageContext();
@@ -786,17 +764,23 @@ static bool dispatchHID(IOHIDEventRef event) {
 
 // The digitizer reports in the fixed (portrait) space, whatever the UI shows.
 void icli_screen_point_to_digitizer(double x, double y, double *nx, double *ny) {
-    IcliInterfaceGeometry geometry = interfaceGeometry();
-    if (!geometry.valid) {
+    IcliInterfaceGeometry geometry;
+    if (icli_interface_geometry_current(&geometry)) {
+        icli_interface_geometry_point_to_digitizer(geometry, x, y, nx, ny);
+        return;
+    }
+    IcliCaptureGeometry capture = captureGeometry();
+    if (!capture.valid) {
         IcliScreenMetrics m = panelMetrics();
         *nx = x / (m.width > 1 ? m.width : 1);
         *ny = y / (m.height > 1 ? m.height : 1);
         return;
     }
-    double fx = x, fy = y;
-    icli_screen_point_to_fixed(x, y, &fx, &fy);
-    *nx = fx / (geometry.fixed_width > 1 ? geometry.fixed_width : 1);
-    *ny = fy / (geometry.fixed_height > 1 ? geometry.fixed_height : 1);
+    geometry = pointGeometry(capture);
+    double fx, fy;
+    icli_interface_geometry_point_to_fixed(geometry, x, y, &fx, &fy);
+    *nx = fx / (capture.fixed_width > 1 ? capture.fixed_width : 1);
+    *ny = fy / (capture.fixed_height > 1 ? capture.fixed_height : 1);
 }
 
 // nx and ny are 0…1 in the fixed digitizer space.

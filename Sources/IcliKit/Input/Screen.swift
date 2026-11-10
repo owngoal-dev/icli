@@ -11,6 +11,7 @@ public func takeScreenshot(
     base64: Bool = false,
     nativeResolution: Bool = false,
 ) throws -> [String: Any] {
+    try requireCaptureCoordinateSpace()
     icli_private_init()
     let path = requestedPath ?? (JailbreakRoot.current.scratchDirectory() + "/icli-\(UUID().uuidString).jpg")
     // A path icli chose itself is of no use to the caller until it is reported
@@ -210,6 +211,7 @@ public func openURL(_ url: String) throws -> [String: Any] {
 }
 
 public func recognizeScreen(languages: [String], minConfidence: Float) throws -> [String: Any] {
+    try requireCaptureCoordinateSpace()
     guard !languages.isEmpty, minConfidence.isFinite, (0 ... 1).contains(minConfidence) else {
         throw IcliError.failed("provide languages and confidence between 0 and 1")
     }
@@ -271,6 +273,7 @@ public func uiElements(
 }
 
 public func describeScreen() throws -> [String: Any] {
+    try requireCaptureCoordinateSpace()
     let frontmost = frontmostApp()
     let path = JailbreakRoot.current.scratchDirectory() + "/icli-describe-\(UUID().uuidString).jpg"
     defer { try? FileManager.default.removeItem(atPath: path) }
