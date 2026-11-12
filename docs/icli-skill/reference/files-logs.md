@@ -7,7 +7,7 @@ All paths are physical device paths. On RootHide, the SSH shell's `/` is the boo
 | Command | Purpose | Key flags | Root | Screen |
 | --- | --- | --- | --- | --- |
 | `fs ls <path>` | Directory entries with name, path, directory and symlink flags, size, modified time | | no | unlocked |
-| `fs read <path>` | File content as UTF-8, or as Base64 when the content is binary | `--binary` (always Base64), `--limit <bytes>` (default 524288, max 64 MiB); `truncated` is reported | no | unlocked |
+| `fs read <path>` | File content as UTF-8, or as Base64 when the content is binary | `--binary` (always Base64), `--limit <bytes>` (default 524288, max 64 MiB), `--offset <bytes>` (start byte, default 0; past the end returns empty content); `truncated` is reported | no | unlocked |
 | `fs write <path> <content>` | Write a file, creating parent directories | `--encoding utf8\|base64` | no | unlocked |
 | `fs find <root> <pattern>` | Recursive search for relative paths containing `<pattern>` (ignores case, at most 500 results) | | no | unlocked |
 | `fs plist <path>` | Property list as JSON | | no | unlocked |

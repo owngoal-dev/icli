@@ -24,13 +24,16 @@ public func listDirectory(_ path: String) throws -> [String: Any] {
     return ["path": path, "entries": entries]
 }
 
-public func readFile(_ path: String, binary: Bool, limit: Int?) throws -> [String: Any] {
+public func readFile(_ path: String, binary: Bool, limit: Int?, offset: Int? = nil) throws -> [String: Any] {
     let cap = limit ?? defaultReadCap
     guard (0 ... 64 * 1024 * 1024).contains(cap) else { throw IcliError.failed("limit must be 0–67108864 bytes") }
+    let start = offset ?? 0
+    guard start >= 0 else { throw IcliError.failed("offset must be 0 or greater") }
     let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
     defer { try? handle.close() }
     let size = try handle.seekToEnd()
-    try handle.seek(toOffset: 0)
+    // An offset at or past the end seeks to the end, so the read is empty.
+    try handle.seek(toOffset: min(UInt64(start), size))
     let data = try handle.read(upToCount: cap + 1) ?? Data()
     let truncated = data.count > cap
     let slice = truncated ? data.prefix(cap) : data

@@ -216,8 +216,15 @@ def files(d):
     d.cli('fs', 'write', path+'/binary.bin', encoded, '--encoding', 'base64')
     assert base64.b64decode(d.cli('fs', 'read', path+'/binary.bin', '--binary')['content']) == data
     assert d.cli('fs', 'read', path+'/binary.bin', '--limit', '8')['truncated']
+    tail = d.cli('fs', 'read', path+'/binary.bin', '--binary', '--offset', '250')
+    assert base64.b64decode(tail['content']) == data[250:] and not tail['truncated']
+    window = d.cli('fs', 'read', path+'/binary.bin', '--binary', '--offset', '10', '--limit', '4')
+    assert base64.b64decode(window['content']) == data[10:14] and window['truncated']
+    past = d.cli('fs', 'read', path+'/binary.bin', '--binary', '--offset', '999')
+    assert past['content'] == '' and not past['truncated'] and past['size'] == 256
     assert {entry['name'] for entry in d.cli('fs', 'ls', path)['entries']} >= {'text.txt', 'binary.bin'}
     d.cli('fs', 'read', path+'/missing', expected=1)
+    d.cli('fs', 'read', path+'/binary.bin', '--offset=-1', expected=1)
     d.cli('fs', 'write', path+'/bad.bin', '%%%invalid', '--encoding', 'base64', expected=1)
     d.cli('fs', 'read', path+'/text.txt', '--limit=-1', expected=1)
     d.cli('fs', 'write', path+'/bad.txt', 'text', '--encoding', 'unknown', expected=1)
