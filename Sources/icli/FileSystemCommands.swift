@@ -112,8 +112,9 @@ extension FS {
         @Argument var path: String
         @Flag(help: "Return file content as Base64, including text files.") var binary = false
         @Option(help: "Maximum bytes to read, from 0 to 67108864; defaults to 524288.") var limit: Int?
+        @Option(help: "Byte offset to start reading from; defaults to 0.") var offset: Int?
         func run() {
-            emit(output) { try readFile(path, binary: binary, limit: limit) }
+            emit(output) { try readFile(path, binary: binary, limit: limit, offset: offset) }
         }
     }
 

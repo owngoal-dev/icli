@@ -100,7 +100,30 @@ public func runSelfTests(expectedLayout: String? = nil, registrationFixture: Str
                 readFile(path, binary: false, limit: 4)["truncated"] as? Bool == true,
                 "Read limit was not enforced.",
             )
-            return ["write_read_copy_move": true, "truncation": true]
+            let offsetPath = directory + "/offset.txt"
+            _ = try writeFile(offsetPath, content: "0123456789", encoding: "utf8")
+            func slice(_ limit: Int?, _ offset: Int?) throws -> (String, Bool, Int) {
+                let result = try readFile(offsetPath, binary: true, limit: limit, offset: offset)
+                let bytes = Data(base64Encoded: result["content"] as? String ?? "") ?? Data()
+                return (String(decoding: bytes, as: UTF8.self), result["truncated"] as? Bool ?? true, (result["size"] as? UInt64).map { Int($0) } ?? -1)
+            }
+            let middle = try slice(nil, 4)
+            let bounded = try slice(3, 2)
+            let tail = try slice(3, 7)
+            let atEnd = try slice(nil, 10)
+            let pastEnd = try slice(nil, 99)
+            var negativeRejected = false
+            do {
+                _ = try readFile(offsetPath, binary: true, limit: nil, offset: -1)
+            } catch IcliError.failed("offset must be 0 or greater") {
+                negativeRejected = true
+            } catch {}
+            try requireSelfTest(
+                middle == ("456789", false, 10) && bounded == ("234", true, 10) && tail == ("789", false, 10)
+                    && atEnd == ("", false, 10) && pastEnd == ("", false, 10) && negativeRejected,
+                "Read offset was not honored.",
+            )
+            return ["write_read_copy_move": true, "truncation": true, "offset": true]
         }
     }
     check("debian_versions") {
