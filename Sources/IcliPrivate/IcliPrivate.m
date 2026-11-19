@@ -28,7 +28,11 @@ OBJC_EXTERN UIImage *_UICreateScreenUIImage(void) NS_RETURNS_RETAINED;
 @end
 
 typedef void *IOHIDEventRef;
+#if __has_include(<IOKit/hidsystem/IOHIDEventSystemClient.h>)
+#include <IOKit/hidsystem/IOHIDEventSystemClient.h>
+#else
 typedef void *IOHIDEventSystemClientRef;
+#endif
 typedef uint32_t IOOptionBits;
 typedef double IOHIDFloat;
 
@@ -97,6 +101,11 @@ enum {
     kIOHIDDigitizerEventPosition = 1 << 2,
     kIOHIDDigitizerTransducerTypeHand = 3,
     kIOHIDEventOptionNone = 0,
+};
+#if __has_include(<IOKit/hid/IOHIDUsageTables.h>)
+#include <IOKit/hid/IOHIDUsageTables.h>
+#else
+enum {
     kHIDPage_Consumer = 0x0C,
     kHIDUsage_Csmr_Power = 0x30,
     kHIDUsage_Csmr_Menu = 0x40,
@@ -104,6 +113,7 @@ enum {
     kHIDUsage_Csmr_VolumeIncrement = 0xE9,
     kHIDUsage_Csmr_VolumeDecrement = 0xEA,
 };
+#endif
 
 // IOHIDEventFieldBase(kIOHIDEventTypeDigitizer) + offset of IsDisplayIntegrated (25)
 #define kIOHIDEventFieldDigitizerIsDisplayIntegrated ((kIOHIDEventTypeDigitizer << 16) + 25)

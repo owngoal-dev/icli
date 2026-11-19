@@ -14,7 +14,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-// The iOS SDK ships no <net/bpf.h>; these are XNU's stable definitions.
+// The iOS SDK ships no <net/bpf.h>; these are XNU's stable definitions. The
+// macOS SDK ships it, and its definitions would collide with these.
+#if __has_include(<net/bpf.h>)
+#include <net/bpf.h>
+#else
 struct bpf_hdr {
     struct { int32_t tv_sec; int32_t tv_usec; } bh_tstamp;
     uint32_t bh_caplen;
@@ -27,6 +31,7 @@ struct bpf_hdr {
 #define BIOCSETIF _IOW('B', 108, struct ifreq)
 #define BIOCIMMEDIATE _IOW('B', 112, unsigned)
 enum { DLT_NULL = 0, DLT_EN10MB = 1, DLT_RAW = 12 };
+#endif
 
 // Packet capture straight from a BPF device, written as a classic pcap file.
 // Filters are a small subset of tcpdump syntax evaluated in user space:
