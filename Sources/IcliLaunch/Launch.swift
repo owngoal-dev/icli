@@ -18,17 +18,22 @@ public func frontmostApp() -> [String: Any] {
 }
 
 /// Brings an installed app to the front, launching it if it is not running,
-/// and waits up to five seconds for it to become the frontmost app.
+/// and waits for the system to report it as the frontmost app, up to 30 seconds.
 ///
 /// Throws `IcliError.locked` when the system refused because the device is
 /// locked or its screen is off; it does not wait for an unlock. Any other
 /// refusal (with the system shell's reason when it gave one), an app
-/// LaunchServices does not know, or an app that never came to the front is
-/// `IcliError.failed`.
+/// LaunchServices does not know, or an app that did not report frontmost in
+/// time is `IcliError.failed`.
 public func launchApp(_ bundleID: String) throws -> [String: Any] {
     let apps = try listApps()["apps"] as? [[String: Any]] ?? []
     guard !bundleID.isEmpty, apps.contains(where: { $0["bundle_id"] as? String == bundleID }) else {
         throw IcliError.failed("app not found: \(bundleID)")
+    }
+    let watch = icli_frontmost_watch_start(bundleID)
+    defer { icli_frontmost_watch_end(watch) }
+    if frontmostApp()["bundle_id"] as? String == bundleID {
+        return ["launched": bundleID, "frontmost": true]
     }
     var refusal: UnsafeMutablePointer<CChar>?
     let result = icli_launch_app(bundleID, &refusal)
@@ -42,12 +47,8 @@ public func launchApp(_ bundleID: String) throws -> [String: Any] {
     default:
         throw IcliError.failed("launch refused: \(bundleID)" + (reason.map { ": \($0)" } ?? ""))
     }
-    let deadline = ProcessInfo.processInfo.systemUptime + 5
-    repeat {
-        if frontmostApp()["bundle_id"] as? String == bundleID {
-            return ["launched": bundleID, "frontmost": true]
-        }
-        Thread.sleep(forTimeInterval: 0.1)
-    } while ProcessInfo.processInfo.systemUptime < deadline
-    throw IcliError.failed("app did not become frontmost: \(bundleID)")
+    guard icli_frontmost_watch_wait(watch, 30) else {
+        throw IcliError.failed("launched but not frontmost: \(bundleID)")
+    }
+    return ["launched": bundleID, "frontmost": true]
 }

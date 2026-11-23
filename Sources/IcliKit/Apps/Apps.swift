@@ -226,8 +226,12 @@ public func appHandlers(_ urlOrScheme: String) throws -> [String: Any] {
 }
 
 public func openAppURL(_ url: String, bundleID: String?) throws -> [String: Any] {
-    guard icli_open_url_in_app(url, bundleID) else {
-        throw IcliError.failed("open failed: \(url)")
+    var cReason: UnsafeMutablePointer<CChar>?
+    let opened = icli_open_url_in_app(url, bundleID, &cReason)
+    let reason = cReason.map { String(cString: $0) }
+    free(cReason)
+    guard opened else {
+        throw IcliError.failed("open failed: \(url)" + (reason.map { ": \($0)" } ?? ""))
     }
     var payload: [String: Any] = ["url": url]
     if let bundleID {

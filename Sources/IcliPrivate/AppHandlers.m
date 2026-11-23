@@ -6,11 +6,8 @@
 #import <objc/message.h>
 
 @interface NSObject (IcliLS)
-- (BOOL)openSensitiveURL:(NSURL *)url withOptions:(id)options;
 - (NSArray *)applicationsAvailableForOpeningURL:(NSURL *)url;
 - (NSArray *)applicationsAvailableForHandlingURLScheme:(NSString *)scheme;
-- (id)operationToOpenResource:(NSURL *)url usingApplication:(NSString *)bundleID userInfo:(id)userInfo;
-- (BOOL)openURL:(NSURL *)url withOptions:(id)options;
 @end
 
 char *icli_app_handlers_json(const char *url_or_scheme) {
@@ -43,12 +40,15 @@ char *icli_app_handlers_json(const char *url_or_scheme) {
     });
 }
 
-#if TARGET_OS_TV
-// LaunchServices hands a URL to SpringBoard, which tvOS does not run, so
-// there FrontBoard's system service opens it in the app that handles it
-// (LaunchServices still answers which one), through PineBoard.
-bool icli_frontboard_open_url(NSURL *url, NSString *bundleID) {
-    if (!url) return false;
+// Opens `url` through FrontBoard's system service; true only when its
+// completion handler reports no error. On tvOS (no SpringBoard) a nil bundle
+// id is resolved through LaunchServices. A failure sets `*reason`.
+bool icli_frontboard_open_url(NSURL *url, NSString *bundleID, NSString **reason) {
+    if (reason) *reason = nil;
+    if (!url) {
+        if (reason) *reason = @"invalid url";
+        return false;
+    }
     if (!bundleID.length) {
         id ws = icli_ls_workspace();
         NSArray *proxies = [ws respondsToSelector:@selector(applicationsAvailableForOpeningURL:)]
@@ -57,7 +57,10 @@ bool icli_frontboard_open_url(NSURL *url, NSString *bundleID) {
         if (!proxies.count && url.scheme && [ws respondsToSelector:@selector(applicationsAvailableForHandlingURLScheme:)])
             proxies = [ws applicationsAvailableForHandlingURLScheme:url.scheme];
         bundleID = proxies.count ? icli_ls_app_dictionary(proxies.firstObject)[@"bundle_id"] : nil;
-        if (!bundleID.length) return false;
+        if (!bundleID.length) {
+            if (reason) *reason = @"no app handles this url";
+            return false;
+        }
     }
     dlopen("/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices", RTLD_NOW);
     Class serviceClass = NSClassFromString(@"FBSSystemService");
@@ -66,46 +69,45 @@ bool icli_frontboard_open_url(NSURL *url, NSString *bundleID) {
     id service = [serviceClass respondsToSelector:sharedService]
         ? ((id (*)(id, SEL))objc_msgSend)(serviceClass, sharedService)
         : nil;
-    if (![service respondsToSelector:open]) return false;
-    __block BOOL opened = NO;
+    if (![service respondsToSelector:open]) {
+        if (reason) *reason = @"FrontBoard open service unavailable";
+        return false;
+    }
+    __block NSError *openError = nil;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
     ((void (*)(id, SEL, id, id, id, unsigned int, id))objc_msgSend)(service, open, url, bundleID, @{}, 0, ^(NSError *error) {
-        opened = error == nil;
+        openError = error;
         dispatch_semaphore_signal(done);
     });
-    return dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) == 0 && opened;
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0) {
+        if (reason) *reason = @"FrontBoard did not answer the open request";
+        return false;
+    }
+    if (openError) {
+        if (reason) *reason = openError.localizedFailureReason ?: openError.localizedDescription ?: @"open failed";
+        return false;
+    }
+    return true;
 }
-#endif
 
-bool icli_open_url_in_app(const char *url, const char *bundle_id) {
+bool icli_open_url_in_app(const char *url, const char *bundle_id, char **reason) {
+    if (reason) *reason = NULL;
     if (!url) {
+        if (reason) *reason = strdup("invalid url");
         return false;
     }
     if (!bundle_id || !bundle_id[0]) {
         return icli_open_url(url);
     }
-    NSURL *u = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
+    NSString *text = [NSString stringWithUTF8String:url];
+    NSURL *u = text ? [NSURL URLWithString:text] : nil;
     NSString *bid = [NSString stringWithUTF8String:bundle_id];
     if (!u || !bid.length) {
+        if (reason) *reason = strdup("invalid url");
         return false;
     }
-#if TARGET_OS_TV
-    return icli_frontboard_open_url(u, bid);
-#endif
-    id ws = icli_ls_workspace();
-    if ([ws respondsToSelector:@selector(operationToOpenResource:usingApplication:userInfo:)]) {
-        id op = [ws operationToOpenResource:u usingApplication:bid userInfo:nil];
-        if ([op respondsToSelector:@selector(start)]) {
-            [op performSelector:@selector(start)];
-            return true;
-        }
-    }
-    NSDictionary *opts = @{@"LSApplicationIdentifier": bid, @"bundleid": bid};
-    if ([ws respondsToSelector:@selector(openSensitiveURL:withOptions:)]) {
-        return [ws openSensitiveURL:u withOptions:opts];
-    }
-    if ([ws respondsToSelector:@selector(openURL:withOptions:)]) {
-        return [ws openURL:u withOptions:opts];
-    }
-    return false;
+    NSString *r = nil;
+    bool ok = icli_frontboard_open_url(u, bid, &r);
+    if (!ok && reason && r.length) *reason = strdup(r.UTF8String);
+    return ok;
 }

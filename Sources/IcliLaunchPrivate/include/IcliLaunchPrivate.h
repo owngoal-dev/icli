@@ -31,6 +31,16 @@ IcliLockStatus icli_lock_status(void);
 IcliLaunchResult icli_launch_app(const char *bundle_id, char **reason);
 char *icli_frontmost_app_json(void);
 
+/// Watches BackBoard for `bundle_id` coming to the front. Start it before
+/// requesting the launch; NULL when the monitor is unavailable. End it with
+/// icli_frontmost_watch_end on every path.
+void *icli_frontmost_watch_start(const char *bundle_id);
+/// Waits up to `seconds` for the watched app to become frontmost. False on
+/// timeout, or at once for a NULL watch.
+bool icli_frontmost_watch_wait(void *watch, double seconds);
+/// Releases the watch. NULL is allowed.
+void icli_frontmost_watch_end(void *watch);
+
 #ifdef __cplusplus
 }
 #endif
