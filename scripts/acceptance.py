@@ -630,9 +630,34 @@ def app_lifecycle(d):
     assert all(a['bundle_id'] != BUNDLE for a in d.cli('app', 'running')['apps'])
     assert d.cli('app', 'kill', BUNDLE, '--force')['already_stopped']
     d.cli('app', 'launch', BUNDLE)
-    d.cli('app', 'launch', 'icli.nonexistent.app', expected=1)
     d.cli('url', 'open', 'icli-test://reset')
     assert d.state()['last_url'] == 'icli-test://reset'
+
+
+@case('app_launch_outcomes', 'apps', ['app launch', 'app open'])
+def app_launch_outcomes(d):
+    safari = 'com.apple.mobilesafari'
+    url = 'https://example.com/'
+    d.cli('app', 'kill', safari, '--force')
+    d.cli('app', 'open', url, '--bundle', safari)
+    # app open returns when FrontBoard accepts the request, before Safari is frontmost.
+    deadline = time.monotonic() + 15
+    while d.cli('app', 'frontmost').get('bundle_id') != safari:
+        assert time.monotonic() < deadline, 'Safari never became frontmost after app open'
+        time.sleep(0.5)
+    failed = d.cli('app', 'open', url, '--bundle', 'icli.nonexistent.app', expected=1)['message']
+    prefix = 'open failed: ' + url + ': '
+    assert failed.startswith(prefix) and failed[len(prefix):].strip(), failed
+    d.cli('app', 'kill', safari, '--force')
+    launched = d.cli('app', 'launch', safari)
+    assert launched['frontmost'] is True, launched
+    assert d.cli('app', 'launch', safari)['frontmost'] is True
+    started = time.monotonic()
+    missing = d.cli('app', 'launch', 'icli.nonexistent.app', expected=1)['message']
+    assert missing.startswith('app not found: '), missing
+    assert time.monotonic() - started < 10, 'unknown app launch was slow'
+    d.fixture()
+    assert d.cli('app', 'frontmost')['bundle_id'] == BUNDLE
 
 
 @case('brightness_and_volume', 'controls', ['device brightness get', 'device brightness set', 'device volume get', 'device volume set'])
@@ -735,7 +760,8 @@ def install_ipa_container(d):
                 # FrontBoard either refuses the launch outright (iOS 15) or starts
                 # a process that never comes forward; other errors still fail.
                 message = json.loads(launch.stdout)['message']
-                assert 'did not become frontmost' in message or message.startswith('launch refused: ' + bundle), launch.stdout
+                assert launch.returncode == 1, launch.stdout
+                assert 'launched but not frontmost' in message or message.startswith('launch refused: ' + bundle), launch.stdout
                 d.observations.append(f'{bundle} installed and registered but did not launch ({message}): this device does '
                                       'not run its ad-hoc signature from an app container (where this was diagnosed, the '
                                       'kernel log named the CMS blob). The same binary launches from the bootstrap install.')

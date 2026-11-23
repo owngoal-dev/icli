@@ -80,7 +80,9 @@ int icli_pointer_buttons(int buttons);
 int icli_pointer_scroll(int phase, double dx, double dy);
 
 bool icli_open_url(const char *url);
-bool icli_open_url_in_app(const char *url, const char *bundle_id);
+/// Opens `url` in `bundle_id` (FrontBoard completion result). On failure
+/// `*reason` is a malloc'd string or NULL; the caller frees it.
+bool icli_open_url_in_app(const char *url, const char *bundle_id, char **reason);
 /// Live application processes reported by RunningBoard, as a JSON object.
 char *icli_runningboard_apps_json(void);
 bool icli_uninstall_app(const char *bundle_id);

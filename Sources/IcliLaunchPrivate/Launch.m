@@ -135,6 +135,47 @@ IcliLaunchResult icli_launch_app(const char *bundle_id, char **reason) {
     return lock.locked || lock.screen_off ? IcliLaunchLocked : IcliLaunchRefused;
 }
 
+// One BackBoard application-state monitor and the semaphore its handler signals.
+@interface IcliFrontmostWatch : NSObject
+@property (nonatomic, strong) id monitor;
+@property (nonatomic, strong) dispatch_semaphore_t signal;
+@end
+@implementation IcliFrontmostWatch
+@end
+
+// Registers before the launch is requested. The monitor replays the state of
+// every running app on registration, so the handler keeps only the target
+// coming to the front. NULL when BackBoardServices has no monitor.
+void *icli_frontmost_watch_start(const char *bundle_id) {
+    dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_NOW);
+    Class monitorClass = NSClassFromString(@"BKSApplicationStateMonitor");
+    SEL setHandler = NSSelectorFromString(@"setHandler:");
+    if (!bundle_id || !monitorClass || ![monitorClass instancesRespondToSelector:setHandler]) return NULL;
+    IcliFrontmostWatch *watch = [[IcliFrontmostWatch alloc] init];
+    NSString *target = [NSString stringWithUTF8String:bundle_id];
+    watch.signal = dispatch_semaphore_create(0);
+    dispatch_semaphore_t signal = watch.signal;
+    watch.monitor = [[monitorClass alloc] init];
+    ((void (*)(id, SEL, id))objc_msgSend)(watch.monitor, setHandler, ^(NSDictionary *event) {
+        if ([event[@"SBApplicationStateDisplayIDKey"] isEqual:target] &&
+            [event[@"BKSApplicationStateAppIsFrontmost"] intValue] == 1) {
+            dispatch_semaphore_signal(signal);
+        }
+    });
+    return (void *)CFBridgingRetain(watch);
+}
+
+// The watchdog: `seconds` only ends the wait. A NULL watch answers false at once.
+bool icli_frontmost_watch_wait(void *watch, double seconds) {
+    if (!watch) return false;
+    IcliFrontmostWatch *w = (__bridge IcliFrontmostWatch *)watch;
+    return dispatch_semaphore_wait(w.signal, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC))) == 0;
+}
+
+void icli_frontmost_watch_end(void *watch) {
+    if (watch) (void)CFBridgingRelease(watch);
+}
+
 extern int proc_pidpath(int pid, void *buffer, uint32_t buffersize);
 
 static NSString *(*pNSStringFromRBSRole)(uint8_t);

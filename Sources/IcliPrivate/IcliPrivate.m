@@ -994,7 +994,7 @@ bool icli_open_url(const char *url) {
         return false;
     }
 #if TARGET_OS_TV
-    return icli_frontboard_open_url(u, nil);
+    return icli_frontboard_open_url(u, nil, NULL);
 #else
     if (pSBSOpenSensitiveURLAndUnlock) {
         return pSBSOpenSensitiveURLAndUnlock((__bridge CFURLRef)u, 1);
