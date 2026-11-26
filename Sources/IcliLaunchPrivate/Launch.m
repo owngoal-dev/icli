@@ -320,6 +320,10 @@ char *icli_frontmost_app_json(void) {
     NSMutableDictionary *why = [NSMutableDictionary dictionary];
     NSString *bid = runningBoardFocalApplication(why);
     if (bid.length) return launchJSON(@{@"bundle_id": bid, @"verified": @YES, @"source": @"runningboard"});
+    // RunningBoard read every app's state and none is focal: the Home Screen
+    // or the Lock Screen, both drawn by the system shell.
+    if ([why[@"reason"] isEqualToString:@"no_focal_app"])
+        return launchJSON(@{@"bundle_id": kSystemShell, @"verified": @YES, @"source": @"runningboard"});
     if (pSBSCopyFrontmostApplicationDisplayIdentifier)
         bid = pSBSCopyFrontmostApplicationDisplayIdentifier();
     return launchJSON(@{

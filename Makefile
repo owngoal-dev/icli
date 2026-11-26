@@ -24,7 +24,7 @@ TVOS_SDK         ?= $(shell xcrun --sdk appletvos --show-sdk-path)
 TVOS_SDK_VERSION ?= $(shell xcrun --sdk appletvos --show-sdk-version)
 TVOS_TARGET      ?= arm64-apple-tvos15.0
 TVOS_BIN         := $(BUILD)/icli-tvos
-TVOS_STUBS       := $(BUILD)/tvos-stubs
+TVOS_STUBS       := $(CURDIR)/$(BUILD)/tvos-stubs
 TVOS_FLAGS := --configuration $(CONFIGURATION) --triple $(TVOS_TARGET) --sdk $(TVOS_SDK) \
 	--scratch-path $(BUILD)/swiftpm --product icli --force-resolved-versions \
 	-Xcc -F$(TVOS_STUBS) -Xswiftc -F$(TVOS_STUBS) -Xlinker -F$(TVOS_STUBS)
